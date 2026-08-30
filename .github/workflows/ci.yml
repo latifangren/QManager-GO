@@ -49,7 +49,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Build Next.js Static Export
         working-directory: frontend

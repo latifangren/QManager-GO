@@ -17,7 +17,7 @@ import (
 	"qmanager/internal/telemetry"
 )
 
-//go:embed dist/*
+//go:embed all:dist
 var distFS embed.FS
 
 func main() {

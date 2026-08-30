@@ -57,7 +57,8 @@ RELEASE_NOTE.md
 qmanager-armv7*
 /qmanager-armv7
 /backend/qmanager*
-/backend/cmd/qmanager/dist/
+/backend/cmd/qmanager/dist/*
+!/backend/cmd/qmanager/dist/.gitkeep
 backend/*.exe
 *.exe
 *.test
