@@ -1,58 +1,73 @@
-# AT Command Transport (RM520N-GL)
+# AT Command Transport Architecture
 
-> How AT commands are issued on the RM520N-GL: the atcli_smd11 binary, qcmd serialization via flock, and SMS operations via sms_tool.
-
----
-
-## Platform comparison
-
-| Modem | Transport | Wrapper |
-|-------|-----------|---------|
-| RM551E | `sms_tool` via USB | `qcmd` |
-| RM520N-GL | `atcli_smd11` on `/dev/smd11` (direct access, no socat-at-bridge) | `qcmd` |
+> **Applies to:** RM520N-GL (SDX65) and RG501Q-EU (SDX55) · Go Single-Binary Architecture
 
 ---
 
-## atcli_smd11
+## 1. Overview
 
-`atcli_smd11` is a Rust reimplementation from [1alessandro1/atcli_rust](https://github.com/1alessandro1/atcli_rust). It replaces the original Compal C `atcli` binary.
+In QManager's single-binary architecture, all AT command communication is handled natively in Go by `backend/internal/atengine`. 
 
-- **Build**: Static ARMv7 build, ~647 KB (non-UPX). Compatible with Quectel RM502, RM520, RM521, and RM551 modems.
-- **I/O model**: Opens `/dev/smd11` directly via `OpenOptions` — no PTY bridge or socat services needed.
-- **Streaming**: Uses `BufReader::read_line` streaming, which eliminates the 4096-byte buffer overflow bug present in the OEM version.
-- **Terminator matching**: Matches the OEM terminator array exactly: `OK\r\n`, `ERROR\r\n`, `+CME ERROR:`, etc.
-- **Long commands**: Handles long-running commands natively — `AT+QSCAN` waited 1 minute+ in testing. There is no `_run_long_at()` workaround needed.
-- **Exit code**: Always exits 0. Error detection is done by parsing the response text for `OK` or `ERROR` — do not rely on shell `$?`.
-
-### Do NOT UPX-compress atcli_smd11
-
-UPX self-modifying code causes **segmentation faults on exit** for this ARM build. Ship the uncompressed binary (~647 KB) instead.
-
-Note: this is the **opposite** of the Discord bot rule — the Go binary (`qmanager_discord`) is safely UPX-LZMA compressed; the Rust binary is not.
+External C/Rust binaries (`atcli_smd11`) and shell-based filesystem locks (`/tmp/qmanager_at.lock` with `flock`) have been completely superseded by direct character device access (`DeviceTransport`) and in-memory Go concurrency synchronization (`sync.Mutex`).
 
 ---
 
-## qcmd serialization
+## 2. Direct Character Device Transport (`DeviceTransport`)
 
-`qcmd` is the shell wrapper that serializes all AT command access via `flock` (a POSIX advisory file lock — like a "do not disturb" sign on the lock file; only one process holds it at a time).
+The primary transport on Quectel Linux is `DeviceTransport`, which opens the Qualcomm Shared Memory Driver (SMD) device directly:
 
-- **Lock file**: `/tmp/qmanager_at.lock`
-- **flock pattern**: Uses `flock` with a read-only file descriptor (`9<`) for the lock — this handles the kernel's `fs.protected_regular=1` restriction, which would otherwise block root from creating a lock file owned by another user.
-- **BusyBox flock limitation**: BusyBox `flock` on this platform lacks the `-w` (timeout) flag. Use `flock -x -n` in a polling loop instead. See `flock_wait()` in `qcmd` and `sms.sh` for the canonical implementation.
+```go
+f, err := os.OpenFile(devPath, os.O_RDWR, 0)
+```
+
+### 2.1 Qualcomm SMD Characteristics
+- **No Baud Rate / Termios Needed**: Unlike legacy USB virtual serial ports (`/dev/ttyUSB2`), Qualcomm `/dev/smd11` and `/dev/smd7` are kernel-level shared-memory FIFO queues directly connected to the baseband modem DSP.
+- **Direct Read/Write**: Commands are written with standard `\r\n` line terminations and responses are read directly into an in-memory buffer until a 3GPP terminator is encountered.
+- **Zero Process Overhead**: Avoids forking external sub-processes for every AT command query.
+
+### 2.2 Response Framing & 3GPP Terminators
+The Go transport reads the stream until matching standard 3GPP AT terminators:
+- `\r\nOK\r\n` / `\nOK\n`
+- `\r\nERROR\r\n` / `\nERROR\n`
+- `+CME ERROR: <err>`
+- `+CMS ERROR: <err>`
+- `\r\nNO CARRIER\r\n`
+- `\r\nBUSY\r\n`
+
+A 100ms per-chunk read deadline combined with caller context timeouts (`ctx.Done()`) guarantees that unprompted baseband stalls never hang the web server or polling routines.
 
 ---
 
-## SMS operations
+## 3. Transport Autodetection Priority
 
-SMS send/receive/delete operations use `sms_tool`, a bundled ARM binary (not `atcli_smd11`).
+The `AutoDetectTransport()` function automatically selects the optimal transport at runtime:
 
-- `sms_tool` handles multi-part message reassembly natively.
-- It is wrapped with the **same `flock` on `/tmp/qmanager_at.lock`** as `qcmd`, so AT access is fully serialized across both tools.
-- **Suppress stderr** with `2>/dev/null` — `sms_tool` emits harmless `tcsetattr` warnings on smd devices that would otherwise pollute CGI output.
+```text
+1. /dev/smd11     ──> Direct SMD11 Character Device (RM520N / RG501Q default)
+2. /dev/smd7      ──> Direct SMD7 Character Device (Secondary SMD channel)
+3. /dev/ttyUSB2   ──> USB Serial AT Port (External/USB host fallback)
+4. atcli_smd11    ──> External CLI binary helper fallback
+5. MockTransport  ──> In-memory mock for local development and CI unit tests
+```
 
 ---
 
-## PID and cross-user process checks
+## 4. In-Memory Concurrency & Serialization
 
-- `pid_alive()` in `platform.sh` replaces `kill -0` for cross-user PID checks. This is necessary because `www-data` (the CGI user) cannot send signals to root-owned PIDs.
-- `cgi_base.sh` sources `platform.sh`, making `pid_alive` available to all CGI scripts automatically.
+### 4.1 Previous Architecture vs New Architecture
+
+| Dimension | Legacy CGI Architecture | Go Single-Binary Architecture |
+|---|---|---|
+| **Locking Mechanism** | Filesystem lock (`flock /tmp/qmanager_at.lock`) | In-memory `sync.Mutex` in `atengine.Engine` |
+| **Lock Contention** | High fork overhead; risk of stale `/tmp` lock files | Microsecond lock acquisition in Go runtime |
+| **Deadlock Recovery** | External watchdog scripts clearing lock files | Native `context.WithTimeout()` per command |
+| **Transport** | Repeated process execution of `atcli_smd11` | Direct open handle to `/dev/smd11` |
+
+### 4.2 Engine Mutex Synchronization
+`Engine.ExecContext(ctx, cmd)` acquires a mutual exclusion lock before writing to the transport:
+1. Locks `Engine.mu`.
+2. Sends the command via the active `Transport` with context deadline.
+3. Parses output into a structured `*Result` object.
+4. Releases `Engine.mu`.
+
+This guarantees that high-frequency background polling (1 Hz telemetry, cell scanning, SMS checks) never interleaves with user-initiated configuration changes (band locking, APN updates, tower locks).

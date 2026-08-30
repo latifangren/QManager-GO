@@ -1,0 +1,40 @@
+{
+  "known_sims": {
+    "row_label": "SIM Dikenal",
+    "info_aria": "Info SIM dikenal",
+    "tooltip": "QManager mengingat SIM yang pernah terdeteksi, sehingga hanya memberi tahu Anda saat SIM yang benar-benar baru dipasang. Menghapus akan melupakan semua SIM kecuali yang sedang terpasang.",
+    "remembered_count_one": "{{count}} SIM",
+    "remembered_count_other": "{{count}} SIM",
+    "clear_button": "Hapus",
+    "clear_dialog_title": "Hapus SIM yang dikenal?",
+    "clear_dialog_description": "Ini akan melupakan setiap SIM yang pernah dikenali QManager, kecuali yang sedang terpasang — sehingga SIM aktif Anda tidak ditandai sebagai baru. SIM yang pernah digunakan akan diberitahukan lagi saat dipasang berikutnya.",
+    "clear_dialog_confirm": "Hapus",
+    "clear_dialog_clearing": "Menghapus…",
+    "toast_cleared": "SIM yang dikenal telah dihapus",
+    "toast_clear_failed": "Gagal menghapus SIM yang dikenal"
+  },
+  "sim_registry": {
+    "title": "SIM Terdaftar",
+    "description": "Semua SIM yang pernah dikenali QManager, dan apakah masih memunculkan peringatan SIM baru.",
+    "carrier_unknown": "Operator tidak diketahui",
+    "no_phone_number": "Nomor belum tersedia",
+    "added_on": "Ditambahkan {{date}}",
+    "added_unknown": "Ditambahkan sebelum pencatatan dimulai",
+    "badge_active": "Aktif",
+    "badge_alerts_on": "Peringatan aktif",
+    "badge_alerts_off": "Peringatan mati",
+    "show_alert": "Aktifkan Peringatan",
+    "restoring": "Mengaktifkan…",
+    "retry": "Coba lagi",
+    "stale_notice": "Menampilkan data terakhir yang berhasil dibaca. Perangkat tidak menjawab pembaruan terakhir.",
+    "empty_title": "Belum ada SIM yang tercatat",
+    "empty_description": "QManager mencatat setiap SIM saat pertama kali dipasang. Pasang SIM untuk memulai daftar.",
+    "toast_restored": "Peringatan diaktifkan kembali",
+    "toast_restored_detail": "QManager akan memberi tahu lagi saat SIM {{carrier}} dipasang.",
+    "toast_restore_failed": "Gagal mengaktifkan kembali peringatan",
+    "remembered_count_one": "{{count}} SIM diingat",
+    "remembered_count_other": "{{count}} SIM diingat",
+    "toast_cleared_partial": "Sudah dihapus, tetapi daftar mungkin belum diperbarui",
+    "toast_cleared_partial_detail": "Perangkat sudah melupakan SIM tersebut tetapi gagal memperbarui daftar ini. Muat ulang halaman untuk memeriksa."
+  }
+}

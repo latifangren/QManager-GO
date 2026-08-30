@@ -1,0 +1,40 @@
+{
+  "known_sims": {
+    "row_label": "SIM note",
+    "info_aria": "Info SIM note",
+    "tooltip": "QManager ricorda le SIM già viste, così ti avvisa solo quando viene inserita una SIM davvero nuova. La cancellazione dimentica tutte le SIM tranne quella attualmente inserita.",
+    "remembered_count_one": "{{count}} SIM",
+    "remembered_count_other": "{{count}} SIM",
+    "clear_button": "Cancella",
+    "clear_dialog_title": "Cancellare le SIM note?",
+    "clear_dialog_description": "Verranno dimenticate tutte le SIM viste da QManager, tranne quella attualmente inserita, così la tua SIM attiva non verrà segnalata come nuova. Le SIM già usate verranno segnalate di nuovo al prossimo inserimento.",
+    "clear_dialog_confirm": "Cancella",
+    "clear_dialog_clearing": "Cancellazione…",
+    "toast_cleared": "SIM note cancellate",
+    "toast_clear_failed": "Impossibile cancellare le SIM note"
+  },
+  "sim_registry": {
+    "title": "SIM registrate",
+    "description": "Tutte le SIM che QManager ha visto e se generano ancora l'avviso di nuova SIM.",
+    "carrier_unknown": "Operatore sconosciuto",
+    "no_phone_number": "Nessun numero assegnato",
+    "added_on": "Aggiunta il {{date}}",
+    "added_unknown": "Aggiunta prima dell'avvio del registro",
+    "badge_active": "Attiva",
+    "badge_alerts_on": "Avvisi attivi",
+    "badge_alerts_off": "Avvisi disattivati",
+    "show_alert": "Riattiva avviso",
+    "restoring": "Riattivazione…",
+    "retry": "Riprova",
+    "stale_notice": "Vengono mostrati gli ultimi dati letti correttamente: il dispositivo non ha risposto all'ultimo aggiornamento.",
+    "empty_title": "Nessuna SIM registrata",
+    "empty_description": "QManager registra ogni SIM al primo inserimento. Inserisci una SIM per iniziare l'elenco.",
+    "toast_restored": "Avviso riattivato",
+    "toast_restored_detail": "QManager avviserà di nuovo quando verrà inserita la SIM {{carrier}}.",
+    "toast_restore_failed": "Impossibile riattivare l'avviso",
+    "remembered_count_one": "{{count}} SIM memorizzata",
+    "remembered_count_other": "{{count}} SIM memorizzate",
+    "toast_cleared_partial": "Cancellate, ma l'elenco potrebbe non essere aggiornato",
+    "toast_cleared_partial_detail": "Il dispositivo ha dimenticato le SIM ma non è riuscito ad aggiornare questo elenco. Ricarica la pagina per verificare."
+  }
+}

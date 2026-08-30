@@ -1,6 +1,9 @@
 # Connection Watchdog
 
-The Connection Watchdog (`qmanager_watchcat`) is a self-healing daemon that watches the modem's internet reachability and, when the link stays down, climbs a four-step recovery ladder from the gentlest fix (re-register to the network) to the most disruptive (reboot the device). It never pings on its own — it is a pure *state machine* that reads the verdict already produced by the ping daemon (`qmanager_ping`) and decides what to do about it. Its headline capability is **Tier-3 SIM failover**: on a dual-SIM RM520N-GL it can swap to the backup SIM slot when the primary carrier goes dark, ride on it, and later revert. This document describes the watchdog exactly as it ships on the RM520N-GL single target.
+> **Applies to:** RM520N-GL (SDX65) · verified 2026-08
+> **RG501Q-EU (SDX55):** unverified — see [`platform-matrix.md`](./platform-matrix.md)
+
+The Connection Watchdog (`qmanager_watchcat`) is a self-healing daemon that watches the modem's internet reachability and, when the link stays down, climbs a four-step recovery ladder from the gentlest fix (re-register to the network) to the most disruptive (reboot the device). It never pings on its own — it is a pure *state machine* that reads the verdict already produced by the ping daemon (`qmanager_ping`) and decides what to do about it. Its headline capability is **Tier-3 SIM failover**: on a dual-SIM RM520N-GL it can swap to the backup SIM slot when the primary carrier goes dark, ride on it, and later revert. This document describes the watchdog exactly as it ships on the RM520N-GL.
 
 > ℹ️ NOTE: "Watchcat" (the daemon/binary name) and "Watchdog" (the UI name) refer to the same feature. The backend script, systemd unit, and config section all use `watchcat`; the page and copy say "Watchdog".
 
@@ -114,14 +117,16 @@ Around that core sequence, Tier 3:
 3. Stops the tower-failover daemon (`qmanager_tower_failover`) — cell locks are meaningless on a different SIM.
 4. Runs the Golden Rule sequence, then `wait_for_modem`.
 5. **Read-back verifies the slot actually landed** via `verify_quimslot` (`slot_verify.sh`) — `AT+QUIMSLOT=N` can return `OK` while the modem silently stays on the old slot under `qcmd` lock contention, so the write is never trusted on its own. `verify_quimslot` polls `AT+QUIMSLOT?` up to 10× (1s apart); an **empty** read counts as not-yet-matched, never a false success. On a verify failure the watchdog falls straight to `sim_failover_fallback()` (no second write-retry at this layer) rather than proceeding on an unconfirmed slot.
-6. **Verifies the backup SIM is actually present** with `AT+CPIN?` — an `ERROR` means the backup slot is empty, and the watchdog falls back to the original slot.
+6. **Verifies the backup SIM is actually present** with `AT+CPIN?`, **retried 3 times one second apart**, mirroring the ICCID retry loop in step 1. Failure means `rc != 0` or empty stdout, never the literal text `ERROR`: `qcmd` reports failure by exit status and stderr and never writes `ERROR` to stdout ([at-command-transport.md](at-command-transport.md)). A response that is *present* but is not `+CPIN: READY` is a real "SIM present, not usable" state (PIN or PUK required); it is logged with the actual state rather than as "No SIM", and still falls back, because a locked SIM cannot carry traffic either way. Any of those outcomes falls back to the original slot.
+
+   > ⚠️ WARNING: the retry is load-bearing, not defensive padding. `AT+CPIN?` fired immediately after the `AT+CFUN=1` in the Golden Rule sequence can legitimately answer `+CME ERROR: 14` ("SIM busy") while SIM initialisation is still running, and `wait_for_modem` only waits for bare `AT` to answer, which happens well before the SIM is ready. A single failed read is therefore routine rather than proof the slot is empty. Before 2026-08-23 this check tested `grep -q 'ERROR'` against stdout, which could never match, so the fallback below it had **never executed in production**; fixing the detection (`b4d87ef`) activated it, and a one-shot read would have made the last rung of the recovery ladder revert a *working* failover back to the dead primary SIM.
 7. Does **not** write the failover state yet — it waits for cooldown to confirm the backup SIM actually carries traffic.
 
 **SIM-settle floor (`SIM_SETTLE_SECS = 90`):** after a Tier-3 swap the cooldown is `max(cooldown, 90)` seconds. A real SIM swap needs time to re-attach and get a data bearer on the new carrier; judging it "failed" after a short 10–60s cooldown would wrongly bounce a swap that was still coming up. The floor only applies to Tier 3.
 
 **Finalize (in cooldown, on success):** when connectivity comes back on the backup SIM, the daemon writes `/etc/qmanager/qmanager_sim_failover`, emits a **"SIM failover confirmed"** event, registers the landed ICCID in the known-SIMs set (below), and auto-applies any SIM profile matching the new card.
 
-**Fallback (revert to original):** triggered when the modem is unresponsive after the swap, the backup slot has no SIM, or cooldown finds the backup SIM still can't reach the internet. It **read-back verifies the revert landed** via `verify_quimslot(original_sim_slot)` before trusting it — same rationale as the Tier-3 switch gate, and the same "no second write-retry, fall through to best-effort handling" posture on a verify failure (an unconfirmed revert emits an error event asking for a manual check rather than looping). Once verified, it restarts the tower-failover daemon, registers the reverted ICCID in the known-SIMs set, and re-applies that SIM's profile.
+**Fallback (revert to original):** triggered when the modem is unresponsive after the swap, the backup slot's SIM state cannot be confirmed after 3 attempts or comes back as anything other than `+CPIN: READY`, or cooldown finds the backup SIM still can't reach the internet. It **read-back verifies the revert landed** via `verify_quimslot(original_sim_slot)` before trusting it — same rationale as the Tier-3 switch gate, and the same "no second write-retry, fall through to best-effort handling" posture on a verify failure (an unconfirmed revert emits an error event asking for a manual check rather than looping). Once verified, it restarts the tower-failover daemon, registers the reverted ICCID in the known-SIMs set, and re-applies that SIM's profile.
 
 ### Tier 4 — Reboot Device (deferred)
 
@@ -174,6 +179,10 @@ Config lives in `/etc/qmanager/qmanager.conf` under `[watchcat]`, read/written v
 
 On every save, `watchdog.sh` propagates (1) into (2) via an **atomic jq key-merge** (read the existing JSON, set only `.interval_sec`, temp-file + `mv`) and touches **both** `/tmp/qmanager_ping_reload` (so the ping daemon re-reads its cadence) and `/tmp/qmanager_watchcat_reload` (so the watchdog re-reads its config). The merge never overwrites the whole file, so it can't clobber the `profile`/`target_ipv4`/`target_ipv6` keys that the Connection Quality "Probe Targets" card owns independently in the same file (see [Ping source / split ownership](#ping-source--split-ownership)).
 
+`propagate_probe_interval()` (`watchdog.sh:73-95`) guards the existing file with `jq -e 'type == "object"'` before merging and falls back to `{}` on failure, because a merge *indexes* what it reads — anything that isn't an object (malformed, empty, whitespace-only, `null`, scalar, array) aborts jq. This path is best-effort and already swallows stderr, so before the guard an aborted jq failed **silently**: the log recorded it, the user still saw a successful save, and the cadence never reached the daemon. The success condition also requires `[ -s "${PING_PROFILE_CONFIG}.tmp" ]` so a zero-byte temp is never promoted.
+
+> ⚠️ WARNING — `jq -e .` is the **wrong** predicate here and must not be substituted in: `-e` tests output truthiness, so it passes `5`/`"str"`/`[1,2]` (unmergeable) and rejects `null`/`false` (parseable). The other writer of this same file carries the identical guard for the identical reason — full rationale, rc matrix, and test coverage in [connection-quality.md → Corrupt-config guard](connection-quality.md#corrupt-config-guard). Change one writer's guard and you must change both.
+
 ### Migrations (hand-written — `config.sh` has no key-migration primitive)
 
 `qm_config_*` only seeds an empty config; it has no rename/migrate step, so the `max_failures` → `fail_threshold` rename is handled by two idempotent, defensive migrations:
@@ -206,9 +215,45 @@ The delete side uses the new `qm_config_delete` primitive added to `config.sh` i
 | `qmanager_watchcat_reload` | CGI (`save_settings`) | Signals a live config reload. |
 | `qmanager_watchcat_revert_sim` | CGI (`revert_sim`) | User-requested SIM revert; consumed by the daemon. |
 | `qmanager_watchcat_disabled` | daemon (Tier-4 auto-disable) | Read by the CGI as `auto_disabled`; cleared when the user re-enables. |
-| `qmanager_recovery_active` | daemon | Set during any recovery; suppresses event noise while acting. |
+| `qmanager_recovery_active` | daemon **and** `qmanager_profile_apply` | Set during any recovery; suppresses event noise (and, via `qmanager_ping`'s `during_recovery`, every alert) while acting. **Shared with another writer that may be a different UID** — see below. |
 | `qmanager_sim_swap_detected` | poller (boot detector) | Physical-SIM-swap notification surfaced in the UI; distinct from watchdog failover. |
 | `qmanager_ping.json` | `qmanager_ping` | The connectivity verdict the watchdog reads (never writes). |
+
+#### Raising `qmanager_recovery_active` is a two-step idiom
+
+The daemon raises the flag at six sites (Tiers 1/2/3, `do_recovery`, the
+cooldown-stale extension, and the SIM revert) with the same line:
+
+```sh
+printf '%s\n' "$$" > "$RECOVERY_FLAG" 2>/dev/null || touch "$RECOVERY_FLAG"
+```
+
+Both halves are load-bearing, and neither is defensive padding:
+
+- **The PID** lets `qmanager_profile_apply` — the other writer of this flag —
+  judge it on its own merits (live owner / dead owner / aged out) instead of
+  special-casing an empty file as "some foreign owner, never touch". Older
+  builds wrote a bare `touch` with no PID, and an OTA can leave an old watchcat
+  running against a new worker, so an **empty** flag is still a valid live state
+  that must be left alone.
+- **The `touch` fallback** is required. Watchcat is root, and if a `www-data`
+  `qmanager_profile_apply` created the flag first, root's redirect is **refused**
+  by `fs.protected_regular=1` — a sticky world-writable directory refuses an
+  `O_CREAT` write unless you own the file or the file is owned by the directory's
+  owner, and there is no root override. `touch` on that same file still succeeds,
+  because stamping mtime only needs `CAP_FOWNER`. Since the flag's *existence* is
+  what every consumer reads, dropping the fallback would mean root silently
+  failing to raise suppression at all.
+
+Re-stamping the mtime on each cooldown extension also keeps the flag from ageing
+out of the worker's 120 s staleness ceiling during a long cooldown.
+
+> ℹ️ NOTE: known residual, out of scope — if watchcat joins a flag a `www-data`
+> APN bracket already owns, that bracket clears it at its end and watchcat's
+> suppression stops early. Fixing that needs a multi-owner protocol, not a bigger
+> flag. The claim protocol and the ownership rules are in
+> [tmp-file-ownership.md](tmp-file-ownership.md); the worker side is in
+> [sim-profiles.md](sim-profiles.md).
 
 ### Live state file — `/tmp/qmanager_watchcat.json`
 
@@ -326,6 +371,10 @@ Page: `/monitoring/watchdog` — `components/monitoring/watchdog/watchdog.tsx`. 
 - **Watchdog Settings** (`watchdog-settings-card.tsx`) — tabbed **Detection** (**probe interval**, **failure threshold**, cooldown, plus a live "declares down after ~Ns" derivation computed as `probeInterval × failThreshold`) and **Recovery** (the four-rung ladder with per-tier switches, each showing its AT sequence; the backup-slot selector under Tier 3 and the reboot cap under Tier 4). One sticky save bar commits the whole form (the backend save is atomic). Each tab shows an error dot when a field on it is invalid, and a blocked save jumps to the first offending field. `check_interval` is no longer a user-facing field — the form carries it through read-only (`use-watchdog-form.ts`) so it round-trips unchanged.
 
 **Backup-slot save gating:** enabling Tier 3 without choosing a backup slot **blocks the save** in the form (`use-watchdog-form.ts`) — the frontend guard that keeps you out of the misconfig-stops-ladder state described above. The form validation mirrors the CGI ranges exactly.
+
+**Form re-seeding vs. the 30s poll:** `use-watchdog-form.ts` seeds its fields from `settings` and re-seeds **in place** when a *value fingerprint* of `settings` changes (`settingsSignature`, a render-phase sync that reuses the hook's own `discard()`). The fingerprint — not an object-identity check — is required here: `use-watchdog-settings.ts:114` does `setSettings({ ...json.settings, … })`, so the silent 30s refetch allocates a **fresh object every tick** even when nothing moved, and an identity comparison would wipe in-progress edits twice a minute. The page previously forced the same re-seed by keying `WatchdogForm` on that signature; that remount also destroyed the "Saved!" flash, the active Detection/Recovery tab, and the Recovery Activity table's pagination on every save. The key is gone (`watchdog.tsx` renders the form unkeyed) and any comment claiming the keying is intentional is stale. See [dashboard-state-motion.md](dashboard-state-motion.md) > Part 3.
+
+> ℹ️ NOTE: The 30s poll can still re-seed the form mid-edit if the *server values genuinely change* (e.g. the daemon auto-disables itself). That was equally true under the old key, so it is not a regression — but a narrower sync that only refreshes fields the user has not touched is now possible, where a remount made it unreachable.
 
 > ℹ️ NOTE: All copy is inline English — the RM520N build has no i18n on this page.
 

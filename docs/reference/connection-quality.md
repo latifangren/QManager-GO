@@ -1,5 +1,8 @@
 # Connection Quality
 
+> **Applies to:** RM520N-GL (SDX65) · verified 2026-08
+> **RG501Q-EU (SDX55):** unverified — see [`platform-matrix.md`](./platform-matrix.md)
+
 "Connection Quality" is the **measurement / telemetry** side of QManager's connectivity stack — the part that *observes* how good the internet link is and turns raw probe results into latency, jitter, and packet-loss numbers the UI can chart. It is deliberately separate from the [Connection Watchdog](connection-watchdog.md), which is the **recovery** side — the state machine that *acts* when the link goes down. This document covers the producer→poller consumer chain that feeds the Connection Quality page (`/system-settings/connection-quality`) and the dashboard's latency card. It does **not** re-document the watchdog's recovery ladder — see the sibling doc for that.
 
 > ℹ️ NOTE: The two docs are siblings by design. Connection Quality owns the **probe targets** and the **latency/loss alert thresholds**; the Watchdog owns the **probe cadence** (how often) and the **failure threshold** (how many misses before recovery). Where they touch the same file (`ping_profile.json`), the ownership boundary is spelled out below and in [connection-watchdog.md](connection-watchdog.md#ping-source--split-ownership).
@@ -200,6 +203,26 @@ Data flow: `useQualityThresholds` → `GET/POST /cgi-bin/quecmanager/settings/qu
 | **Connection Watchdog** (Detection tab) | `monitoring/watchdog.sh` | `interval_sec` (propagated from `watchcat.probe_interval`) | `/tmp/qmanager_ping_reload` **and** `/tmp/qmanager_watchcat_reload` |
 
 This is the split-ownership realignment: **the Watchdog owns the *cadence*, the Connection Quality page owns the *targets*.** The `fail_threshold` / `probe_interval` ownership and propagation live on the Watchdog side — see [connection-watchdog.md → Split ownership of the probe cadence](connection-watchdog.md#split-ownership-of-the-probe-cadence).
+
+<a id="corrupt-config-guard"></a>
+### Corrupt-config guard — both writers, `type == "object"` only
+
+**Short version:** a key-merge *indexes* the file it reads, so any content that isn't a JSON object kills the merge. Both writers therefore run an explicit object check before merging and fall back to `{}`.
+
+Each writer guards the existing file with `jq -e 'type == "object"'` before piping it into the merge, and rebuilds from `{}` (plus a `qlog_warn`) when the check fails:
+
+- `settings/ping_profile.sh` (~:216-231) — previously guarded for **empty only** (`[ -z "$existing_json" ]`). Any malformed / whitespace-only / `null` / scalar / array content aborted `jq`, so the endpoint returned `{"success":false,"error":"write_failed"}` **permanently, for every future save**, while GET kept serving its own fallback defaults — the UI looked healthy on a device that could no longer save anything from the web console. Regressed at `cf177d0` (2026-07-19), which replaced a self-contained `jq -n` (immune: it ignores existing content) with the `cat "$CONFIG" | jq` merge.
+- `monitoring/watchdog.sh` → `propagate_probe_interval()` (~:73-95) — the **other** writer, byte-identical defect. Worse there: that path is best-effort and already `2>/dev/null`'d, so an aborted `jq` failed **silently** (log line only; the user still saw a successful save).
+
+Two smaller hardenings landed with it: the `ping_profile.sh` merge gained `2>/dev/null` (it was leaking jq parse errors toward the HTTP response), and both promote conditions now require a non-empty temp (`|| [ ! -s "${CONFIG}.tmp" ]` / `&& [ -s ... ]`) so a zero-byte temp is never `mv`'d over a live config — jq can exit 0 having written nothing if the redirect itself failed, which on this device realistically means a full `/etc` UBIFS.
+
+> ⚠️ WARNING — do **not** "simplify" the guard to `jq -e .`. `-e` derives its exit status from output **truthiness**, not parse success. It exits 1 for `null` and `false` (which parse fine) and exits **0** for `5`, `"str"`, `[1,2]` — which also parse fine but are unmergeable, because the merge indexes its input and jq aborts with *"Cannot index number/string/array"*. `type == "object"` is exactly the question the merge asks. Verified rc matrix, identical on local jq 1.8.1 **and** the device's Entware jq 1.7.1: `object`=0, `null`/`false`/`5`/`"str"`/`[1,2]`=1, empty/whitespace=4, garbage=5. Neither `type` nor `==` is regex-dependent, so this is safe on the device's oniguruma-less jq (see project memory: *device jq has no regex*).
+
+> ℹ️ NOTE — what the guard cannot undo. By the time the config is unusable, the ping daemon has **already** lost `interval_sec`: `qmanager_ping:204` reads it with `jq -r '.interval_sec // empty' 2>/dev/null`, which fails on a corrupt file, so `resolve_profile()` falls through to the profile table and the real probe cadence silently diverges from the `watchcat.probe_interval` the Watchdog UI still displays (that value lives in `qmanager.conf`, a different file). The `{}` fallback doesn't cause that divergence and can't repair it — the Watchdog's next save re-propagates `interval_sec`.
+
+**Test coverage:** `scripts/test/ping-profile-cgi.sh` drives a six-shape loop (`this is not valid json`, empty, whitespace, `null`, `5`, `[1,2]`), asserting each self-heals into a valid object, plus a non-empty-config assertion. Suite: 22 passed / 0 failed.
+
+> ⚠️ WARNING — Test 7's malformed-JSON write is **deliberately not cleaned up**. The save-path tests that follow inherit that corrupt file on purpose, and that inheritance *is* the coverage. Do not "fix" the cross-talk by adding a teardown.
 
 ### OTA migration — `migrate_ping_targets()`
 

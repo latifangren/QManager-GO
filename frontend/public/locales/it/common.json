@@ -1,0 +1,378 @@
+{
+  "actions": {
+    "save": "Salva",
+    "save_settings": "Salva impostazioni",
+    "save_and_apply": "Salva e applica",
+    "save_profile": "Salva profilo",
+    "update": "Aggiorna",
+    "saving": "Salvataggio…",
+    "saved": "Salvato!",
+    "cancel": "Annulla",
+    "confirm": "Conferma",
+    "apply": "Applica",
+    "close": "Chiudi",
+    "retry": "Riprova",
+    "dismiss": "Ignora",
+    "reboot": "Riavvia",
+    "log_out": "Esci",
+    "reboot_device": "Riavvia il dispositivo",
+    "reconnect_modem": "Riconnetti modem",
+    "change_display_name": "Modifica nome visualizzato",
+    "change_password": "Cambia password",
+    "toggle_theme": "Cambia tema"
+  },
+  "motion": {
+    "label": "Animazioni",
+    "system": "Sistema",
+    "full": "Complete",
+    "reduced": "Ridotte"
+  },
+  "state": {
+    "loading": "Caricamento…",
+    "saving": "Salvataggio…",
+    "applying": "Applicazione…",
+    "disconnecting": "Disconnessione…",
+    "reconnecting": "Riconnessione…",
+    "installing": "Installazione…",
+    "removing": "Rimozione…",
+    "enabled": "Abilita",
+    "disabled": "Disabilita",
+    "on": "Attivo",
+    "off": "Disattivo"
+  },
+  "connection": {
+    "reconnecting": "Connessione al dispositivo persa. Riconnessione…"
+  },
+  "ethernet": {
+    "page": {
+      "title": "Stato Ethernet",
+      "description": "Controlla il collegamento ethernet dell'host e configura la velocità negoziata."
+    },
+    "header": {
+      "refresh": "Aggiorna"
+    },
+    "loading_sr": "Caricamento stato Ethernet",
+    "tiles": {
+      "link": {
+        "label": "Stato collegamento",
+        "value_up": "Connesso",
+        "value_down": "Disconnesso",
+        "value_unknown": "Sconosciuto",
+        "caption_up": "Cavo collegato alla porta host",
+        "caption_down": "Nessun cavo rilevato sulla porta host",
+        "caption_unknown": "In attesa dello stato del collegamento"
+      },
+      "speed": {
+        "label": "Velocità attiva",
+        "value_na": "N/D",
+        "caption": "Negoziata con il peer",
+        "caption_down": "Richiede un collegamento attivo"
+      },
+      "duplex": {
+        "label": "Duplex",
+        "value_na": "N/D",
+        "caption": "Modalità trasmissione e ricezione",
+        "caption_down": "Richiede un collegamento attivo"
+      },
+      "negotiation": {
+        "label": "Negoziazione",
+        "value_auto": "Automatica",
+        "value_manual": "Manuale",
+        "value_na": "N/D",
+        "caption_auto": "Velocità decisa con il peer",
+        "caption_manual": "Imposta dal limite di velocità",
+        "caption_na": "Nessun dato sulla velocità"
+      }
+    },
+    "settings": {
+      "title": "Limite velocità collegamento",
+      "description": "Imposta la porta host a una velocità fissa. Il collegamento si interrompe brevemente durante la ri-negoziazione.",
+      "row_label": "Limite velocità",
+      "placeholder": "Seleziona velocità",
+      "applying": "Applicazione…",
+      "saved": "Salvato",
+      "group_label": "Limite velocità",
+      "option_auto": "Auto (max)",
+      "option_10": "10 Mbps",
+      "option_100": "100 Mbps",
+      "option_1000": "1 Gbps",
+      "option_2500": "2.5 Gbps",
+      "toast_success": "Velocità collegamento aggiornata",
+      "toast_error": "Impossibile impostare la velocità del collegamento",
+      "toast_confirm_error": "Impossibile confermare la nuova velocità. Controlla il collegamento."
+    },
+    "error": {
+      "title": "Impossibile raggiungere il modem",
+      "body": "Impossibile caricare lo stato Ethernet. Prova ad aggiornare."
+    }
+  },
+  "profile_override": {
+    "banner": "{{controls}}: gestione affidata al profilo SIM personalizzato <strong>{{profile_name}}</strong>."
+  },
+  "time": {
+    "just_now": "Proprio adesso",
+    "now": "Ora",
+    "unknown": "Sconosciuto",
+    "minutes_ago_one": "{{count}}m fa",
+    "minutes_ago_other": "{{count}}m fa",
+    "hours_ago_one": "{{count}}h fa",
+    "hours_ago_other": "{{count}}h fa",
+    "days_ago_one": "{{count}}d fa",
+    "days_ago_other": "{{count}}d fa"
+  },
+  "language": {
+    "label": "Lingua",
+    "switch_aria": "Cambia lingua",
+    "page_title": "Lingua",
+    "page_description": "Scegli la lingua di visualizzazione di QManager. La selezione viene salvata su questo dispositivo.",
+    "active": "Attivo",
+    "select_prompt": "Seleziona una lingua"
+  },
+  "login": {
+    "brand_label": "QManager · Gestione modem Quectel",
+    "welcome": "Benvenuto in QManager",
+    "password_label": "Password",
+    "submit": "Accedi",
+    "signing_in": "Accesso in corso…",
+    "locked": "Bloccato ({{seconds}})",
+    "show_password": "Mostra password",
+    "hide_password": "Nascondi password",
+    "session_expired": "Il dispositivo è stato irraggiungibile troppo a lungo. Accedi di nuovo per continuare.",
+    "signing_in_to": "Accesso a {{hostname}}",
+    "signing_in_as": "Accedi come {{hostname}}",
+    "recovery": {
+      "toggle": "Non riesci ad accedere?",
+      "intro": "Se hai perso la password di amministratore, hai due opzioni di ripristino:",
+      "option_reset": "Apri una sessione SSH sul dispositivo ed esegui <code>qmanager_reset_password</code> per impostare una nuova password di amministratore. (Richiede l'accesso SSH già abilitato.)",
+      "option_backup": "Se hai salvato un file .qmbackup, riprogramma il firmware del dispositivo e ripristina da quel file."
+    },
+    "session_expired_title": "Sessione terminata",
+    "locked_title": "Troppi tentativi",
+    "locked_body": "Bloccato per {{seconds}} per proteggere il dispositivo.",
+    "invalid_password": "Password errata.",
+    "attempts_left_one": "Password errata. {{count}} tentativo rimasto.",
+    "attempts_left_other": "Password errata. {{count}} tentativi rimasti.",
+    "password_to_manage": "Inserisci la password per gestire {{hostname}}.",
+    "password_to_manage_bare": "Inserisci la password."
+  },
+  "overview": {
+    "title": "Panoramica modem",
+    "tagline": "Stato del modem in tempo reale",
+    "login_button": "Accedi",
+    "header": {
+      "carrier": "Operatore",
+      "network": "Rete",
+      "bands": "Larghezza di banda"
+    },
+    "status": {
+      "overall": "Generale",
+      "connectivity": "Internet",
+      "temperature": "Temperatura"
+    },
+    "actions": {
+      "login": "Accedi per gestire",
+      "theme_toggle_aria": "Cambia tema",
+      "theme_light": "Chiaro",
+      "theme_dark": "Scuro",
+      "theme_system": "Sistema"
+    },
+    "field": {
+      "carrier": "Operatore",
+      "aggregation": "Bande",
+      "uptime": "Tempo di attività",
+      "temperature": "Temp",
+      "temp_warn": "Surriscaldamento lieve",
+      "temp_danger": "Surriscaldamento",
+      "empty": "—"
+    },
+    "aggregation": {
+      "band_with_bw": "{{band}} ({{bandwidth}} MHz)",
+      "band_only": "{{band}}",
+      "pci_label": "PCI"
+    },
+    "bands": {
+      "toggle_multi_band": "Bande attive",
+      "toggle_single_band": "Operatore singolo",
+      "section": "Bande",
+      "count_one": "{{count}} attiva",
+      "count_other": "{{count}} attive",
+      "bandwidth": "{{bandwidth}} MHz",
+      "rsrp_unit": "{{rsrp}} dBm",
+      "section_count_one": "Portante · {{count}} aggregata",
+      "section_count_other": "Portanti · {{count}} aggregate"
+    },
+    "metrics": {
+      "rsrp": "RSRP",
+      "rsrq": "RSRQ",
+      "sinr": "SINR",
+      "rsrp_value": "{{rsrp}} dBm",
+      "rsrq_value": "{{rsrq}} dB",
+      "sinr_value": "{{sinr}} dB",
+      "toggle_aria": "Cambia metrica del segnale della banda"
+    },
+    "signal": {
+      "dual": "{{rsrp}} dBm · {{sinr}} dB SINR",
+      "rsrp_only": "{{rsrp}} dBm",
+      "sinr_only": "{{sinr}} dB SINR",
+      "none": "—"
+    },
+    "quality": {
+      "overall_label": "Generale",
+      "excellent": "Eccellente",
+      "good": "Buono",
+      "fair": "Discreto",
+      "poor": "Scarso",
+      "bad": "Molto debole",
+      "none": "Nessun segnale"
+    },
+    "connection": {
+      "connected": "Connesso",
+      "searching": "Ricerca in corso",
+      "limited": "Limitato",
+      "inactive": "Inattivo",
+      "error": "Errore",
+      "disconnected": "Disconnesso",
+      "unknown": "Sconosciuto",
+      "modem_unreachable": "Offline"
+    },
+    "stale_indicator": "I dati potrebbero non essere aggiornati",
+    "redirecting_setup": "Reindirizzamento alla configurazione iniziale…",
+    "loading_status": "Caricamento dello stato del modem…",
+    "empty": {
+      "title": "Stato del modem non disponibile",
+      "subtitle": "Il modem non risponde da un minuto. Potrebbe essere in riavvio — la lettura riprende da sola.",
+      "fetch_error": "Impossibile raggiungere il dispositivo.",
+      "retry": "Riprova"
+    },
+    "uptime": {
+      "days": "{{days}}g {{hours}}h",
+      "hours": "{{hours}}h {{minutes}}m",
+      "minutes": "{{minutes}}m"
+    },
+    "copyright": "© {{year}} QManager",
+    "stale": {
+      "banner": "Le letture risalgono a <age>{{age}}</age> fa. Il dispositivo potrebbe essere occupato."
+    },
+    "footer": {
+      "updated_ago": "aggiornato {{age}} fa",
+      "retrying": "nuovo tentativo ogni {{seconds}}s",
+      "signin_works": "l'accesso funziona comunque"
+    },
+    "loading_chip": "Lettura",
+    "unreachable": {
+      "banner": "Il modem non risponde in questo momento. Potrebbe essere occupato o in fase di riavvio."
+    }
+  },
+  "sim_swap": {
+    "title": "Rilevata una nuova SIM",
+    "carrier_unknown": "Operatore sconosciuto",
+    "no_phone_number": "Nessun numero assegnato",
+    "description_match": "Il profilo <strong>{{profile_name}}</strong> corrisponde a questa SIM.",
+    "description_no_match": "Nessun profilo salvato corrisponde a questa SIM.",
+    "apply_profile": "Applica profilo",
+    "create_profile": "Crea profilo",
+    "dismiss_aria": "Disattiva l'avviso per questa SIM",
+    "toast_dismissed": "Avviso disattivato per questa SIM",
+    "toast_dismissed_detail": "Le altre SIM continueranno a generare l'avviso. Puoi riattivarlo in Impostazioni di sistema → SIM registrate.",
+    "toast_dismiss_failed": "Impossibile disattivare l'avviso per questa SIM",
+    "dismiss_dialog": {
+      "title": "Disattivare l'avviso per questa SIM?",
+      "description": "QManager smetterà di mostrare l'avviso di nuova SIM solo per questa SIM {{carrier}}. Tutte le altre SIM continueranno a generarlo e puoi riattivare questa in qualsiasi momento da Impostazioni di sistema → SIM registrate.",
+      "sim_label": "Questa SIM (ICCID)",
+      "confirm": "Disattiva l'avviso",
+      "dismissing": "Disattivazione…"
+    }
+  },
+  "trafficEngine": {
+    "page": {
+      "title": "Motore di traffico",
+      "description": "Aggira la limitazione DPI dell'operatore su streaming video e altro traffico con il motore di bypass integrato."
+    },
+    "load_error": "Impossibile caricare lo stato del motore.",
+    "binary_op_failed": "Operazione sul binario del motore non riuscita",
+    "tabs": {
+      "video_optimizer": "Ottimizzazione video",
+      "masquerade": "Mascheramento del traffico"
+    },
+    "status": {
+      "title": "Stato del motore",
+      "description": "Stato in tempo reale del motore di bypass.",
+      "state": "Stato del motore",
+      "running": "In esecuzione",
+      "stopped": "Fermato",
+      "restarting": "Riavvio",
+      "error": "Errore",
+      "uptime": "Attivo da",
+      "packets": "Pacchetti elaborati",
+      "packets_per_sec": "{{n}} pkt/s",
+      "domains": "Domini caricati",
+      "sni": "SNI falsificato",
+      "rule": "Regola di reindirizzamento",
+      "rule_active": "Attiva",
+      "rule_inactive": "Non applicata",
+      "binary_installed": "Binario del motore installato",
+      "binary_missing": "Binario del motore non installato",
+      "masq_scope": "Ambito",
+      "masq_all": "Ogni connessione TCP 80/443"
+    },
+    "uninstall": {
+      "button": "Disinstalla binario del motore",
+      "title": "Disinstallare il binario del motore?",
+      "description": "Questa azione arresta il Traffic Engine (se in esecuzione) e rimuove il binario del motore. Procedere? Puoi reinstallarlo in seguito se cambi idea.",
+      "confirm": "Disinstalla",
+      "cancel": "Annulla"
+    },
+    "enable": {
+      "video_optimizer": "Abilita Ottimizzazione video",
+      "masquerade": "Abilita Mascheramento del traffico",
+      "description_vo": "Desincronizza le connessioni ai domini di streaming e video nell'hostlist, contrastando la limitazione DPI dell'operatore.",
+      "description_masq": "Invia un falso ClientHello TLS con SNI falsificato per ogni connessione, nascondendo la destinazione reale al DPI.",
+      "toast_enabled_vo": "Ottimizzazione video abilitata",
+      "toast_disabled_vo": "Ottimizzazione video disabilitata",
+      "toast_enabled_masq": "Mascheramento del traffico abilitato",
+      "toast_disabled_masq": "Mascheramento del traffico disabilitato",
+      "toast_error": "Salvataggio impostazioni motore non riuscito"
+    },
+    "masquerade": {},
+    "hostlist": {
+      "title": "Domini video",
+      "description": "Domini che ricevono il trattamento di desincronizzazione. I sottodomini di un dominio elencato corrispondono automaticamente. Il motore ricarica l'elenco al volo: le modifiche si applicano subito.",
+      "empty": "Nessun dominio ancora — aggiungine uno per iniziare.",
+      "invalid": "Inserisci un dominio valido (lettere, cifre, punti, trattini).",
+      "duplicate": "Questo dominio è già nell'elenco.",
+      "limit": "L'elenco può contenere al massimo 300 domini.",
+      "add": "Aggiungi dominio",
+      "remove": "Rimuovi {{domain}}",
+      "saved": "Elenco domini salvato",
+      "save_failed": "Impossibile salvare la lista dei domini"
+    },
+    "verify": {
+      "title": "Prova il bypass",
+      "description": "Esegui un test di velocità in due fasi — senza il motore, poi con il motore — per misurare il miglioramento del bypass.",
+      "run": "Avvia test",
+      "running": "Test in corso…",
+      "timeout": "Il test non è terminato in tempo.",
+      "error": "Impossibile avviare il test",
+      "needs_binary": "Installa prima il binario del motore.",
+      "improvement": "Miglioramento",
+      "without": "Senza bypass",
+      "with": "Con bypass",
+      "throttled": "limitato",
+      "unthrottled": "non limitato"
+    },
+    "takeover": {
+      "title": "Passare a {{mode}}?",
+      "description": "Può essere attiva una sola modalità alla volta. Abilitarne una disabilita l'altra.",
+      "confirm": "Passa",
+      "cancel": "Annulla"
+    },
+    "onboarding": {
+      "title": "Installa il binario del motore",
+      "description": "Il motore necessita del binario tpws, scaricato dalla release ufficiale di zapret e verificato tramite checksum.",
+      "install": "Scarica e installa",
+      "installing": "Download in corso…",
+      "done": "Motore pronto",
+      "error": "Installazione non riuscita: {{detail}}"
+    }
+  }
+}

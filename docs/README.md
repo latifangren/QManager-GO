@@ -1,10 +1,6 @@
 # QManager Documentation
 
-QManager is a modern web-based GUI that runs **on the Quectel RM520N-GL modem itself** — served from the modem's internal vanilla Linux OS (systemd, lighttpd serving CGI shell scripts as `www-data`, bash available alongside BusyBox applets). It provides real-time signal monitoring, cellular configuration, network management, and advanced diagnostics through an intuitive interface, with no external OpenWRT host required.
-
-**Version:** see `package.json` (`version` field) — this doc no longer hardcodes it to avoid drift.
-**License:** MIT + Commons Clause
-**Successor to:** [SimpleAdmin](https://github.com/iamromulan/quectel-rgmii-toolkit) (QManager is now fully independent of SimpleAdmin)
+Welcome to the technical documentation for **QManager** — the standalone single-binary web interface, telemetry daemon, and modem management engine for Qualcomm-based Quectel cellular modems (RM520N-GL & RG501Q-EU).
 
 ---
 
@@ -12,115 +8,51 @@ QManager is a modern web-based GUI that runs **on the Quectel RM520N-GL modem it
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](ARCHITECTURE.md) | System architecture, data flow, polling tiers, state management |
-| [Frontend Guide](FRONTEND.md) | React components, hooks, pages, routing, and UI patterns |
-| [Backend Guide](BACKEND.md) | CGI shell scripts, poller/daemons, systemd services, shared libraries |
-| [API Reference](API-REFERENCE.md) | Complete CGI endpoint reference with request/response schemas |
-| [Design System](DESIGN-SYSTEM.md) | Developer reference (shadcn setup, component inventory, responsive recipes, theming mechanism). Visual authority is root [`DESIGN.md`](../DESIGN.md) |
-| [Deployment Guide](DEPLOYMENT.md) | Building the static export and installing onto the RM520N-GL |
-| [Contributing Translations](CONTRIBUTING-translations.md) | Non-developer guide to adding/completing a language with the `bun run lang` toolkit (pairs with [reference/i18n.md](reference/i18n.md)) |
-| [RM520N-GL Architecture](rm520n-gl-architecture.md) | Platform internals, Entware bootstrap, lighttpd, boot sequence, AT handling, troubleshooting |
-| [RM520N Phase 2: Systemd Migration](rm520n-phase2-systemd-migration.md) | Converting the legacy procd/init.d model to systemd service units for the RM520N-GL |
-| [reference/](reference/) | Per-feature and per-subsystem operational notes (AT transport, data usage counter, WAN profiles, SIM profiles, connection watchdog, Discord bot, custom DNS, antenna alignment, timezone, overview splash, install/runtime internals). See [reference/README.md](reference/README.md) for the index. |
-
-> ℹ️ NOTE: Product/vision docs (`PRODUCT.md`), the visual design system (`DESIGN.md`), and the working agreement / platform golden rules (`CLAUDE.md`) live in the **repo root**, not in `docs/`.
+| [Single-Binary Architecture](REWRITE_ARCHITECTURE.md) | Complete architectural specifications for the Go standalone binary, Chi HTTP router, memory footprint, and background daemons |
+| [Frontend Guide](FRONTEND.md) | Next.js 15 App Router architecture, UI component structure, custom hooks, state management, and build pipeline |
+| [Hardware Platform Profile & Matrix](reference/platform-profile.md) | SoC detection (SDX55 vs SDX65), form-factor derivation, hardware capabilities, and boot self-heal verification |
+| [AT Command Engine & Transport](reference/at-command-transport.md) | Pure-Go direct character device transport (`/dev/smd11`), command serialization, and 3GPP terminator parsing |
+| [Monotonic Scheduler & Clock-Step Guard](reference/scheduled-timers.md) | 1970 uncalibrated RTC boot-step protection, scheduled reboots, and tower locking timelines |
+| [Connection Watchdog](reference/connection-watchdog.md) | 4-tier link failure recovery pipeline, probing parameters, and cooldown mechanics |
+| [Carrier Aggregation & Radio Stats](reference/carrier-aggregation.md) | Primary & Secondary component carrier parsing (+QCAINFO, +QENG), bandwidths, and signal metrics |
+| [Band & Tower Locking](reference/tower-locking.md) | EARFCN/ARFCN cell locking, PCI targeting, and failover state machines |
 
 ---
 
-## Quick Start
+## Tech Stack Overview
 
-### Prerequisites
+| Component | Technology / Implementation |
+|---|---|
+| **Core Daemon & Web Engine** | Go 1.22+ compiled as static binary with `CGO_ENABLED=0` |
+| **HTTP Router & API** | Chi HTTP router with sub-millisecond response latency and full `/cgi-bin/quecmanager/*` compatibility |
+| **Frontend Framework** | Next.js 15 (React 19, App Router, static export embedded via `embed.FS`) |
+| **UI Components & Styling** | shadcn/ui (Radix primitives), Tailwind CSS v4, OKLCH theme engine |
+| **AT Command Transport** | Pure-Go direct character device access on `/dev/smd11` with mutex serialization |
+| **Telemetry & Metrics** | 1 Hz background signal poller, UDP/TCP latency prober (1.1.1.1:53), `/proc/uptime` & `/proc/meminfo` accounting |
+| **Persistence & Config** | JSON configuration store (`/etc/qmanager/qmanager.conf`, `/etc/qmanager/tower_lock.json`) |
+| **Target Platforms** | Quectel RM520N-GL (SDX65, ARMv7l) & Quectel RG501Q-EU (SDX55, ARMv7l) running embedded Linux |
 
-- [Bun](https://bun.sh/) (package manager and runtime)
-- A Quectel **RM520N-GL** modem (SDXLEMUR SoC, ARMv7l, kernel 5.4.210) running its stock vanilla Linux OS — the single supported target
+---
 
-### Development
+## Development & Build Workflow
 
+### Local Development
 ```bash
-git clone https://github.com/dr-dolomite/qmanager.git
-cd qmanager
+# 1. Start Frontend Dev Server
+cd frontend
 bun install
-bun run dev        # Start dev server at http://localhost:3000
+bun run dev
+
+# 2. Run Go Backend with Mock Transport
+cd backend
+go run ./cmd/qmanager
 ```
 
-To talk to a live modem during local dev, uncomment the `rewrites()` block in `next.config.ts`. It proxies `/cgi-bin/*` to the modem — default `http://192.168.225.1` (a Tailscale hostname alternative is included, commented out). Re-comment the block before running a static-export build.
-
-### Production Build
-
+### Production Cross-Compilation
 ```bash
-bun run build      # Static export to out/
+# Build standalone ARMv7 binary
+make build-backend
+
+# Build release package with embedded Next.js frontend
+make package
 ```
-
-The `out/` directory contains the complete static frontend. The installer (`scripts/install_rm520n.sh`) copies it onto the modem's persistent UBIFS partition at **`/usrdata/qmanager/www/`**, with CGI endpoints under **`/usrdata/qmanager/www/cgi-bin/quecmanager/`**. lighttpd serves both. See the [Deployment Guide](DEPLOYMENT.md) for the full install/OTA flow.
-
-> ℹ️ NOTE: The modem's root filesystem is UBIFS and read-only by default on stock boot. Persistent app state lives under `/usrdata/` and `/etc/qmanager/`.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Frontend Framework** | Next.js 16 (App Router, static export) |
-| **Language** | TypeScript 5, shell (bash + BusyBox applets) |
-| **UI Components** | shadcn/ui (Radix UI primitives) |
-| **Styling** | Tailwind CSS v4, OKLCH color system |
-| **Charts** | Recharts 2.15 |
-| **Forms** | React Hook Form + Zod validation |
-| **Animations** | Motion (Framer Motion) |
-| **Backend** | CGI shell scripts on vanilla Linux, run as `www-data` by lighttpd (bash available, many commands are BusyBox applets) |
-| **AT Commands** | `qcmd` wrapper serializing access (via `flock`) to `atcli_smd11` on `/dev/smd11` (direct, no socat/PTY bridge); SMS via `sms_tool` |
-| **Package Manager** | Bun |
-
----
-
-## Key Features
-
-- **Live Signal Monitoring** — Real-time RSRP, RSRQ, SINR with per-antenna values and historical charts
-- **Band & Tower Locking** — Lock specific LTE/NR bands, frequencies, or cell towers (PCI)
-- **APN Management** — Create, edit, and switch WAN/APN profiles (6 PDP contexts) with MNO presets
-- **Custom SIM Profiles** — Save and apply multi-step configurations (APN + TTL/HL + Connection Scenario + IMEI), bound to a SIM by ICCID
-- **Connection Watchdog** — Multi-tier auto-recovery (re-register, CFUN toggle, SIM/tower failover, reboot)
-- **Latency Monitoring** — Real-time ping with history and aggregated views
-- **Cell Scanner** — Active and neighbor cell scanning with a frequency calculator
-- **Antenna Alignment** — Guided per-port aiming using live signal metrics
-- **Data Usage Counter** — Kernel-sourced RX/TX accounting with persistence across reboots
-- **Network Settings** — Ethernet link speed (2.5GbE `eth0`), TTL/HL, MTU, custom DNS, IP passthrough
-- **Alerts** — Email (Gmail SMTP), SMS, and Discord-bot notifications on downtime/recovery
-- **Tailscale VPN** — Status monitoring and management
-- **System Tools** — OTA software update, AT terminal, web console, log viewer, system health check, timezone/unit preferences, scheduled reboot
-- **Dark/Light Mode** — Full theme support with OKLCH colors
-
----
-
-## Project Structure Overview
-
-```
-QManager/
-├── app/                    # Next.js App Router pages (cellular, local-network, monitoring, system-settings, ...)
-├── components/             # React components
-│   ├── ui/                 # shadcn/ui primitives
-│   ├── cellular/           # Cellular management UI
-│   ├── dashboard/          # Home dashboard cards
-│   ├── local-network/      # Network settings UI
-│   └── monitoring/         # Monitoring & alerts UI
-├── hooks/                  # Custom React hooks
-├── types/                  # TypeScript interfaces
-├── lib/                    # Utilities (auth-fetch, earfcn, csv, cn)
-├── constants/              # Static data (MNO presets, event labels)
-├── public/                 # Static assets (logo SVG)
-├── scripts/                # Backend + install/uninstall
-│   ├── install_rm520n.sh   # Installer (deploys to /usrdata/qmanager)
-│   ├── uninstall_rm520n.sh # Uninstaller
-│   ├── etc/systemd/system/ # systemd service units (qmanager-poller, -ping, -watchcat, -console, ...)
-│   ├── etc/sudoers.d/      # sudoers rules granting www-data scoped root helpers
-│   ├── etc/udev/           # udev rules (device node permissions)
-│   ├── usr/bin/            # Daemons & root helpers (poller, discord bot, etc.)
-│   ├── usr/lib/qmanager/   # Shared shell libraries (qcmd, cgi_base, helpers)
-│   └── www/cgi-bin/quecmanager/  # CGI endpoints, grouped by subsystem (at_cmd, auth, bands, cellular, ...)
-├── simpleadmin-source/     # Reference: original RM520N-GL admin panel (historical)
-└── docs/                   # This documentation
-```
-
-See [Architecture](ARCHITECTURE.md) for detailed diagrams and data flow explanations.
-</content>

@@ -1,0 +1,378 @@
+{
+  "actions": {
+    "save": "Simpan",
+    "save_settings": "Simpan Pengaturan",
+    "save_and_apply": "Simpan & terapkan",
+    "save_profile": "Simpan Profil",
+    "update": "Perbarui",
+    "saving": "Menyimpan…",
+    "saved": "Tersimpan!",
+    "cancel": "Batal",
+    "confirm": "Konfirmasi",
+    "apply": "Terapkan",
+    "close": "Tutup",
+    "retry": "Coba Lagi",
+    "dismiss": "Tutup",
+    "reboot": "Reboot",
+    "log_out": "Keluar",
+    "reboot_device": "Reboot Perangkat",
+    "reconnect_modem": "Sambungkan Ulang Modem",
+    "change_display_name": "Ubah Nama Tampilan",
+    "change_password": "Ubah Kata Sandi",
+    "toggle_theme": "Ganti Tema"
+  },
+  "motion": {
+    "label": "Animasi",
+    "system": "Sistem",
+    "full": "Penuh",
+    "reduced": "Dikurangi"
+  },
+  "state": {
+    "loading": "Memuat…",
+    "saving": "Menyimpan…",
+    "applying": "Menerapkan…",
+    "disconnecting": "Memutuskan…",
+    "reconnecting": "Menyambungkan ulang…",
+    "installing": "Menginstal…",
+    "removing": "Menghapus…",
+    "enabled": "Aktif",
+    "disabled": "Nonaktif",
+    "on": "Nyala",
+    "off": "Mati"
+  },
+  "connection": {
+    "reconnecting": "Kehilangan kontak dengan perangkat. Menyambungkan ulang…"
+  },
+  "ethernet": {
+    "page": {
+      "title": "Status Ethernet",
+      "description": "Pantau tautan ethernet host dan konfigurasikan kecepatan negosiasinya."
+    },
+    "header": {
+      "refresh": "Segarkan"
+    },
+    "loading_sr": "Memuat status Ethernet",
+    "tiles": {
+      "link": {
+        "label": "Status tautan",
+        "value_up": "Terhubung",
+        "value_down": "Terputus",
+        "value_unknown": "Tidak diketahui",
+        "caption_up": "Kabel terhubung ke port host",
+        "caption_down": "Tidak ada kabel terdeteksi di port host",
+        "caption_unknown": "Menunggu status tautan"
+      },
+      "speed": {
+        "label": "Kecepatan aktif",
+        "value_na": "N/A",
+        "caption": "Dinogosiasikan dengan perangkat lawan",
+        "caption_down": "Memerlukan tautan aktif"
+      },
+      "duplex": {
+        "label": "Dupleks",
+        "value_na": "N/A",
+        "caption": "Mode kirim dan terima",
+        "caption_down": "Memerlukan tautan aktif"
+      },
+      "negotiation": {
+        "label": "Negosiasi",
+        "value_auto": "Otomatis",
+        "value_manual": "Manual",
+        "value_na": "N/A",
+        "caption_auto": "Kecepatan ditentukan dengan perangkat lawan",
+        "caption_manual": "Dipaksa oleh batas kecepatan",
+        "caption_na": "Belum ada data kecepatan"
+      }
+    },
+    "settings": {
+      "title": "Batas kecepatan tautan",
+      "description": "Paksa port host ke kecepatan tetap. Tautan akan terputus sebentar saat negosiasi ulang.",
+      "row_label": "Batas kecepatan",
+      "placeholder": "Pilih kecepatan",
+      "applying": "Menerapkan…",
+      "saved": "Tersimpan",
+      "group_label": "Batas kecepatan",
+      "option_auto": "Otomatis (maks)",
+      "option_10": "10 Mbps",
+      "option_100": "100 Mbps",
+      "option_1000": "1 Gbps",
+      "option_2500": "2.5 Gbps",
+      "toast_success": "Kecepatan tautan diperbarui",
+      "toast_error": "Gagal mengatur kecepatan tautan",
+      "toast_confirm_error": "Tidak dapat mengonfirmasi kecepatan baru. Periksa tautan."
+    },
+    "error": {
+      "title": "Tidak dapat menjangkau modem",
+      "body": "Tidak dapat memuat status Ethernet. Coba segarkan."
+    }
+  },
+  "profile_override": {
+    "banner": "{{controls}} dikelola oleh Profil SIM Khusus <strong>{{profile_name}}</strong>."
+  },
+  "time": {
+    "just_now": "Baru saja",
+    "now": "Sekarang",
+    "unknown": "Tidak diketahui",
+    "minutes_ago_one": "{{count}} menit lalu",
+    "minutes_ago_other": "{{count}} menit lalu",
+    "hours_ago_one": "{{count}} jam lalu",
+    "hours_ago_other": "{{count}} jam lalu",
+    "days_ago_one": "{{count}} hari lalu",
+    "days_ago_other": "{{count}} hari lalu"
+  },
+  "language": {
+    "label": "Bahasa",
+    "switch_aria": "Ganti bahasa",
+    "page_title": "Bahasa",
+    "page_description": "Pilih bahasa tampilan untuk QManager. Pilihan Anda disimpan di perangkat ini.",
+    "active": "Aktif",
+    "select_prompt": "Pilih bahasa"
+  },
+  "login": {
+    "brand_label": "QManager · Manajemen Modem Quectel",
+    "welcome": "Selamat datang di QManager",
+    "password_label": "Kata sandi",
+    "submit": "Masuk",
+    "signing_in": "Sedang masuk…",
+    "locked": "Terkunci ({{seconds}})",
+    "show_password": "Tampilkan kata sandi",
+    "hide_password": "Sembunyikan kata sandi",
+    "session_expired": "Perangkat tidak dapat dijangkau terlalu lama. Masuk lagi untuk melanjutkan.",
+    "signing_in_to": "Masuk ke {{hostname}}",
+    "signing_in_as": "Masuk sebagai {{hostname}}",
+    "recovery": {
+      "toggle": "Tidak bisa masuk?",
+      "intro": "Jika Anda kehilangan kata sandi admin, ada dua jalur pemulihan:",
+      "option_reset": "Buka sesi SSH ke perangkat dan jalankan <code>qmanager_reset_password</code> untuk menetapkan kata sandi admin baru. (Memerlukan akses SSH yang sudah diaktifkan.)",
+      "option_backup": "Jika Anda menyimpan file .qmbackup, flash ulang firmware perangkat lalu pulihkan dari file tersebut."
+    },
+    "session_expired_title": "Sesi berakhir",
+    "locked_title": "Terlalu banyak percobaan",
+    "locked_body": "Terkunci selama {{seconds}} untuk melindungi perangkat.",
+    "invalid_password": "Kata sandi salah.",
+    "attempts_left_one": "Kata sandi salah. Sisa {{count}} percobaan.",
+    "attempts_left_other": "Kata sandi salah. Sisa {{count}} percobaan.",
+    "password_to_manage": "Masukkan kata sandi Anda untuk mengelola {{hostname}}.",
+    "password_to_manage_bare": "Masukkan kata sandi Anda."
+  },
+  "overview": {
+    "title": "Ringkasan Modem",
+    "tagline": "Status modem langsung",
+    "login_button": "Masuk",
+    "header": {
+      "carrier": "Carrier",
+      "network": "Jaringan",
+      "bands": "Bandwidth"
+    },
+    "status": {
+      "overall": "Keseluruhan",
+      "connectivity": "Internet",
+      "temperature": "Suhu"
+    },
+    "actions": {
+      "login": "Masuk untuk mengelola",
+      "theme_toggle_aria": "Ganti tema",
+      "theme_light": "Terang",
+      "theme_dark": "Gelap",
+      "theme_system": "Sistem"
+    },
+    "field": {
+      "carrier": "Carrier",
+      "aggregation": "Band",
+      "uptime": "Waktu Aktif",
+      "temperature": "Suhu",
+      "temp_warn": "Berjalan panas",
+      "temp_danger": "Terlalu panas",
+      "empty": "—"
+    },
+    "aggregation": {
+      "band_with_bw": "{{band}} ({{bandwidth}} MHz)",
+      "band_only": "{{band}}",
+      "pci_label": "PCI"
+    },
+    "bands": {
+      "toggle_multi_band": "Band aktif",
+      "toggle_single_band": "Carrier tunggal",
+      "section": "Band",
+      "count_one": "{{count}} aktif",
+      "count_other": "{{count}} aktif",
+      "bandwidth": "{{bandwidth}} MHz",
+      "rsrp_unit": "{{rsrp}} dBm",
+      "section_count_one": "Pembawa · {{count}} teragregasi",
+      "section_count_other": "Pembawa · {{count}} teragregasi"
+    },
+    "metrics": {
+      "rsrp": "RSRP",
+      "rsrq": "RSRQ",
+      "sinr": "SINR",
+      "rsrp_value": "{{rsrp}} dBm",
+      "rsrq_value": "{{rsrq}} dB",
+      "sinr_value": "{{sinr}} dB",
+      "toggle_aria": "Ganti metrik sinyal band"
+    },
+    "signal": {
+      "dual": "{{rsrp}} dBm · {{sinr}} dB SINR",
+      "rsrp_only": "{{rsrp}} dBm",
+      "sinr_only": "{{sinr}} dB SINR",
+      "none": "—"
+    },
+    "quality": {
+      "overall_label": "Keseluruhan",
+      "excellent": "Sangat Baik",
+      "good": "Baik",
+      "fair": "Cukup",
+      "poor": "Buruk",
+      "bad": "Sangat lemah",
+      "none": "Tidak ada sinyal"
+    },
+    "connection": {
+      "connected": "Terhubung",
+      "searching": "Mencari",
+      "limited": "Terbatas",
+      "inactive": "Tidak aktif",
+      "error": "Kesalahan",
+      "disconnected": "Terputus",
+      "unknown": "Tidak diketahui",
+      "modem_unreachable": "Offline"
+    },
+    "stale_indicator": "Data mungkin sudah kedaluwarsa",
+    "redirecting_setup": "Mengalihkan ke pengaturan pertama…",
+    "loading_status": "Memuat status modem…",
+    "empty": {
+      "title": "Status modem tidak tersedia",
+      "subtitle": "Modem belum melapor selama satu menit. Mungkin sedang memulai ulang — pembacaan akan pulih sendiri.",
+      "fetch_error": "Tidak dapat menjangkau perangkat.",
+      "retry": "Coba lagi"
+    },
+    "uptime": {
+      "days": "{{days}}h {{hours}}j",
+      "hours": "{{hours}}j {{minutes}}m",
+      "minutes": "{{minutes}}m"
+    },
+    "copyright": "© {{year}} QManager",
+    "stale": {
+      "banner": "Pembacaan sudah <age>{{age}}</age> yang lalu. Perangkat mungkin sibuk."
+    },
+    "footer": {
+      "updated_ago": "diperbarui {{age}} lalu",
+      "retrying": "mencoba lagi setiap {{seconds}} dtk",
+      "signin_works": "masuk tetap bisa"
+    },
+    "loading_chip": "Membaca",
+    "unreachable": {
+      "banner": "Modem sedang tidak merespons. Mungkin sedang sibuk atau memulai ulang."
+    }
+  },
+  "sim_swap": {
+    "title": "SIM baru terdeteksi",
+    "carrier_unknown": "Operator tidak diketahui",
+    "no_phone_number": "Nomor belum tersedia",
+    "description_match": "Profil <strong>{{profile_name}}</strong> cocok dengan SIM ini.",
+    "description_no_match": "Tidak ada profil tersimpan yang cocok dengan SIM ini.",
+    "apply_profile": "Terapkan Profil",
+    "create_profile": "Buat Profil",
+    "dismiss_aria": "Hentikan peringatan untuk SIM ini",
+    "toast_dismissed": "Peringatan dimatikan untuk SIM ini",
+    "toast_dismissed_detail": "SIM lain tetap memunculkan peringatan. Aktifkan kembali di Pengaturan Sistem → SIM Terdaftar.",
+    "toast_dismiss_failed": "Gagal mematikan peringatan untuk SIM ini",
+    "dismiss_dialog": {
+      "title": "Hentikan peringatan untuk SIM ini?",
+      "description": "QManager hanya akan berhenti menampilkan peringatan SIM baru untuk SIM {{carrier}} ini. Semua SIM lain tetap memunculkan peringatan, dan Anda dapat mengaktifkannya kembali kapan saja dari Pengaturan Sistem → SIM Terdaftar.",
+      "sim_label": "SIM ini (ICCID)",
+      "confirm": "Hentikan peringatan",
+      "dismissing": "Mematikan…"
+    }
+  },
+  "trafficEngine": {
+    "page": {
+      "title": "Mesin Lalu Lintas",
+      "description": "Lewati pembatasan DPI ISP pada streaming video dan lalu lintas lainnya dengan mesin bypass bawaan."
+    },
+    "load_error": "Gagal memuat status mesin.",
+    "binary_op_failed": "Operasi biner mesin gagal",
+    "tabs": {
+      "video_optimizer": "Optimasi Video",
+      "masquerade": "Penyamaran Lalu Lintas"
+    },
+    "status": {
+      "title": "Status Mesin",
+      "description": "Status langsung mesin bypass lalu lintas.",
+      "state": "Status mesin",
+      "running": "Berjalan",
+      "stopped": "Berhenti",
+      "restarting": "Memulai ulang",
+      "error": "Kesalahan",
+      "uptime": "Aktif selama",
+      "packets": "Paket diproses",
+      "packets_per_sec": "{{n}} pkt/dtk",
+      "domains": "Domain dimuat",
+      "sni": "SNI palsu",
+      "rule": "Aturan redirect",
+      "rule_active": "Aktif",
+      "rule_inactive": "Tidak diterapkan",
+      "binary_installed": "Biner mesin terpasang",
+      "binary_missing": "Biner mesin belum terpasang",
+      "masq_scope": "Cakupan",
+      "masq_all": "Semua koneksi TCP 80/443"
+    },
+    "uninstall": {
+      "button": "Uninstal biner mesin",
+      "title": "Uninstal biner mesin?",
+      "description": "Tindakan ini akan menghentikan Traffic Engine (jika sedang berjalan) dan menghapus biner mesin. Apakah Anda yakin ingin melanjutkan? Biner dapat dipasang kembali nanti jika Anda berubah pikiran.",
+      "confirm": "Uninstal",
+      "cancel": "Batal"
+    },
+    "enable": {
+      "video_optimizer": "Aktifkan Optimasi Video",
+      "masquerade": "Aktifkan Penyamaran Lalu Lintas",
+      "description_vo": "Mendesinkronkan koneksi ke domain streaming dan video di daftar host, mengalahkan pembatasan DPI ISP.",
+      "description_masq": "Mengirim ClientHello TLS palsu dengan SNI tipuan untuk setiap koneksi, menyembunyikan tujuan asli dari DPI.",
+      "toast_enabled_vo": "Optimasi Video diaktifkan",
+      "toast_disabled_vo": "Optimasi Video dinonaktifkan",
+      "toast_enabled_masq": "Penyamaran Lalu Lintas diaktifkan",
+      "toast_disabled_masq": "Penyamaran Lalu Lintas dinonaktifkan",
+      "toast_error": "Gagal menyimpan pengaturan mesin"
+    },
+    "masquerade": {},
+    "hostlist": {
+      "title": "Domain video",
+      "description": "Domain yang mendapat perlakuan desync. Subdomain dari domain yang terdaftar ikut cocok secara otomatis. Mesin memuat ulang daftar ini secara langsung, perubahan langsung berlaku.",
+      "empty": "Belum ada domain — tambahkan satu untuk memulai.",
+      "invalid": "Masukkan domain yang valid (huruf, angka, titik, tanda hubung).",
+      "duplicate": "Domain ini sudah ada di daftar.",
+      "limit": "Daftar maksimal berisi 300 domain.",
+      "add": "Tambah domain",
+      "remove": "Hapus {{domain}}",
+      "saved": "Daftar host tersimpan",
+      "save_failed": "Gagal menyimpan daftar domain"
+    },
+    "verify": {
+      "title": "Uji bypass",
+      "description": "Jalankan tes kecepatan dua fase — tanpa mesin, lalu dengan mesin — untuk mengukur peningkatan bypass.",
+      "run": "Jalankan tes",
+      "running": "Menguji…",
+      "timeout": "Tes tidak selesai tepat waktu.",
+      "error": "Tes tidak dapat dimulai",
+      "needs_binary": "Pasang dulu biner mesin.",
+      "improvement": "Peningkatan",
+      "without": "Tanpa bypass",
+      "with": "Dengan bypass",
+      "throttled": "dibatasi",
+      "unthrottled": "tidak dibatasi"
+    },
+    "takeover": {
+      "title": "Beralih ke {{mode}}?",
+      "description": "Hanya satu mode yang dapat berjalan sekaligus. Mengaktifkan mode ini menonaktifkan mode lainnya.",
+      "confirm": "Beralih",
+      "cancel": "Batal"
+    },
+    "onboarding": {
+      "title": "Pasang biner mesin",
+      "description": "Mesin lalu lintas memerlukan biner tpws, diunduh dari rilis resmi zapret dan diverifikasi dengan checksum.",
+      "install": "Unduh & pasang",
+      "installing": "Mengunduh…",
+      "done": "Mesin siap",
+      "error": "Pemasangan gagal: {{detail}}"
+    }
+  }
+}

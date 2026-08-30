@@ -1,0 +1,197 @@
+package platform
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+// NetworkStats holds interface transfer counters from /proc/net/dev.
+type NetworkStats struct {
+	Interface string `json:"interface"`
+	RxBytes   uint64 `json:"rx_bytes"`
+	RxPackets uint64 `json:"rx_packets"`
+	RxErrors  uint64 `json:"rx_errors"`
+	TxBytes   uint64 `json:"tx_bytes"`
+	TxPackets uint64 `json:"tx_packets"`
+	TxErrors  uint64 `json:"tx_errors"`
+}
+
+// SystemMetrics holds memory, CPU temperature, and uptime metrics.
+type SystemMetrics struct {
+	UptimeSeconds float64                 `json:"uptime_seconds"`
+	MemTotalKB    uint64                  `json:"mem_total_kb"`
+	MemFreeKB     uint64                  `json:"mem_free_kb"`
+	MemAvailKB    uint64                  `json:"mem_available_kb"`
+	MemUsagePct   float64                 `json:"mem_usage_pct"`
+	CpuTempC      float64                 `json:"cpu_temp_c"`
+	Network       map[string]NetworkStats `json:"network"`
+}
+
+// ReadUptime reads /proc/uptime in seconds.
+func ReadUptime(path string) (float64, error) {
+	if path == "" {
+		path = "/proc/uptime"
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 1 {
+		return 0, fmt.Errorf("invalid uptime format")
+	}
+	return strconv.ParseFloat(fields[0], 64)
+}
+
+// ReadMemInfo reads /proc/meminfo.
+func ReadMemInfo(path string) (total, free, avail uint64, err error) {
+	if path == "" {
+		path = "/proc/meminfo"
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		valFields := strings.Fields(parts[1])
+		if len(valFields) == 0 {
+			continue
+		}
+		val, _ := strconv.ParseUint(valFields[0], 10, 64)
+
+		switch key {
+		case "MemTotal":
+			total = val
+		case "MemFree":
+			free = val
+		case "MemAvailable":
+			avail = val
+		}
+	}
+	if avail == 0 && free > 0 {
+		avail = free
+	}
+	return total, free, avail, nil
+}
+
+// ReadCpuTemp searches /sys/class/thermal or hwmon for modem CPU temperature.
+func ReadCpuTemp() float64 {
+	// 1. Check thermal_zone
+	zones, err := filepath.Glob("/sys/class/thermal/thermal_zone*/temp")
+	if err == nil {
+		for _, z := range zones {
+			if data, err := os.ReadFile(z); err == nil {
+				val, err := strconv.ParseFloat(strings.TrimSpace(string(data)), 64)
+				if err == nil && val > 0 {
+					if val > 1000 {
+						return val / 1000.0
+					}
+					return val
+				}
+			}
+		}
+	}
+
+	// 2. Check hwmon
+	hwmon, err := filepath.Glob("/sys/class/hwmon/hwmon*/temp1_input")
+	if err == nil {
+		for _, h := range hwmon {
+			if data, err := os.ReadFile(h); err == nil {
+				val, err := strconv.ParseFloat(strings.TrimSpace(string(data)), 64)
+				if err == nil && val > 0 {
+					if val > 1000 {
+						return val / 1000.0
+					}
+					return val
+				}
+			}
+		}
+	}
+
+	return 0.0
+}
+
+// ReadNetworkStats parses /proc/net/dev.
+func ReadNetworkStats(path string) (map[string]NetworkStats, error) {
+	if path == "" {
+		path = "/proc/net/dev"
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	stats := make(map[string]NetworkStats)
+	scanner := bufio.NewScanner(file)
+	lineIdx := 0
+
+	for scanner.Scan() {
+		lineIdx++
+		if lineIdx <= 2 { // Skip header lines
+			continue
+		}
+		line := scanner.Text()
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		iface := strings.TrimSpace(parts[0])
+		fields := strings.Fields(parts[1])
+		if len(fields) < 16 {
+			continue
+		}
+
+		rxBytes, _ := strconv.ParseUint(fields[0], 10, 64)
+		rxPackets, _ := strconv.ParseUint(fields[1], 10, 64)
+		rxErrors, _ := strconv.ParseUint(fields[2], 10, 64)
+		txBytes, _ := strconv.ParseUint(fields[8], 10, 64)
+		txPackets, _ := strconv.ParseUint(fields[9], 10, 64)
+		txErrors, _ := strconv.ParseUint(fields[10], 10, 64)
+
+		stats[iface] = NetworkStats{
+			Interface: iface,
+			RxBytes:   rxBytes,
+			RxPackets: rxPackets,
+			RxErrors:  rxErrors,
+			TxBytes:   txBytes,
+			TxPackets: txPackets,
+			TxErrors:  txErrors,
+		}
+	}
+
+	return stats, nil
+}
+
+// GetSystemMetrics compiles all system status counters into one object.
+func GetSystemMetrics() SystemMetrics {
+	m := SystemMetrics{
+		Network: make(map[string]NetworkStats),
+	}
+
+	m.UptimeSeconds, _ = ReadUptime("")
+	m.MemTotalKB, m.MemFreeKB, m.MemAvailKB, _ = ReadMemInfo("")
+	if m.MemTotalKB > 0 {
+		used := m.MemTotalKB - m.MemAvailKB
+		m.MemUsagePct = (float64(used) / float64(m.MemTotalKB)) * 100.0
+	}
+	m.CpuTempC = ReadCpuTemp()
+	if net, err := ReadNetworkStats(""); err == nil {
+		m.Network = net
+	}
+
+	return m
+}

@@ -1,0 +1,22 @@
+[Unit]
+Description=QManager Single-Binary Web & Telemetry Daemon
+After=network.target local-fs.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/usrdata/qmanager
+ExecStart=/usrdata/qmanager/qmanager
+Restart=always
+RestartSec=5s
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+
+# Hardware watchdog & graceful kill
+TimeoutStopSec=10s
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,378 @@
+{
+  "actions": {
+    "save": "Save",
+    "save_settings": "Save Settings",
+    "save_and_apply": "Save & apply",
+    "save_profile": "Save Profile",
+    "update": "Update",
+    "saving": "Saving…",
+    "saved": "Saved!",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "apply": "Apply",
+    "close": "Close",
+    "retry": "Retry",
+    "dismiss": "Dismiss",
+    "reboot": "Reboot",
+    "log_out": "Log out",
+    "reboot_device": "Reboot Device",
+    "reconnect_modem": "Reconnect Modem",
+    "change_display_name": "Change Display Name",
+    "change_password": "Change Password",
+    "toggle_theme": "Toggle Theme"
+  },
+  "motion": {
+    "label": "Animations",
+    "system": "System",
+    "full": "Full",
+    "reduced": "Reduced"
+  },
+  "state": {
+    "loading": "Loading…",
+    "saving": "Saving…",
+    "applying": "Applying…",
+    "disconnecting": "Disconnecting…",
+    "reconnecting": "Reconnecting…",
+    "installing": "Installing…",
+    "removing": "Removing…",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "on": "On",
+    "off": "Off"
+  },
+  "connection": {
+    "reconnecting": "Lost contact with the device. Reconnecting…"
+  },
+  "ethernet": {
+    "page": {
+      "title": "Ethernet Status",
+      "description": "Monitor the host ethernet link and configure its negotiated speed."
+    },
+    "header": {
+      "refresh": "Refresh"
+    },
+    "loading_sr": "Loading ethernet status",
+    "tiles": {
+      "link": {
+        "label": "Link state",
+        "value_up": "Connected",
+        "value_down": "Disconnected",
+        "value_unknown": "Unknown",
+        "caption_up": "Cable connected to the host port",
+        "caption_down": "No cable detected on the host port",
+        "caption_unknown": "Waiting for link state"
+      },
+      "speed": {
+        "label": "Active speed",
+        "value_na": "N/A",
+        "caption": "Negotiated with the peer",
+        "caption_down": "Needs an active link"
+      },
+      "duplex": {
+        "label": "Duplex",
+        "value_na": "N/A",
+        "caption": "Transmit and receive mode",
+        "caption_down": "Needs an active link"
+      },
+      "negotiation": {
+        "label": "Negotiation",
+        "value_auto": "Automatic",
+        "value_manual": "Manual",
+        "value_na": "N/A",
+        "caption_auto": "Speed decided with the peer",
+        "caption_manual": "Forced by the speed limit",
+        "caption_na": "No speed data yet"
+      }
+    },
+    "settings": {
+      "title": "Link speed limit",
+      "description": "Force the host port to a fixed speed. The link drops briefly while it renegotiates.",
+      "row_label": "Speed limit",
+      "placeholder": "Select speed",
+      "applying": "Applying…",
+      "saved": "Saved",
+      "group_label": "Speed limit",
+      "option_auto": "Auto (max)",
+      "option_10": "10 Mbps",
+      "option_100": "100 Mbps",
+      "option_1000": "1 Gbps",
+      "option_2500": "2.5 Gbps",
+      "toast_success": "Link speed updated",
+      "toast_error": "Failed to set link speed",
+      "toast_confirm_error": "Couldn't confirm the new speed. Check the link."
+    },
+    "error": {
+      "title": "Unable to reach the modem",
+      "body": "Couldn't load ethernet status. Try refreshing."
+    }
+  },
+  "profile_override": {
+    "banner": "{{controls}} is managed by the <strong>{{profile_name}}</strong> Custom SIM Profile."
+  },
+  "time": {
+    "just_now": "Just now",
+    "now": "Now",
+    "unknown": "Unknown",
+    "minutes_ago_one": "{{count}}m ago",
+    "minutes_ago_other": "{{count}}m ago",
+    "hours_ago_one": "{{count}}h ago",
+    "hours_ago_other": "{{count}}h ago",
+    "days_ago_one": "{{count}}d ago",
+    "days_ago_other": "{{count}}d ago"
+  },
+  "language": {
+    "label": "Language",
+    "switch_aria": "Switch language",
+    "page_title": "Language",
+    "page_description": "Choose the display language for QManager. Your selection is saved on this device.",
+    "active": "Active",
+    "select_prompt": "Select a language"
+  },
+  "login": {
+    "brand_label": "QManager · Quectel Modem Management",
+    "welcome": "Welcome to QManager",
+    "password_label": "Password",
+    "submit": "Log in",
+    "signing_in": "Signing in…",
+    "locked": "Locked ({{seconds}})",
+    "show_password": "Show password",
+    "hide_password": "Hide password",
+    "session_expired": "The device was unreachable for too long. Log in again to continue.",
+    "signing_in_to": "Signing in to {{hostname}}",
+    "signing_in_as": "Sign in as {{hostname}}",
+    "recovery": {
+      "toggle": "Can't sign in?",
+      "intro": "If you've lost the admin password, you have two recovery paths:",
+      "option_reset": "Open an SSH session to the device and run <code>qmanager_reset_password</code> to set a new admin password. (Requires SSH access to be enabled.)",
+      "option_backup": "If you saved a .qmbackup file, re-flash the device firmware and restore from it."
+    },
+    "session_expired_title": "Session ended",
+    "locked_title": "Too many attempts",
+    "locked_body": "Locked for {{seconds}} to protect the device.",
+    "invalid_password": "Incorrect password.",
+    "attempts_left_one": "Incorrect password. {{count}} attempt left.",
+    "attempts_left_other": "Incorrect password. {{count}} attempts left.",
+    "password_to_manage": "Enter your password to manage {{hostname}}.",
+    "password_to_manage_bare": "Enter your password."
+  },
+  "overview": {
+    "title": "Modem Overview",
+    "tagline": "Live modem status",
+    "login_button": "Sign in",
+    "header": {
+      "carrier": "Carrier",
+      "network": "Network",
+      "bands": "Bandwidth"
+    },
+    "status": {
+      "overall": "Overall",
+      "connectivity": "Internet",
+      "temperature": "Temperature"
+    },
+    "actions": {
+      "login": "Sign in to manage",
+      "theme_toggle_aria": "Toggle theme",
+      "theme_light": "Light",
+      "theme_dark": "Dark",
+      "theme_system": "System"
+    },
+    "field": {
+      "carrier": "Carrier",
+      "aggregation": "Bands",
+      "uptime": "Uptime",
+      "temperature": "Temp",
+      "temp_warn": "Running hot",
+      "temp_danger": "Overheating",
+      "empty": "—"
+    },
+    "aggregation": {
+      "band_with_bw": "{{band}} ({{bandwidth}} MHz)",
+      "band_only": "{{band}}",
+      "pci_label": "PCI"
+    },
+    "bands": {
+      "toggle_multi_band": "Active bands",
+      "toggle_single_band": "Single carrier",
+      "section": "Bands",
+      "count_one": "{{count}} active",
+      "count_other": "{{count}} active",
+      "bandwidth": "{{bandwidth}} MHz",
+      "rsrp_unit": "{{rsrp}} dBm",
+      "section_count_one": "Carrier · {{count}} aggregated",
+      "section_count_other": "Carriers · {{count}} aggregated"
+    },
+    "metrics": {
+      "rsrp": "RSRP",
+      "rsrq": "RSRQ",
+      "sinr": "SINR",
+      "rsrp_value": "{{rsrp}} dBm",
+      "rsrq_value": "{{rsrq}} dB",
+      "sinr_value": "{{sinr}} dB",
+      "toggle_aria": "Switch band signal metric"
+    },
+    "signal": {
+      "dual": "{{rsrp}} dBm · {{sinr}} dB SINR",
+      "rsrp_only": "{{rsrp}} dBm",
+      "sinr_only": "{{sinr}} dB SINR",
+      "none": "—"
+    },
+    "quality": {
+      "overall_label": "Overall",
+      "excellent": "Excellent",
+      "good": "Good",
+      "fair": "Fair",
+      "poor": "Poor",
+      "bad": "Very weak",
+      "none": "No signal"
+    },
+    "connection": {
+      "connected": "Connected",
+      "searching": "Searching",
+      "limited": "Limited",
+      "inactive": "Inactive",
+      "error": "Error",
+      "disconnected": "Disconnected",
+      "unknown": "Unknown",
+      "modem_unreachable": "Offline"
+    },
+    "stale_indicator": "Data may be outdated",
+    "redirecting_setup": "Redirecting to first-time setup…",
+    "loading_status": "Loading modem status…",
+    "empty": {
+      "title": "Modem status unavailable",
+      "subtitle": "The modem has not reported in for a minute. It may be rebooting — the reading resumes on its own.",
+      "fetch_error": "Couldn't reach the device.",
+      "retry": "Try again"
+    },
+    "uptime": {
+      "days": "{{days}}d {{hours}}h",
+      "hours": "{{hours}}h {{minutes}}m",
+      "minutes": "{{minutes}}m"
+    },
+    "copyright": "© {{year}} QManager",
+    "stale": {
+      "banner": "Readings are <age>{{age}}</age> old. The device may be busy."
+    },
+    "footer": {
+      "updated_ago": "updated {{age}} ago",
+      "retrying": "retrying every {{seconds}}s",
+      "signin_works": "signing in still works"
+    },
+    "loading_chip": "Reading",
+    "unreachable": {
+      "banner": "The modem isn't responding right now. It may be busy or restarting."
+    }
+  },
+  "sim_swap": {
+    "title": "New SIM card detected",
+    "carrier_unknown": "Unknown carrier",
+    "no_phone_number": "No number provisioned",
+    "description_match": "Profile <strong>{{profile_name}}</strong> matches this SIM.",
+    "description_no_match": "No saved profile matches this SIM.",
+    "apply_profile": "Apply Profile",
+    "create_profile": "Create Profile",
+    "dismiss_aria": "Stop alerting for this SIM",
+    "toast_dismissed": "Alert turned off for this SIM",
+    "toast_dismissed_detail": "Other SIMs still raise the new-SIM alert. Turn this one back on in System Settings → Tracked SIMs.",
+    "toast_dismiss_failed": "Couldn't turn off the alert for this SIM",
+    "dismiss_dialog": {
+      "title": "Stop alerting for this SIM?",
+      "description": "QManager will stop showing the new-SIM alert for this {{carrier}} SIM only. Every other SIM still raises the alert, and you can turn this one back on any time from System Settings → Tracked SIMs.",
+      "sim_label": "This SIM (ICCID)",
+      "confirm": "Stop alerting",
+      "dismissing": "Turning off…"
+    }
+  },
+  "trafficEngine": {
+    "page": {
+      "title": "Traffic Engine",
+      "description": "Bypass ISP DPI throttling of video streaming and other traffic with the built-in bypass engine."
+    },
+    "load_error": "Failed to load the engine status.",
+    "binary_op_failed": "Engine binary operation failed",
+    "tabs": {
+      "video_optimizer": "Video Optimizer",
+      "masquerade": "Traffic Masquerade"
+    },
+    "status": {
+      "title": "Engine Status",
+      "description": "Live state of the traffic bypass engine.",
+      "state": "Engine state",
+      "running": "Running",
+      "stopped": "Stopped",
+      "restarting": "Restarting",
+      "error": "Error",
+      "uptime": "Uptime",
+      "packets": "Packets processed",
+      "packets_per_sec": "{{n}} pkt/s",
+      "domains": "Domains loaded",
+      "sni": "Spoofed SNI",
+      "rule": "Redirect rule",
+      "rule_active": "Active",
+      "rule_inactive": "Not applied",
+      "binary_installed": "Engine binary installed",
+      "binary_missing": "Engine binary not installed",
+      "masq_scope": "Scope",
+      "masq_all": "Every TCP 80/443 connection"
+    },
+    "uninstall": {
+      "button": "Uninstall engine binary",
+      "title": "Uninstall engine binary?",
+      "description": "This action stops the Traffic Engine (if running) and removes the engine binary. Are you sure you want to proceed? It can be reinstalled at a later time if you change your mind.",
+      "confirm": "Uninstall",
+      "cancel": "Cancel"
+    },
+    "enable": {
+      "video_optimizer": "Enable Video Optimizer",
+      "masquerade": "Enable Traffic Masquerade",
+      "description_vo": "Desynchronizes connections to streaming and video domains in the hostlist, defeating ISP deep-packet-inspection throttling.",
+      "description_masq": "Sends a fake TLS ClientHello with a spoofed SNI for every connection, hiding the real destination from DPI.",
+      "toast_enabled_vo": "Video Optimizer enabled",
+      "toast_disabled_vo": "Video Optimizer disabled",
+      "toast_enabled_masq": "Traffic Masquerade enabled",
+      "toast_disabled_masq": "Traffic Masquerade disabled",
+      "toast_error": "Failed to save engine settings"
+    },
+    "masquerade": {},
+    "hostlist": {
+      "title": "Video domains",
+      "description": "Domains that receive desync treatment. Subdomains of a listed domain match automatically. The engine hot-reloads this list, so changes apply immediately.",
+      "empty": "No domains yet — add one to get started.",
+      "invalid": "Enter a valid domain (letters, digits, dots, dashes).",
+      "duplicate": "This domain is already in the list.",
+      "limit": "The list can hold at most 300 domains.",
+      "add": "Add domain",
+      "remove": "Remove {{domain}}",
+      "saved": "Hostlist saved",
+      "save_failed": "Couldn't save the hostlist"
+    },
+    "verify": {
+      "title": "Test bypass",
+      "description": "Run a two-phase speed test — without the engine, then with it — to measure the bypass improvement.",
+      "run": "Run test",
+      "running": "Testing…",
+      "timeout": "The test did not finish in time.",
+      "error": "The test could not be started",
+      "needs_binary": "Install the engine binary first.",
+      "improvement": "Improvement",
+      "without": "Without bypass",
+      "with": "With bypass",
+      "throttled": "throttled",
+      "unthrottled": "not throttled"
+    },
+    "takeover": {
+      "title": "Switch to {{mode}}?",
+      "description": "Only one mode can run at a time. Enabling this mode disables the other.",
+      "confirm": "Switch",
+      "cancel": "Cancel"
+    },
+    "onboarding": {
+      "title": "Install engine binary",
+      "description": "The traffic engine needs its tpws binary, downloaded from the official zapret release and verified by checksum.",
+      "install": "Download & install",
+      "installing": "Downloading…",
+      "done": "Engine ready",
+      "error": "Install failed: {{detail}}"
+    }
+  }
+}

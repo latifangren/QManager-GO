@@ -1,0 +1,378 @@
+{
+  "actions": {
+    "save": "保存",
+    "save_settings": "保存设置",
+    "save_and_apply": "保存并应用",
+    "save_profile": "保存配置",
+    "update": "更新",
+    "saving": "保存中…",
+    "saved": "已保存！",
+    "cancel": "取消",
+    "confirm": "确认",
+    "apply": "应用",
+    "close": "关闭",
+    "retry": "重试",
+    "dismiss": "关闭",
+    "reboot": "重启",
+    "log_out": "退出登录",
+    "reboot_device": "重启设备",
+    "reconnect_modem": "重新连接调制解调器",
+    "change_display_name": "更改显示名称",
+    "change_password": "更改密码",
+    "toggle_theme": "切换主题"
+  },
+  "motion": {
+    "label": "动画",
+    "system": "跟随系统",
+    "full": "完整",
+    "reduced": "减弱"
+  },
+  "state": {
+    "loading": "加载中…",
+    "saving": "保存中…",
+    "applying": "应用中…",
+    "disconnecting": "断开连接中…",
+    "reconnecting": "重新连接中…",
+    "installing": "正在安装…",
+    "removing": "正在删除…",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "on": "开",
+    "off": "关"
+  },
+  "connection": {
+    "reconnecting": "与设备失去联系，正在重新连接…"
+  },
+  "ethernet": {
+    "page": {
+      "title": "以太网状态",
+      "description": "监控主机以太网链路并配置协商速度。"
+    },
+    "header": {
+      "refresh": "刷新"
+    },
+    "loading_sr": "正在加载以太网状态",
+    "tiles": {
+      "link": {
+        "label": "链路状态",
+        "value_up": "已连接",
+        "value_down": "已断开",
+        "value_unknown": "未知",
+        "caption_up": "线缆已连接到主机端口",
+        "caption_down": "未在主机端口检测到线缆",
+        "caption_unknown": "等待链路状态"
+      },
+      "speed": {
+        "label": "当前速度",
+        "value_na": "N/A",
+        "caption": "与对端协商确定",
+        "caption_down": "需要活动链路"
+      },
+      "duplex": {
+        "label": "双工模式",
+        "value_na": "N/A",
+        "caption": "收发模式",
+        "caption_down": "需要活动链路"
+      },
+      "negotiation": {
+        "label": "协商模式",
+        "value_auto": "自动",
+        "value_manual": "手动",
+        "value_na": "N/A",
+        "caption_auto": "速度由对端协商决定",
+        "caption_manual": "由速度限制强制",
+        "caption_na": "暂无速度数据"
+      }
+    },
+    "settings": {
+      "title": "链路速度限制",
+      "description": "将主机端口强制为固定速度。重新协商期间链路会短暂断开。",
+      "row_label": "速度限制",
+      "placeholder": "选择速度",
+      "applying": "正在应用…",
+      "saved": "已保存",
+      "group_label": "速度限制",
+      "option_auto": "自动（最大）",
+      "option_10": "10 Mbps",
+      "option_100": "100 Mbps",
+      "option_1000": "1 Gbps",
+      "option_2500": "2.5 Gbps",
+      "toast_success": "链路速度已更新",
+      "toast_error": "设置链路速度失败",
+      "toast_confirm_error": "无法确认新速度。请检查链路。"
+    },
+    "error": {
+      "title": "无法连接调制解调器",
+      "body": "无法加载以太网状态。请尝试刷新。"
+    }
+  },
+  "profile_override": {
+    "banner": "{{controls}} 由自定义 SIM 配置文件 <strong>{{profile_name}}</strong> 管理。"
+  },
+  "time": {
+    "just_now": "刚刚",
+    "now": "现在",
+    "unknown": "未知",
+    "minutes_ago_one": "{{count}} 分钟前",
+    "minutes_ago_other": "{{count}} 分钟前",
+    "hours_ago_one": "{{count}} 小时前",
+    "hours_ago_other": "{{count}} 小时前",
+    "days_ago_one": "{{count}} 天前",
+    "days_ago_other": "{{count}} 天前"
+  },
+  "language": {
+    "label": "语言",
+    "switch_aria": "切换语言",
+    "page_title": "语言",
+    "page_description": "选择 QManager 的显示语言。您的选择将保存在本设备上。",
+    "active": "活动",
+    "select_prompt": "选择语言"
+  },
+  "login": {
+    "brand_label": "QManager · Quectel 调制解调器管理",
+    "welcome": "欢迎使用 QManager",
+    "password_label": "密码",
+    "submit": "登录",
+    "signing_in": "登录中…",
+    "locked": "已锁定 ({{seconds}})",
+    "show_password": "显示密码",
+    "hide_password": "隐藏密码",
+    "session_expired": "设备长时间无法访问。请重新登录以继续。",
+    "signing_in_to": "正在登录到 {{hostname}}",
+    "signing_in_as": "以 {{hostname}} 登录",
+    "recovery": {
+      "toggle": "无法登录?",
+      "intro": "如果您忘记了管理员密码,有两种恢复方式:",
+      "option_reset": "通过 SSH 连接到设备并运行 <code>qmanager_reset_password</code> 以设置新的管理员密码。(需要先启用 SSH 访问。)",
+      "option_backup": "如果您保存了 .qmbackup 文件,请重新刷写设备固件,然后从该文件中恢复。"
+    },
+    "session_expired_title": "会话已结束",
+    "locked_title": "尝试次数过多",
+    "locked_body": "已锁定 {{seconds}}，以保护设备。",
+    "invalid_password": "密码错误。",
+    "attempts_left_one": "密码错误。还剩 {{count}} 次尝试。",
+    "attempts_left_other": "密码错误。还剩 {{count}} 次尝试。",
+    "password_to_manage": "输入密码以管理 {{hostname}}。",
+    "password_to_manage_bare": "请输入密码。"
+  },
+  "overview": {
+    "title": "调制解调器概览",
+    "tagline": "实时调制解调器状态",
+    "login_button": "登录",
+    "header": {
+      "carrier": "运营商",
+      "network": "网络",
+      "bands": "带宽"
+    },
+    "status": {
+      "overall": "总体",
+      "connectivity": "互联网",
+      "temperature": "温度"
+    },
+    "actions": {
+      "login": "登录以管理",
+      "theme_toggle_aria": "切换主题",
+      "theme_light": "浅色",
+      "theme_dark": "深色",
+      "theme_system": "跟随系统"
+    },
+    "field": {
+      "carrier": "运营商",
+      "aggregation": "频段",
+      "uptime": "运行时间",
+      "temperature": "温度",
+      "temp_warn": "温度偏高",
+      "temp_danger": "温度过高",
+      "empty": "—"
+    },
+    "aggregation": {
+      "band_with_bw": "{{band}} ({{bandwidth}} MHz)",
+      "band_only": "{{band}}",
+      "pci_label": "PCI"
+    },
+    "bands": {
+      "toggle_multi_band": "活动频段",
+      "toggle_single_band": "单载波",
+      "section": "频段",
+      "count_one": "{{count}} 个活跃",
+      "count_other": "{{count}} 个活跃",
+      "bandwidth": "{{bandwidth}} MHz",
+      "rsrp_unit": "{{rsrp}} dBm",
+      "section_count_one": "载波 · {{count}} 个聚合",
+      "section_count_other": "载波 · {{count}} 个聚合"
+    },
+    "metrics": {
+      "rsrp": "RSRP",
+      "rsrq": "RSRQ",
+      "sinr": "SINR",
+      "rsrp_value": "{{rsrp}} dBm",
+      "rsrq_value": "{{rsrq}} dB",
+      "sinr_value": "{{sinr}} dB",
+      "toggle_aria": "切换频段信号指标"
+    },
+    "signal": {
+      "dual": "{{rsrp}} dBm · {{sinr}} dB SINR",
+      "rsrp_only": "{{rsrp}} dBm",
+      "sinr_only": "{{sinr}} dB SINR",
+      "none": "—"
+    },
+    "quality": {
+      "overall_label": "总体",
+      "excellent": "极佳",
+      "good": "良好",
+      "fair": "一般",
+      "poor": "较差",
+      "bad": "极弱",
+      "none": "无信号"
+    },
+    "connection": {
+      "connected": "已连接",
+      "searching": "搜索中",
+      "limited": "受限",
+      "inactive": "未激活",
+      "error": "错误",
+      "disconnected": "未连接",
+      "unknown": "未知",
+      "modem_unreachable": "离线"
+    },
+    "stale_indicator": "数据可能已过期",
+    "redirecting_setup": "正在跳转到初次设置…",
+    "loading_status": "正在加载调制解调器状态…",
+    "empty": {
+      "title": "调制解调器状态不可用",
+      "subtitle": "调制解调器已有一分钟未上报。它可能正在重启 — 读数将自动恢复。",
+      "fetch_error": "无法连接到设备。",
+      "retry": "重试"
+    },
+    "uptime": {
+      "days": "{{days}}天 {{hours}}小时",
+      "hours": "{{hours}}小时 {{minutes}}分钟",
+      "minutes": "{{minutes}}分钟"
+    },
+    "copyright": "© {{year}} QManager",
+    "stale": {
+      "banner": "读数已过去 <age>{{age}}</age>。设备可能正忙。"
+    },
+    "footer": {
+      "updated_ago": "{{age}}前更新",
+      "retrying": "每 {{seconds}} 秒重试",
+      "signin_works": "仍可登录"
+    },
+    "loading_chip": "读取中",
+    "unreachable": {
+      "banner": "调制解调器目前没有响应。它可能正忙或正在重启。"
+    }
+  },
+  "sim_swap": {
+    "title": "检测到新 SIM 卡",
+    "carrier_unknown": "未知运营商",
+    "no_phone_number": "未分配号码",
+    "description_match": "配置文件 <strong>{{profile_name}}</strong> 与此 SIM 卡匹配。",
+    "description_no_match": "没有与此 SIM 卡匹配的已保存配置文件。",
+    "apply_profile": "应用配置文件",
+    "create_profile": "创建配置文件",
+    "dismiss_aria": "停止提醒此 SIM 卡",
+    "toast_dismissed": "已关闭此 SIM 卡的提醒",
+    "toast_dismissed_detail": "其他 SIM 卡仍会触发新卡提醒。可在“系统设置 → 已跟踪的 SIM 卡”中重新开启。",
+    "toast_dismiss_failed": "无法关闭此 SIM 卡的提醒",
+    "dismiss_dialog": {
+      "title": "停止提醒此 SIM 卡？",
+      "description": "QManager 将仅不再为这张 {{carrier}} SIM 卡显示新卡提醒。其他 SIM 卡仍会提醒，您可随时在“系统设置 → 已跟踪的 SIM 卡”中重新开启。",
+      "sim_label": "此 SIM 卡（ICCID）",
+      "confirm": "停止提醒",
+      "dismissing": "正在关闭…"
+    }
+  },
+  "trafficEngine": {
+    "page": {
+      "title": "流量引擎",
+      "description": "通过内置的绕过引擎，规避运营商 DPI 对视频流媒体等流量的限速。"
+    },
+    "load_error": "无法加载引擎状态。",
+    "binary_op_failed": "引擎二进制操作失败",
+    "tabs": {
+      "video_optimizer": "视频优化",
+      "masquerade": "流量伪装"
+    },
+    "status": {
+      "title": "引擎状态",
+      "description": "流量绕过引擎的实时状态。",
+      "state": "引擎状态",
+      "running": "运行中",
+      "stopped": "已停止",
+      "restarting": "重启中",
+      "error": "错误",
+      "uptime": "运行时长",
+      "packets": "已处理数据包",
+      "packets_per_sec": "{{n}} 包/秒",
+      "domains": "已加载域名",
+      "sni": "伪装 SNI",
+      "rule": "重定向规则",
+      "rule_active": "已生效",
+      "rule_inactive": "未应用",
+      "binary_installed": "引擎程序已安装",
+      "binary_missing": "引擎程序未安装",
+      "masq_scope": "范围",
+      "masq_all": "所有 TCP 80/443 连接"
+    },
+    "uninstall": {
+      "button": "卸载引擎二进制",
+      "title": "确定卸载引擎二进制？",
+      "description": "此操作将停止流量引擎（如正在运行）并移除引擎二进制文件。确定要继续吗？如果您改变主意，可以稍后重新安装。",
+      "confirm": "卸载",
+      "cancel": "取消"
+    },
+    "enable": {
+      "video_optimizer": "启用视频优化",
+      "masquerade": "启用流量伪装",
+      "description_vo": "对主机列表中的流媒体与视频域名连接进行失步处理，绕过运营商的深度包检测限速。",
+      "description_masq": "为每条连接发送带伪造 SNI 的假 TLS ClientHello，向 DPI 隐藏真实目的地址。",
+      "toast_enabled_vo": "视频优化已启用",
+      "toast_disabled_vo": "视频优化已停用",
+      "toast_enabled_masq": "流量伪装已启用",
+      "toast_disabled_masq": "流量伪装已停用",
+      "toast_error": "保存引擎设置失败"
+    },
+    "masquerade": {},
+    "hostlist": {
+      "title": "视频域名",
+      "description": "将进行失步处理的域名列表。列出的域名的子域名也会自动匹配。引擎会热重载该列表，修改立即生效。",
+      "empty": "还没有域名 — 添加一个开始使用。",
+      "invalid": "请输入有效域名（字母、数字、点、短横线）。",
+      "duplicate": "该域名已在列表中。",
+      "limit": "列表最多可容纳 300 个域名。",
+      "add": "添加域名",
+      "remove": "移除 {{domain}}",
+      "saved": "域名列表已保存",
+      "save_failed": "无法保存域名列表"
+    },
+    "verify": {
+      "title": "测试绕过效果",
+      "description": "运行两阶段测速 — 先关闭引擎，再开启引擎 — 以衡量绕过的提升幅度。",
+      "run": "运行测试",
+      "running": "测试中…",
+      "timeout": "测试未在限定时间内完成。",
+      "error": "无法启动测试",
+      "needs_binary": "请先安装引擎程序。",
+      "improvement": "提升幅度",
+      "without": "未绕过",
+      "with": "已绕过",
+      "throttled": "受限速",
+      "unthrottled": "未受限速"
+    },
+    "takeover": {
+      "title": "切换到{{mode}}？",
+      "description": "同一时间只能运行一种模式。启用此模式将停用另一种。",
+      "confirm": "切换",
+      "cancel": "取消"
+    },
+    "onboarding": {
+      "title": "安装引擎程序",
+      "description": "流量引擎需要 tpws 程序，将从官方 zapret 发行版下载并通过校验和验证。",
+      "install": "下载并安装",
+      "installing": "正在下载…",
+      "done": "引擎已就绪",
+      "error": "安装失败：{{detail}}"
+    }
+  }
+}
