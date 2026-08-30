@@ -26,7 +26,7 @@ jobs:
       - name: Build Next.js Static Export
         working-directory: frontend
         run: |
-          bun install --frozen-lockfile
+          bun install
           bun run build
 
       - name: Sync Frontend Export into Backend Embed Directory
