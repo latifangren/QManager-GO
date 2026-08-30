@@ -11,10 +11,16 @@ ExecStart=/usrdata/qmanager/qmanager
 Restart=always
 RestartSec=5s
 LimitNOFILE=65535
+
+# Cortex-A7 Runtime & Memory Protection
+Environment="GOMEMLIMIT=30MiB"
+Environment="GOGC=50"
+
+# In-memory logging to journald / RAM ring buffer
 StandardOutput=journal
 StandardError=journal
 
-# Hardware watchdog & graceful kill
+# Graceful termination
 TimeoutStopSec=10s
 KillMode=mixed
 
