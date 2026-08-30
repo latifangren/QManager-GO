@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Publish Single-Binary Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build Next.js Static Export
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Sync Frontend Export into Backend Embed Directory
+        run: |
+          rm -rf backend/cmd/qmanager/dist
+          mkdir -p backend/cmd/qmanager/dist
+          cp -r frontend/out/* backend/cmd/qmanager/dist/
+
+      - name: Set up Go 1.23
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Compile Standalone Binaries (Pure Go)
+        working-directory: backend
+        run: |
+          # 1. ARMv7 (Quectel RG501Q-EU SDX55 & RM520N-GL SDX65)
+          GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../dist/qmanager-linux-armv7 ./cmd/qmanager
+
+          # 2. ARM64 (AArch64 Modems / OpenWrt / Raspberry Pi)
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../dist/qmanager-linux-arm64 ./cmd/qmanager
+
+          # 3. AMD64 (x86_64 Dev / Servers / Emulators)
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../dist/qmanager-linux-amd64 ./cmd/qmanager
+
+      - name: Assemble Release Tarballs
+        run: |
+          mkdir -p release-artifacts
+
+          create_package() {
+            local arch_target="$1"
+            local bin_file="$2"
+            local tarball_name="qmanager-${arch_target}.tar.gz"
+            local staging_dir="pkg-staging-${arch_target}"
+
+            rm -rf "${staging_dir}"
+            mkdir -p "${staging_dir}"
+
+            cp "dist/${bin_file}" "${staging_dir}/qmanager"
+            cp deploy/systemd/qmanager.service "${staging_dir}/"
+            cp deploy/install.sh "${staging_dir}/"
+            chmod +x "${staging_dir}/qmanager" "${staging_dir}/install.sh"
+
+            tar -czf "release-artifacts/${tarball_name}" -C "${staging_dir}" .
+            rm -rf "${staging_dir}"
+
+            cp "dist/${bin_file}" "release-artifacts/${bin_file}"
+          }
+
+          create_package "armv7" "qmanager-linux-armv7"
+          create_package "arm64" "qmanager-linux-arm64"
+          create_package "amd64" "qmanager-linux-amd64"
+
+      - name: Generate SHA256 Checksums
+        working-directory: release-artifacts
+        run: |
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
