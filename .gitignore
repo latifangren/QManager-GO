@@ -1,7 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
+/frontend/node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -12,72 +13,66 @@
 
 # testing
 /coverage
+/frontend/coverage/
 
-# next.js
+# Next.js & Frontend build output
 /.next/
 /out/
+/frontend/.next/
+/frontend/out/
+frontend/next-env.d.ts
 
-# production
-/build
+# production & dist
+/build/
+/dist/
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
 
-# debug
+# debug & logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
 
-# env files (can opt-in for committing if needed)
+# env files (allow .env.example)
 .env*
+!.env.example
 
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
 
-# build artifacts
+# build artifacts & packages
 qmanager-build/
 qmanager_install/
 RELEASE_NOTE.md
 
-# language-pack build output (maintainer `bun run lang build`)
-/dist/
+# Go build artifacts & binaries
+qmanager-armv7*
+/qmanager-armv7
+/backend/qmanager*
+/backend/cmd/qmanager/dist/
+backend/*.exe
+*.exe
+*.test
+*.prof
 
-# claude superpowers
+# claude / IDE / tools
 /.superpowers
 /.claude
+/.vscode/
+/.idea/
 
-# NOTE: /docs/superpowers is deliberately NOT ignored (un-ignored 2026-08-25).
-# Plans, specs and trackers there are project records that outlive a session, and
-# ignoring them meant every update needed `git add -f` — a silent-failure path,
-# since a plain `git status` never warns that the file is untracked. Several
-# documents were being force-added one at a time while their siblings quietly
-# went untracked. Scanned before un-ignoring: no credentials (the only hits were
-# placeholder fixtures — a payload-less JWT header and "app_password": "secret");
-# MODEM_SSH_PASSWORD appears only ever as a variable NAME, never with a value.
-# Keep it that way — this directory is public.
-
-# simpleadmin source
+# simpleadmin source & scratch
 /simpleadmin-source
-
-# bundled build tools (developer-local; not part of the repo)
 /tools/
-
-# Health check directory
 /health-checks/
-
-# Investigation scratch (probe scripts, raw logs)
 /scratch/
-# Go host build artifacts (device binary ships via build-discord-bot.sh tarball)
-discord-bot/*.exe
-
-# Reimagine directory
 /reimagine/
-
-# Rescue directory
 /scripts-dev/rescue/

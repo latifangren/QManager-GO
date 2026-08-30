@@ -1,15 +1,14 @@
 # QManager
 
 <div align="center">
-  <img src="public/qmanager-mark.svg" alt="QManager" width="120" />
-  <h3>A modern, custom GUI for Quectel modem management</h3>
-  <p>Visualize, configure, and optimize your cellular modem's performance with an intuitive web interface</p>
+  <img src="frontend/public/qmanager-mark.svg" alt="QManager" width="120" />
+  <h3>Modern, High-Performance Single-Binary Web & Telemetry Engine for Quectel Modems</h3>
+  <p>Standalone Go Engine + Embedded Next.js 15 Web UI for Quectel RM520N-GL & RG501Q-EU</p>
 
-  ![Version](https://img.shields.io/badge/version-v0.1.5-blue?style=flat-square)
+  ![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go)
+  ![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=next.js)
+  ![Architecture](https://img.shields.io/badge/arch-ARMv7%20%7C%20ARM64-blue?style=flat-square)
   ![License](https://img.shields.io/badge/license-MIT%20%2B%20Commons%20Clause-green?style=flat-square)
-  ![Platform](https://img.shields.io/badge/platform-RM520N--GL-orange?style=flat-square)
-  ![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square)
-  ![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square)
 </div>
 
 ---
@@ -20,374 +19,133 @@
 
 ---
 
-> **Note:** QManager is the successor to [SimpleAdmin](https://github.com/dr-dolomite/simpleadmin-mockup), rebuilt from the ground up with a modern tech stack and improved user experience. This branch targets the **Quectel RM520N-GL** modem running its internal Linux OS (SDXLEMUR, ARMv7l, kernel 5.4.180).
+## Overview
 
-> **Other modems:** This build is primarily developed and tested against the RM520N-GL (Qualcomm SDXLEMUR chipset), but since it targets the vanilla Linux OS running on the modem itself rather than a device-specific stack, it may also work on other Quectel modems with a similar internal architecture -- notably Qualcomm **SDX55 / SDXPRAIRIE**-based models. These aren't officially validated -- your mileage may vary, and issue reports from other SDX55/SDXPRAIRIE modems are welcome.
+**QManager** is an all-in-one cellular management appliance and telemetry daemon built for Qualcomm-based Quectel modems (including **RM520N-GL** and **RG501Q-EU**). 
 
----
+Replacing legacy Lighttpd web servers, shell CGI scripts, and external helper binaries, QManager compiles down to a **single, zero-dependency standalone binary** (`qmanager-armv7`) with the optimized Next.js frontend embedded directly into the Go executable via `embed.FS`.
 
-## Features
-
-### Signal & Network Monitoring
-- **Live Signal Dashboard** — Real-time RSRP, RSRQ, SINR with per-antenna values (4x4 MIMO) and 30-minute historical charts
-- **Antenna Statistics** — Per-port signal breakdown with quality indicators for all 4 antenna ports
-- **Antenna Alignment** — 3-position recording tool that compares composite signal scores to recommend best antenna placement
-- **Network Events** — Automatic detection of band changes, cell handoffs, carrier aggregation changes, and connectivity events
-- **Latency Monitoring** — Real-time ping with 24-hour history, jitter, packet loss, and aggregated views (hourly/12h/daily)
-- **Connectivity Engine** — Configurable HTTP/HTTPS probe with primary-then-fallback, captive-portal detection, and a sensitivity preset (regions that block Google still come up clean by default)
-- **Traffic Statistics** — Live throughput (Mbps) and cumulative data usage
-
-### Cellular Configuration
-- **Band Locking** — Select and lock specific LTE/NR bands for optimal performance, with automatic band failover
-- **Tower Locking** — Lock to a specific cell tower by PCI, with automatic failover and scheduled changes
-- **Frequency Locking** — Lock to exact EARFCN/ARFCN channels
-- **APN Management** — Create, edit, delete APN profiles with MNO presets (T-Mobile, AT&T, Verizon, etc.)
-- **Custom SIM Profiles** — Save complete configurations (APN + TTL/HL + optional IMEI) per SIM, with auto-apply on SIM swap
-- **Connection Scenarios** — Save and restore full network configuration snapshots
-- **Network Priority** — Configure preferred network types and selection modes
-- **Cell Scanner** — Active and neighbor cell scanning with signal comparison
-- **Frequency Calculator** — EARFCN/ARFCN to frequency conversion tool
-- **SMS Center** — Send and receive SMS messages directly from the interface
-- **IMEI Settings** — Read, backup, and modify device IMEI, plus IMEI Generator & Validator (Luhn algorithm, TAC presets, imei.info lookup)
-- **FPLMN Management** — View and manage the Forbidden PLMN list
-- **MBN Configuration** — Select and activate modem broadband configuration files
-
-### Network Settings
-- **TTL/HL Settings** — IPv4 TTL and IPv6 Hop Limit configuration (iptables-based)
-- **MTU Configuration** — Dynamic MTU application for rmnet interfaces
-- **IP Passthrough** — Direct IP assignment to downstream devices
-
-### VPN & Remote Access
-- **Tailscale VPN** — One-click install, connect, and manage Tailscale mesh VPN directly from the UI; peer table, health warnings, boot persistence, and a one-toggle Tailscale SSH switch (gated by your admin-panel ACLs)
-- **Port Firewall** — Built-in firewall restricting web UI (80/443) to trusted interfaces; Tailscale-aware, enabled by default
-
-> **Note on the Tailscale SSH toggle:** QManager treats its SSH toggle as the source of truth and re-applies it on every reconnect, so it survives `tailscale up --reset`. If you carried a Tailscale install over from SimpleAdmin / the RGMII Toolkit, or you change SSH state via the `tailscale` CLI, the GUI won't see that change — and the next reconnect from the GUI will reset SSH back to whatever the toggle remembers. To resync after an out-of-band change, just toggle the switch off and on in the GUI once.
-
-### Reliability & Monitoring
-- **Connection Watchdog** — 4-tier auto-recovery: AT+COPS deregister/reregister -> CFUN toggle -> SIM failover -> full reboot (with token bucket rate limiting)
-- **Email Alerts** — Downtime notifications via Gmail SMTP (msmtp), sent on recovery with duration details
-- **SMS Alerts** — Downtime and recovery notifications delivered over the cellular control channel via `sms_tool`; reaches you even while the data link is offline. Registration-guarded retry with dedup collapse, threshold-based suppression of transient blips, bounded failure logging
-- **Low Power Mode** — Scheduled CFUN power-down windows via cron
-- **Software Updates** — In-app OTA update checking, download, verification, installation, and rollback
-- **System Logs** — Centralized log viewer with search
-
-### Interface
-- **Dark/Light Mode** — Full theme support with OKLCH perceptual color system
-- **Responsive Design** — Works on desktop monitors and tablets in the field
-- **Cookie-Based Auth** — Secure session management with rate limiting
-- **Web Console** — Browser-based terminal (ttyd) integrated into the UI with connection status, fullscreen mode, and dark theme
-- **AT Terminal** — Direct AT command interface for advanced users
-- **Initial Setup Wizard** — Guided onboarding for first-time configuration
-
----
-
-## Prerequisites
-
-- A **Quectel RM520N-GL** modem with RGMII Ethernet connectivity
-- **Entware** installed at `/opt` (the installer will bootstrap Entware automatically if not present, but internet access is required)
-- **ADB** or **SSH** access to the modem
-
-> **Note:** QManager is fully independent — it does **not** require SimpleAdmin or the RGMII Toolkit to be pre-installed. The installer handles everything: Entware bootstrap, lighttpd, user/group creation, and service setup.
-
----
-
-## Quick Install
-
-ADB or SSH into the modem and run:
-
-```sh
-curl -fsSL -o /tmp/qmanager-installer.sh \
-  https://github.com/dr-dolomite/QManager-RM520N/raw/refs/heads/main/qmanager-installer.sh && \
-  bash /tmp/qmanager-installer.sh
-```
-
-The interactive installer fetches the latest release, verifies the SHA-256 checksum, bootstraps Entware (if needed), installs lighttpd, deploys the QManager frontend and backend, configures systemd services, and optionally sets up SSH (dropbear). Bundled dependencies (`atcli_smd11`, `sms_tool`, `jq`, `dropbear`) are installed automatically. The SSH root password is automatically set to match the web UI password during first-time onboarding. A reboot is triggered after installation.
-
-> **If `curl` isn't available on your modem** (common on x5x/x6x firmwares like RM502, RM520, RM521), install it through Entware first, then call it by absolute path so the BusyBox shell's default `PATH` doesn't trip you up:
->
-> ```sh
-> opkg update && opkg install curl
-> /opt/bin/curl -fsSL -o /tmp/qmanager-installer.sh \
->   https://github.com/dr-dolomite/QManager-RM520N/raw/refs/heads/main/qmanager-installer.sh && \
->   bash /tmp/qmanager-installer.sh
-> ```
->
-> **If you have `wget` but not `curl`**, just use `wget` to fetch the installer — the installer's preflight will install `curl` from Entware automatically (Entware must already be bootstrapped) so future OTA updates work:
->
-> ```sh
-> wget -O /tmp/qmanager-installer.sh \
->   https://github.com/dr-dolomite/QManager-RM520N/raw/refs/heads/main/qmanager-installer.sh && \
->   bash /tmp/qmanager-installer.sh
-> ```
->
-> **If `wget` and `curl`** are not working, push the installer via ADB from local workstation:
->
-> via Windows
-> ```powershell
-> curl -fsSL -o qmanager-installer.sh `
->   https://github.com/dr-dolomite/QManager-RM520N/raw/refs/heads/main/qmanager-installer.sh; `
->   adb push .\qmanager-installer.sh /tmp/; `
->   adb shell bash /tmp/qmanager-installer.sh
-> ```
->
-> The QManager installer creates a `/usr/bin/curl` symlink during install, so subsequent commands and OTA updates pick up `curl` from the standard PATH without manual export.
-
-### Upgrading
-
-From v0.1.5+, go to **System Settings → Software Update** and use the built-in OTA update flow — download, verify, and install without SSH. Rollback to the previous version is available if needed.
-
-> **Note:** The v0.1.4 → v0.1.5 hop requires ADB or SSH because v0.1.4's CGI lacks the sudo rule needed to invoke the update worker as root. From v0.1.5 onward, all future updates work via the UI.
-
-### Uninstalling
-
-```sh
-# SSH into the modem
-bash /tmp/qmanager_install/uninstall_rm520n.sh
-
-# Skip the confirmation prompt (non-interactive / scripted use):
-bash /tmp/qmanager_install/uninstall_rm520n.sh --force
-
-# Skip automatic reboot after uninstall:
-bash /tmp/qmanager_install/uninstall_rm520n.sh --no-reboot
-
-# Also remove config/profiles/passwords and Tailscale:
-bash /tmp/qmanager_install/uninstall_rm520n.sh --purge
-```
-
-Entware (`/opt/`) is always preserved even with `--purge` — remove it manually if needed.
-
-### Password Reset
-
-If you forget your QManager web GUI password, SSH into the modem as root and run:
-
-```sh
-qmanager_reset_password
-```
-
-This removes the stored password hash (`/etc/qmanager/auth.json`) and the active session, then prompts you to open the QManager web UI to set a new password — no reinstall needed.
-
----
-
-## Additional Dependencies
-
-- **Bundled with installer:** `atcli_smd11` (Rust reimplementation from [1alessandro1/atcli_rust](https://github.com/1alessandro1/atcli_rust), static ARMv7, AT command transport via `/dev/smd11`, works across RM502/RM520/RM521/RM551), `sms_tool` (ARM binary, SMS send/recv/delete with multi-part reassembly), `jq` (Entware package), `dropbear` (SSH server)
-- **Downloaded during install:** `speedtest` (Ookla Speedtest CLI, ARMv7 armhf — downloaded from `install.speedtest.net`)
-- **Installed from Entware:** `lighttpd` + `lighttpd-mod-openssl`, `sudo`, `coreutils-timeout`
-- **Optional:** `msmtp` (email alerts) -- can be installed from within the app
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | Next.js 16, React 19, TypeScript 5 |
-| **Styling** | Tailwind CSS v4, OKLCH colors, Rethink Sans + JetBrains Mono |
-| **Components** | shadcn/ui (42+ components), Recharts, React Hook Form + Zod |
-| **Backend** | Shell scripts (Bash), CGI endpoints via lighttpd |
-| **AT Commands** | `qcmd` wrapper with `atcli_smd11` on `/dev/smd11` (direct, no socat) |
-| **Init System** | systemd (`.service` units in `/lib/systemd/system/`) |
-| **Package Manager** | Bun (development), Entware opkg (device) |
+### Key Advantages
+- **Single Static Binary**: Zero external runtime requirements (no Lighttpd, PHP, Python, Entware, or Rust dependencies).
+- **Direct Character Device Access**: High-performance pure-Go AT command engine interfacing directly with `/dev/smd11` (or fallback `/dev/smd7` / `/dev/ttyUSB2`) with thread-safe Mutex serialization.
+- **Embedded Web & API Server**: High-throughput Chi HTTP router with sub-millisecond response times and backward-compatible `/cgi-bin/quecmanager/*` routing.
+- **Real-Time Telemetry & Probing**: Continuous background signal polling (1 Hz), TCP latency prober (1.1.1.1:53), and memory/temperature accounting.
+- **4-Tier Connection Watchdog**: Automated recovery pipeline (AT+CFUN radio restart -> network stack restart -> modem system reboot).
+- **1970 Clock-Step Resistant Scheduler**: Go-native monotonic timer evaluation that ignores spurious RTC step misfires during uncalibrated modem boot.
+- **SMS Engine & Forwarder**: Pure-Go 3GPP SMS poller and forwarder supporting multi-channel delivery.
 
 ---
 
 ## Architecture
 
+```text
+┌────────────────────────────────────────────────────────┐
+│                   QManager Single Binary               │
+│                                                        │
+│  ┌────────────────────────┐  ┌──────────────────────┐  │
+│  │   Embedded Frontend    │  │     Chi HTTP API     │  │
+│  │  (Next.js 15 / React)  │  │  (REST + CGI compat) │  │
+│  └────────────────────────┘  └──────────────────────┘  │
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │               Core Go Daemon Engine              │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────┐  │  │
+│  │  │   Telemetry  │ │  Connection  │ │ Monotonic│  │  │
+│  │  │    Poller    │ │   Watchdog   │ │Scheduler │  │  │
+│  │  └──────────────┘ └──────────────┘ └──────────┘  │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │         Thread-Safe AT Command Transport         │  │
+│  │   Direct Character Device (/dev/smd11, /dev/smd7)│  │
+│  └──────────────────────────────────────────────────┘  │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                 /dev/smd11 (Character Device)
+                           │
+                           ▼
+              Qualcomm Baseband Processor
 ```
-Browser --- authFetch() --- lighttpd --- CGI Scripts --- qcmd --- atcli_smd11 --- /dev/smd11 --- Modem
-                |                  |                       |
-                |          Shell Libraries (12)      flock serialization
-                |
-        reads /tmp/qmanager_status.json
-                |
-         qmanager_poller
-       (tiered polling: 2s/10s/30s)
-```
-
-The frontend is a statically-exported Next.js app served by lighttpd from `/usrdata/qmanager/www`. The backend is shell scripts running on the modem's internal Linux -- CGI endpoints for API requests and systemd-managed daemons for data collection.
-
-**Key Data Flow:**
-
-- **Poller daemon** queries the modem via AT commands every 2-30s (3 tiers) and writes a JSON cache file
-- **CGI endpoints** (63 scripts) read the cache for GET requests, execute AT commands for POST requests
-- **React hooks** (31 custom hooks) poll the CGI layer and provide loading/error/staleness states
-- **AT transport** uses `atcli_smd11` on `/dev/smd11` directly (no socat PTY bridge needed)
-
-**Platform Details:**
-
-| Concern | RM520N-GL |
-|---------|-----------|
-| OS | Vanilla Linux (SDXLEMUR, ARMv7l, kernel 5.4.180) |
-| Init | systemd |
-| Root FS | Read-only by default (remounted RW when needed) |
-| Persistent storage | `/usrdata/` partition |
-| Web server | lighttpd (Entware) |
-| Firewall | iptables |
-| Config | Files in `/etc/qmanager/` |
 
 ---
 
-## Development
+## Features
+
+- **Live Signal Monitoring** — Real-time RSRP, RSRQ, SINR with per-antenna metrics and 60-second rolling charts.
+- **Cell & Tower Locking** — Full LTE & NR SA carrier locking by EARFCN/ARFCN and PCI with automated schedule and failover guards.
+- **Band Configuration** — Direct band selection for LTE (B1–B71) and 5G NR (n1–n78).
+- **Network Optimization** — Custom TTL/Hop Limit configuration, IP Passthrough mode, MTU management, and custom DNS.
+- **DPI Bypass / Video Optimizer** — Native TCP window scaling and streaming optimization controls.
+- **SIM & APN Profiles** — Multi-PDP context management, MNO presets, and automated ICCID SIM profile binding.
+- **Connection Watchdog** — 4-tier link monitoring and automatic modem recovery.
+- **SMS Center** — In-browser SMS inbox/outbox and background forwarding engine.
+- **Hardware Profile & Self-Heal** — Real-time detection and verification of modem model, SoC (SDX55/SDX65), form factor, and firmware revision.
+
+---
+
+## Building from Source
 
 ### Prerequisites
+- [Go 1.22+](https://golang.org/)
+- [Bun](https://bun.sh/) (or Node.js 20+)
+- `make` and standard POSIX build tools
 
-- [Bun](https://bun.sh/) (recommended) or Node.js 18+
-
-### Getting Started
-
-```bash
-# Clone the repository
-git clone https://github.com/dr-dolomite/qmanager.git
-cd qmanager && git checkout dev-rm520
-
-# Install dependencies
-bun install
-
-# Start development server (proxies API to modem at 192.168.225.1)
-bun run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-### Production Build
+### Build Commands
 
 ```bash
-# Static export to out/
-bun run build
+# 1. Full Build (Frontend Static Export + Go ARMv7 Binary)
+make build
 
-# Full package (frontend + backend tarball + checksum)
-bun run package
-```
+# 2. Build Frontend Only
+make build-frontend
 
-The `package` script builds the frontend, bundles it with backend scripts and dependencies into a tarball, and generates a SHA-256 checksum -- ready for distribution via GitHub Releases.
+# 3. Build Backend Only (Cross-compilation for ARMv7 / Quectel Linux)
+make build-backend
 
----
+# 4. Package Release Tarball (qmanager-armv7.tar.gz)
+make package
 
-## Project Structure
-
-```
-QManager/
-├── app/                        # Next.js App Router pages (35 routes)
-│   ├── dashboard/              # Home — live signal monitoring
-│   ├── cellular/               # Cellular info, SMS, profiles, band/tower/freq locking,
-│   │                           #   cell scanner, APN, IMEI, FPLMN, network priority,
-│   │                           #   antenna alignment/statistics
-│   ├── local-network/          # IP passthrough, TTL, MTU
-│   ├── monitoring/             # Network events, latency, email alerts, watchdog
-│   ├── system-settings/        # System config, AT terminal, logs, software updates
-│   └── (login, setup, reboot, about-device, support)
-├── components/                 # React components (~173 files)
-│   ├── ui/                     # shadcn/ui primitives (42+ components)
-│   ├── cellular/               # Cellular management UI
-│   ├── dashboard/              # Home dashboard cards
-│   ├── local-network/          # Network settings UI
-│   ├── monitoring/             # Monitoring & alerts UI
-│   └── system-settings/        # System configuration UI
-├── hooks/                      # Custom React hooks (31 files)
-├── types/                      # TypeScript interfaces
-├── lib/                        # Utilities (auth-fetch, earfcn, csv)
-├── constants/                  # Static data (MNO presets, event labels)
-├── scripts/                    # Backend shell scripts
-│   ├── etc/systemd/system/     # Systemd service units (8)
-│   ├── etc/sudoers.d/          # CGI privilege escalation rules
-│   ├── etc/qmanager/           # Default config files
-│   ├── usr/bin/                # Daemons & utilities (19)
-│   ├── usr/lib/qmanager/       # Shared shell libraries (12)
-│   ├── www/cgi-bin/            # CGI endpoints (63 scripts)
-│   ├── install_rm520n.sh       # Device installation script
-│   └── uninstall_rm520n.sh     # Clean removal script
-├── dependencies/               # Bundled ARM binaries and packages
-│   ├── atcli_smd11             # ARM binary (AT command transport via /dev/smd11)
-│   ├── sms_tool                # ARM binary (SMS send/recv/delete)
-│   ├── jq.ipk                  # JSON processor
-│   └── dropbear_*.ipk          # SSH server
-├── docs/                       # Documentation
-└── build.sh                    # Package builder (tarball + checksum)
+# 5. Run Backend Unit & Regression Tests
+make test
 ```
 
 ---
 
-## Backend Services
+## Installation & Deployment
 
-QManager runs 10 systemd services on the modem:
+### Quick Install to Device
 
-| Service | Purpose |
-|---------|---------|
-| `qmanager-firewall` | Port firewall — restricts 80/443 to trusted interfaces before lighttpd starts |
-| `qmanager-setup` | One-shot boot setup — directories, permissions, config init |
-| `qmanager-poller` | Main poller daemon — tiered AT polling, JSON cache, event detection |
-| `qmanager-ping` | Latency monitor — 5s ping cycle, NDJSON history (24h) |
-| `qmanager-console` | Web console — ttyd on localhost:8080, reverse-proxied by lighttpd |
-| `qmanager-watchcat` | Connection watchdog — 4-tier auto-recovery state machine |
-| `qmanager-ttl` | TTL/HL — applies iptables rules at boot |
-| `qmanager-mtu` | MTU — applies interface MTU settings at boot |
-| `qmanager-imei-check` | IMEI integrity — verifies IMEI backup on boot |
-| `qmanager-tower-failover` | Tower failover — restores lock after cell loss (config-gated) |
+1. Download or package `qmanager-armv7.tar.gz`.
+2. Transfer archive to your modem via SCP or ADB:
+   ```bash
+   scp qmanager-armv7.tar.gz root@192.168.225.1:/tmp/
+   ```
+3. SSH into the modem and run the installer:
+   ```bash
+   ssh root@192.168.225.1
+   cd /tmp && tar -xzf qmanager-armv7.tar.gz
+   chmod +x install.sh
+   ./install.sh
+   ```
 
----
+The installer stops legacy daemons, places the binary at `/usrdata/qmanager/qmanager`, sets up `/etc/systemd/system/qmanager.service`, and starts the service.
 
-## Tips for the Project
+### Service Management
 
-<div align="center">
-  <h3>Support QManager's Development</h3>
-  <p>Your contribution helps maintain the project and fund continued development, testing on new cellular networks, and hardware costs.</p>
-  <br/>
-  <a href="https://wise.com/pay/business/blackcatdev?currency=USD" target="_blank">
-    <img height="40" src="https://img.shields.io/badge/Donate-Wise-9FE870?style=for-the-badge&logo=wise&logoColor=white" alt="Donate via Wise" />
-  </a>
-  &nbsp;
-  <a href="https://paypal.me/iamrusss" target="_blank">
-    <img height="40" src="https://img.shields.io/badge/Donate-PayPal-003087?style=for-the-badge&logo=paypal&logoColor=white" alt="Donate via PayPal" />
-  </a>
-  <br/><br/>
-  <p>You can also <a href="https://github.com/sponsors/dr-dolomite" target="_blank">sponsor on GitHub</a>.</p>
-</div>
+```bash
+# Check service status
+systemctl status qmanager
 
----
+# View live daemon logs
+journalctl -u qmanager -f
 
-## The Mark
-
-<div align="center">
-  <img src="public/qmanager-mark.svg" alt="The QManager mark, a tonal Q" width="96" />
-</div>
-
-**The ring is the network. The ray is the device, speaking from inside it.**
-
-QManager runs on the modem it manages, so the mark starts where the device is: a single ray leaves the center of a signal field and cuts a clean channel out through it. Nothing reaches in from the outside.
-
-- **The ring** is the network. Continuous and even, there whether or not you are looking at it.
-- **The ray** is the transmission leaving the device. It is anchored at the center because that is where QManager actually lives.
-- **The notch** is where the ring gives way. The two shapes never overlap or blur; the field makes a clean, measured space for what passes through it. That is the product's promise in one detail: the interface never claims something the modem is not doing.
-
-It is a **Q** first, for QManager and Quectel. Two shapes, two tones, one hue, drawn on a 48 x 48 geometric grid at uniform stroke weight, with no gradient, shadow, or filter.
-
-> **If you redraw it, keep the ray anchored at the center.** Detached, a ring plus a 45 degree round-capped bar reads as a magnifying glass at every size below 48px. A magnifier's handle never reaches the lens center; a Q's tail does. That anchoring is what makes this a letterform instead of a search icon.
-
-The two tones are the **source pair for the entire design system**, not consumers of it:
-
-| Part | Value | Role in the system |
-| --- | --- | --- |
-| Ring | `oklch(0.623 0.214 259.815)` | Drives the dark-mode `--primary-container` and the active-nav tone |
-| Tail | `oklch(0.488 0.243 264.376)` | "Signal Blue", the light-mode `--primary`, used literally |
-
-Every neutral in the interface carries a trace of that hue, so surfaces read as a family. Changing either tone is a system-wide change, not an asset tweak. See [DESIGN.md](DESIGN.md) under Colors > Source color.
+# Restart service
+systemctl restart qmanager
+```
 
 ---
 
 ## License
 
 This project is licensed under the [MIT License with Commons Clause](LICENSE).
-
-**You are free to:** use, modify, fork, and share QManager for personal and non-commercial purposes.
-
-**You may not:** sell QManager, bundle it into a commercial product, or offer it as a paid service -- including forked versions.
-
-### Commercial Licensing
-
-If you want to use QManager in a commercial product, OEM device, or reseller offering, commercial licenses are available. Contact [DrDolomite](https://github.com/dr-dolomite) directly to discuss terms.
-
----
-
-<div align="center">
-  <p>Built with care by <a href="https://github.com/dr-dolomite">DrDolomite</a></p>
-</div>
+Personal, educational, and non-commercial use is permitted. Commercial use, redistribution, or bundling into commercial hardware requires a commercial license from the author.

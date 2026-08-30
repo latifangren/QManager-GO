@@ -1,6 +1,6 @@
-# CLAUDE.md — Working Agreement & Core Technical Standards
+# QManager AI Agent Instructions & Architectural Standards
 
-> **Target Platform:** Quectel RG501Q-EU (Qualcomm Snapdragon X55, Cortex-A7, Linux 4.14, Yocto, systemd, UBIFS NAND) & Quectel RM520N-GL (SDX65, Linux 5.4).  
+> **Target Device:** Quectel RG501Q-EU (Qualcomm Snapdragon X55, Cortex-A7, Linux 4.14, Yocto, systemd, UBIFS NAND) & Quectel RM520N-GL (Qualcomm SDX65, Cortex-A7, Linux 5.4).  
 > **Appliance Architecture:** Single standalone Go binary (`qmanager-armv7`) embedding the Next.js 15 static export (`dist/`).
 
 ---
