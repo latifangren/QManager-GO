@@ -55,16 +55,32 @@ type ApnProfile struct {
 
 // CellularApnHandler handles APN management endpoints.
 type CellularApnHandler struct {
-	engine    *atengine.Engine
-	configMgr *config.Manager
+	engine         *atengine.Engine
+	configMgr      *config.Manager
+	apnSettingPath string
+	apnNamesPath   string
 }
 
 // NewCellularApnHandler creates a new CellularApnHandler.
-func NewCellularApnHandler(engine *atengine.Engine, configMgr *config.Manager) *CellularApnHandler {
-	return &CellularApnHandler{
-		engine:    engine,
-		configMgr: configMgr,
+func NewCellularApnHandler(engine *atengine.Engine, configMgr *config.Manager, optionalConfigDir ...string) *CellularApnHandler {
+	settingP := apnSettingPath
+	namesP := apnNamesPath
+	if len(optionalConfigDir) > 0 && optionalConfigDir[0] != "" {
+		settingP = filepath.Join(optionalConfigDir[0], "apn_setting.json")
+		namesP = filepath.Join(optionalConfigDir[0], "apn_names.json")
 	}
+	return &CellularApnHandler{
+		engine:         engine,
+		configMgr:      configMgr,
+		apnSettingPath: settingP,
+		apnNamesPath:   namesP,
+	}
+}
+
+// SetStoragePaths sets custom storage paths for testing.
+func (h *CellularApnHandler) SetStoragePaths(settingPath, namesPath string) {
+	h.apnSettingPath = settingPath
+	h.apnNamesPath = namesPath
 }
 
 // GetAPN handles GET /api/v1/cellular/apn and GET /cgi-bin/quecmanager/cellular/apn.sh

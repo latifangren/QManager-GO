@@ -106,11 +106,17 @@ type SIMProfileHandler struct {
 }
 
 // NewSIMProfileHandler creates a new SIMProfileHandler.
-func NewSIMProfileHandler(engine *atengine.Engine) *SIMProfileHandler {
+func NewSIMProfileHandler(engine *atengine.Engine, optionalConfigDir ...string) *SIMProfileHandler {
+	profDir := defaultProfileDir
+	activePath := defaultActiveProfilePath
+	if len(optionalConfigDir) > 0 && optionalConfigDir[0] != "" {
+		profDir = filepath.Join(optionalConfigDir[0], "profiles")
+		activePath = filepath.Join(optionalConfigDir[0], "active_profile")
+	}
 	return &SIMProfileHandler{
 		engine:            engine,
-		profileDir:        defaultProfileDir,
-		activeProfilePath: defaultActiveProfilePath,
+		profileDir:        profDir,
+		activeProfilePath: activePath,
 		profileStatePath:  defaultProfileStatePath,
 	}
 }

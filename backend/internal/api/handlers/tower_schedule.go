@@ -70,10 +70,14 @@ type TowerScheduleHandler struct {
 }
 
 // NewTowerScheduleHandler creates a new TowerScheduleHandler.
-func NewTowerScheduleHandler(engine *atengine.Engine) *TowerScheduleHandler {
+func NewTowerScheduleHandler(engine *atengine.Engine, optionalPath ...string) *TowerScheduleHandler {
+	cfgPath := towerConfigPath
+	if len(optionalPath) > 0 && optionalPath[0] != "" {
+		cfgPath = optionalPath[0]
+	}
 	return &TowerScheduleHandler{
 		engine:     engine,
-		configPath: towerConfigPath,
+		configPath: cfgPath,
 	}
 }
 

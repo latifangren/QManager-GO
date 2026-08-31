@@ -43,11 +43,17 @@ type ScenarioHandler struct {
 }
 
 // NewScenarioHandler creates a new ScenarioHandler.
-func NewScenarioHandler(engine *atengine.Engine) *ScenarioHandler {
+func NewScenarioHandler(engine *atengine.Engine, optionalConfigDir ...string) *ScenarioHandler {
+	scenDir := defaultScenariosDir
+	activePath := defaultActiveScenarioPath
+	if len(optionalConfigDir) > 0 && optionalConfigDir[0] != "" {
+		scenDir = filepath.Join(optionalConfigDir[0], "scenarios")
+		activePath = filepath.Join(optionalConfigDir[0], "active_scenario")
+	}
 	return &ScenarioHandler{
 		engine:             engine,
-		scenariosDir:       defaultScenariosDir,
-		activeScenarioPath: defaultActiveScenarioPath,
+		scenariosDir:       scenDir,
+		activeScenarioPath: activePath,
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -26,10 +27,16 @@ type AppServices struct {
 	ConfigMgr *config.Manager
 	Identity  platform.Identity
 	DistFS    embed.FS
+	ConfigDir string
 }
 
 // NewRouter constructs and mounts all API and static endpoints.
 func NewRouter(s AppServices) http.Handler {
+	configDir := s.ConfigDir
+	if configDir == "" {
+		configDir = "/etc/qmanager"
+	}
+
 	r := chi.NewRouter()
 
 	// Middlewares
@@ -48,19 +55,19 @@ func NewRouter(s AppServices) http.Handler {
 		MaxAge:           300,
 	}))
 
-	authH := handlers.NewAuthHandler("admin")
+	authH := handlers.NewAuthHandler("admin", filepath.Join(configDir, "auth.json"))
 	bandFailoverH := handlers.NewBandFailoverHandler()
 	cellH := handlers.NewCellularHandler(s.Engine, s.Poller, bandFailoverH)
-	apnH := handlers.NewCellularApnHandler(s.Engine, s.ConfigMgr)
-	imeiH := handlers.NewCellularImeiHandler(s.Engine, s.Poller, s.ConfigMgr)
+	apnH := handlers.NewCellularApnHandler(s.Engine, s.ConfigMgr, configDir)
+	imeiH := handlers.NewCellularImeiHandler(s.Engine, s.Poller, s.ConfigMgr, configDir)
 	fplmnH := handlers.NewCellularFplmnHandler(s.Engine)
 	priorityH := handlers.NewNetworkPriorityHandler(s.Engine)
 	mbnH := handlers.NewCellularMbnHandler(s.Engine)
 	freqH := handlers.NewFrequencyLockHandler(s.Engine)
 	freqCalcH := handlers.NewFrequencyCalculatorHandler()
-	towerH := handlers.NewTowerScheduleHandler(s.Engine)
-	profileH := handlers.NewSIMProfileHandler(s.Engine)
-	scenarioH := handlers.NewScenarioHandler(s.Engine)
+	towerH := handlers.NewTowerScheduleHandler(s.Engine, filepath.Join(configDir, "tower_lock.json"))
+	profileH := handlers.NewSIMProfileHandler(s.Engine, configDir)
+	scenarioH := handlers.NewScenarioHandler(s.Engine, configDir)
 	cellScanH := handlers.NewCellScannerHandler(s.Engine)
 	neighbourH := handlers.NewNeighbourScannerHandler(s.Engine)
 	speedtestH := handlers.NewSpeedtestHandler()
@@ -75,7 +82,7 @@ func NewRouter(s AppServices) http.Handler {
 	publicH := handlers.NewPublicHandler(s.Poller, s.ConfigMgr, s.Identity)
 	watchdogH := handlers.NewWatchdogHandler(s.ConfigMgr, s.Watchdog)
 	alertsH := handlers.NewAlertsHandler()
-	simRegH := handlers.NewSimRegistryHandler()
+	simRegH := handlers.NewSimRegistryHandler(filepath.Join(configDir, "known_sims.json"))
 	sysH := handlers.NewSystemHandler(s.Identity, s.ConfigMgr)
 	smsH := handlers.NewSMSHandler(s.Engine)
 	smsForwardH := handlers.NewSMSForwardingHandler(s.Engine, s.ConfigMgr)
@@ -84,8 +91,8 @@ func NewRouter(s AppServices) http.Handler {
 	langPacksH := handlers.NewLanguagePacksHandler()
 	healthCheckH := handlers.NewHealthCheckHandler(s.Engine, s.Poller, s.Identity)
 	historyH := handlers.NewHistoryHandler()
-	qualityH := handlers.NewQualityThresholdsHandler()
-	pingProfH := handlers.NewPingProfileHandler(s.Prober)
+	qualityH := handlers.NewQualityThresholdsHandler(filepath.Join(configDir, "quality_thresholds.json"))
+	pingProfH := handlers.NewPingProfileHandler(s.Prober, filepath.Join(configDir, "ping_profile.json"))
 
 	// API Routes (v1)
 	r.Route("/api/v1", func(api chi.Router) {

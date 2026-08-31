@@ -30,18 +30,29 @@ type BackupImeiConfig struct {
 
 // CellularImeiHandler handles IMEI settings and Luhn validation.
 type CellularImeiHandler struct {
-	engine    *atengine.Engine
-	poller    *telemetry.Poller
-	configMgr *config.Manager
+	engine         *atengine.Engine
+	poller         *telemetry.Poller
+	configMgr      *config.Manager
+	imeiBackupPath string
 }
 
 // NewCellularImeiHandler creates a new CellularImeiHandler.
-func NewCellularImeiHandler(engine *atengine.Engine, poller *telemetry.Poller, configMgr *config.Manager) *CellularImeiHandler {
-	return &CellularImeiHandler{
-		engine:    engine,
-		poller:    poller,
-		configMgr: configMgr,
+func NewCellularImeiHandler(engine *atengine.Engine, poller *telemetry.Poller, configMgr *config.Manager, optionalConfigDir ...string) *CellularImeiHandler {
+	backupP := imeiBackupPath
+	if len(optionalConfigDir) > 0 && optionalConfigDir[0] != "" {
+		backupP = filepath.Join(optionalConfigDir[0], "imei_backup.json")
 	}
+	return &CellularImeiHandler{
+		engine:         engine,
+		poller:         poller,
+		configMgr:      configMgr,
+		imeiBackupPath: backupP,
+	}
+}
+
+// SetStoragePath sets custom backup file path for testing.
+func (h *CellularImeiHandler) SetStoragePath(path string) {
+	h.imeiBackupPath = path
 }
 
 // GetIMEI handles GET /api/v1/cellular/imei and GET /cgi-bin/quecmanager/cellular/imei.sh

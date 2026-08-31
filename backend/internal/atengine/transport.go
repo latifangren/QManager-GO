@@ -291,7 +291,20 @@ func (c *CliTransport) Close() error {
 }
 
 // AutoDetectTransport automatically detects the optimal transport for the modem platform.
-func AutoDetectTransport() Transport {
+// If customDevice is provided (or non-empty), it attempts to open that specific device first.
+func AutoDetectTransport(customDevice ...string) Transport {
+	if len(customDevice) > 0 && customDevice[0] != "" {
+		dev := customDevice[0]
+		if _, err := os.Stat(dev); err == nil {
+			return NewDeviceTransport(dev)
+		}
+		if p, err := exec.LookPath(dev); err == nil {
+			return NewCliTransport(p)
+		}
+		// If custom device is a COM port or explicit path, construct device transport directly
+		return NewDeviceTransport(dev)
+	}
+
 	// 1. Check if qcmd executable exists
 	qcmdCandidates := []string{
 		"/usr/bin/qcmd",

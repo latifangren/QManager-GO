@@ -28,9 +28,13 @@ type SimRegistryHandler struct {
 }
 
 // NewSimRegistryHandler creates a new SimRegistryHandler.
-func NewSimRegistryHandler() *SimRegistryHandler {
+func NewSimRegistryHandler(optionalPath ...string) *SimRegistryHandler {
+	path := SimRegistryPath
+	if len(optionalPath) > 0 && optionalPath[0] != "" {
+		path = optionalPath[0]
+	}
 	return &SimRegistryHandler{
-		path: SimRegistryPath,
+		path: path,
 	}
 }
 
