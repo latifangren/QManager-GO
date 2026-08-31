@@ -13,11 +13,21 @@ import (
 )
 
 func TestCellularAPN_DeepBranches(t *testing.T) {
+	tmpDir := t.TempDir()
+	origApnSetting := apnSettingPath
+	origApnNames := apnNamesPath
+	apnSettingPath = filepath.Join(tmpDir, "apn_setting.json")
+	apnNamesPath = filepath.Join(tmpDir, "apn_names.json")
+	t.Cleanup(func() {
+		apnSettingPath = origApnSetting
+		apnNamesPath = origApnNames
+	})
+
 	mock := atengine.NewMockTransport()
 	eng := atengine.NewEngine(mock)
 	defer eng.Close()
 
-	cfgPath := filepath.Join(t.TempDir(), "qmanager.conf")
+	cfgPath := filepath.Join(tmpDir, "qmanager.conf")
 	cfgMgr, _ := config.NewManager(cfgPath)
 
 	apnH := NewCellularApnHandler(eng, cfgMgr)

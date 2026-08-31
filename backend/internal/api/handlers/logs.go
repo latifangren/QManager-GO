@@ -21,8 +21,11 @@ import (
 )
 
 const (
+	MaxRotatedLogFiles = 2
+)
+
+var (
 	DefaultLogFilePath  = "/tmp/qmanager.log"
-	MaxRotatedLogFiles  = 2
 	DefaultSubsysDevice = "/sys/bus/msm_subsys/devices/subsys0"
 	CrashLogFile        = "/etc/qmanager/modem_crashes.json"
 	RamdumpDir          = "/usrdata/ramdump_modem"

@@ -14,6 +14,15 @@ import (
 
 func TestCellularImeiAndMbn_DeepCoverage(t *testing.T) {
 	tmpDir := t.TempDir()
+	origBackupPath := imeiBackupPath
+	origFlagPath := imeiRebootPendingFlag
+	imeiBackupPath = filepath.Join(tmpDir, "imei_backup.json")
+	imeiRebootPendingFlag = filepath.Join(tmpDir, "qm_imei_reboot_pending")
+	t.Cleanup(func() {
+		imeiBackupPath = origBackupPath
+		imeiRebootPendingFlag = origFlagPath
+	})
+
 	mock := atengine.NewMockTransport()
 	eng := atengine.NewEngine(mock)
 	defer eng.Close()

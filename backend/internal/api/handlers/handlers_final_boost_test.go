@@ -104,6 +104,11 @@ func TestHandlers_FinalTargetedCoverage(t *testing.T) {
 	}
 
 	// 4. ip_passthrough.go: Status and mode transitions
+	origIppt := ipptConfigPath
+	ipptConfigPath = filepath.Join(tmpDir, "ippt_config.json")
+	t.Cleanup(func() {
+		ipptConfigPath = origIppt
+	})
 	ipptH := NewIPPassthroughHandler(eng)
 	mock.SetResponse(`AT+QMAP="MPDN_rule";+QMAP="IPPT_NAT";+QCFG="usbnet";+QMAP="DHCPV4DNS"`, `+QMAP: "MPDN_rule",0,1,0,3,1,"11:22:33:44:55:66"`+"\r\nOK")
 	wIpptStatus := httptest.NewRecorder()

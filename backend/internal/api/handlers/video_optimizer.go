@@ -12,12 +12,12 @@ import (
 	"time"
 )
 
-const (
-	dpiConfigFile      = "/etc/qmanager/dpi_config.json"
-	dpiHostlistFile    = "/etc/qmanager/dpi_hostlist.txt"
-	dpiVerifyFile      = "/tmp/qmanager_dpi_verify.json"
-	dpiInstallFile     = "/tmp/qmanager_dpi_install.json"
-	dpiInstallPidFile  = "/tmp/qmanager_dpi_install.pid"
+var (
+	dpiConfigFile     = "/etc/qmanager/dpi_config.json"
+	dpiHostlistFile   = "/etc/qmanager/dpi_hostlist.txt"
+	dpiVerifyFile     = "/tmp/qmanager_dpi_verify.json"
+	dpiInstallFile    = "/tmp/qmanager_dpi_install.json"
+	dpiInstallPidFile = "/tmp/qmanager_dpi_install.pid"
 )
 
 // VideoOptimizerHandler handles DPI bypass / Traffic Engine / Video Optimizer.

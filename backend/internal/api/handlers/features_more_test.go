@@ -61,6 +61,22 @@ func TestSpeedtestHandler(t *testing.T) {
 
 // 2. Video Optimizer / DPI Handler Tests
 func TestVideoOptimizerHandler(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDpiConfig := dpiConfigFile
+	origDpiHostlist := dpiHostlistFile
+	origDpiVerify := dpiVerifyFile
+	origDpiInstall := dpiInstallFile
+	dpiConfigFile = filepath.Join(tmpDir, "dpi_config.json")
+	dpiHostlistFile = filepath.Join(tmpDir, "dpi_hostlist.txt")
+	dpiVerifyFile = filepath.Join(tmpDir, "dpi_verify.json")
+	dpiInstallFile = filepath.Join(tmpDir, "dpi_install.json")
+	t.Cleanup(func() {
+		dpiConfigFile = origDpiConfig
+		dpiHostlistFile = origDpiHostlist
+		dpiVerifyFile = origDpiVerify
+		dpiInstallFile = origDpiInstall
+	})
+
 	h := NewVideoOptimizerHandler()
 
 	// GET status
@@ -194,6 +210,7 @@ func TestHealthCheckHandler(t *testing.T) {
 func TestTowerScheduleHandler(t *testing.T) {
 	mock, eng, _ := setupTestRouterEngine(t)
 	h := NewTowerScheduleHandler(eng)
+	h.SetConfigPath(filepath.Join(t.TempDir(), "tower_lock.json"))
 
 	// Status
 	mock.SetResponse(`AT+QNWLOCK="common/4g"`, `+QNWLOCK: "common/4g",0`+"\r\nOK")
@@ -246,6 +263,7 @@ func TestTowerScheduleHandler(t *testing.T) {
 // 6. SIM Registry Handler Tests
 func TestSimRegistryHandler(t *testing.T) {
 	h := NewSimRegistryHandler()
+	h.SetPath(filepath.Join(t.TempDir(), "known_sims.json"))
 
 	// GET Registry
 	reqGet := httptest.NewRequest(http.MethodGet, "/api/system/sim-registry", nil)

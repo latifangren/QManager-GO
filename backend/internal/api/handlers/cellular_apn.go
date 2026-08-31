@@ -15,9 +15,12 @@ import (
 )
 
 const (
+	maxApnProfiles = 6
+)
+
+var (
 	apnSettingPath = "/etc/qmanager/apn_setting.json"
 	apnNamesPath   = "/etc/qmanager/apn_names.json"
-	maxApnProfiles = 6
 )
 
 // ApnSetting holds the single stored APN configuration.

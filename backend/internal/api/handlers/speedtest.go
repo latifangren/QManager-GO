@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const (
+var (
 	speedtestPidFile      = "/tmp/qmanager_speedtest.pid"
 	speedtestProgressFile = "/tmp/qmanager_speedtest_progress.json"
 	speedtestResultFile   = "/tmp/qmanager_speedtest_result.json"

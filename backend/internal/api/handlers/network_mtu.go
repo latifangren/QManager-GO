@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const (
+var (
 	mtuFirewallFile = "/etc/firewall.user.mtu"
 )
 

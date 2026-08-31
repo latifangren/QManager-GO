@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-const (
+var (
 	SimRegistryPath = "/etc/qmanager/known_sims.json"
 )
 
@@ -32,6 +32,13 @@ func NewSimRegistryHandler() *SimRegistryHandler {
 	return &SimRegistryHandler{
 		path: SimRegistryPath,
 	}
+}
+
+// SetPath sets custom registry file path for testing.
+func (h *SimRegistryHandler) SetPath(path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.path = path
 }
 
 // HandleRegistry handles GET/POST /cgi-bin/quecmanager/system/sim_registry.sh and /api/system/sim-registry

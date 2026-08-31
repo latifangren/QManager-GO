@@ -15,11 +15,14 @@ import (
 )
 
 const (
+	towerWriteSettleSec = 30
+)
+
+var (
 	towerConfigPath        = "/etc/qmanager/tower_lock.json"
 	towerFailoverFlagPath  = "/tmp/qmanager_tower_failover"
 	towerFailoverPidPath   = "/tmp/qmanager_tower_failover.pid"
 	towerWriteInflightPath = "/tmp/qmanager_tower_write_inflight"
-	towerWriteSettleSec    = 30
 )
 
 // LTECellEntry represents a single LTE cell configuration.

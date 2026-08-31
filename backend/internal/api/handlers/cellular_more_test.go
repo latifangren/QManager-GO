@@ -37,6 +37,16 @@ func newTestCellularContext(t *testing.T) (*atengine.MockTransport, *atengine.En
 
 // 1. Cellular IMEI Handler Tests
 func TestCellularIMEIHandler(t *testing.T) {
+	tmpDir := t.TempDir()
+	origBackupPath := imeiBackupPath
+	origFlagPath := imeiRebootPendingFlag
+	imeiBackupPath = filepath.Join(tmpDir, "imei_backup.json")
+	imeiRebootPendingFlag = filepath.Join(tmpDir, "qm_imei_reboot_pending")
+	t.Cleanup(func() {
+		imeiBackupPath = origBackupPath
+		imeiRebootPendingFlag = origFlagPath
+	})
+
 	mock, eng, cfgMgr, poller := newTestCellularContext(t)
 	h := NewCellularImeiHandler(eng, poller, cfgMgr)
 
@@ -111,6 +121,16 @@ func TestCellularIMEIHandler(t *testing.T) {
 
 // 2. Cellular APN Handler Tests
 func TestCellularAPNHandler(t *testing.T) {
+	tmpDir := t.TempDir()
+	origApnSetting := apnSettingPath
+	origApnNames := apnNamesPath
+	apnSettingPath = filepath.Join(tmpDir, "apn_setting.json")
+	apnNamesPath = filepath.Join(tmpDir, "apn_names.json")
+	t.Cleanup(func() {
+		apnSettingPath = origApnSetting
+		apnNamesPath = origApnNames
+	})
+
 	mock, eng, cfgMgr, _ := newTestCellularContext(t)
 	h := NewCellularApnHandler(eng, cfgMgr)
 

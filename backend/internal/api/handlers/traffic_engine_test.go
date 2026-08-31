@@ -5,10 +5,21 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 )
 
 func TestCustomDNSHandler_Deep(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDnsmasq := dnsmasqConfPath
+	origCustomDNS := customDNSConfig
+	dnsmasqConfPath = filepath.Join(tmpDir, "dnsmasq.conf")
+	customDNSConfig = filepath.Join(tmpDir, "custom_dns.json")
+	t.Cleanup(func() {
+		dnsmasqConfPath = origDnsmasq
+		customDNSConfig = origCustomDNS
+	})
+
 	h := NewCustomDNSHandler()
 
 	// 1. GET DNS

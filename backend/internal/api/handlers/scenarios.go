@@ -15,9 +15,9 @@ import (
 	"qmanager/internal/atengine"
 )
 
-const (
-	defaultScenariosDir        = "/etc/qmanager/scenarios"
-	defaultActiveScenarioPath  = "/etc/qmanager/active_scenario"
+var (
+	defaultScenariosDir       = "/etc/qmanager/scenarios"
+	defaultActiveScenarioPath = "/etc/qmanager/active_scenario"
 )
 
 // ScenarioDefinition represents a custom or built-in scenario configuration.
@@ -190,6 +190,7 @@ func (h *ScenarioHandler) Save(w http.ResponseWriter, r *http.Request) {
 		s.CreatedAt = s.UpdatedAt
 	}
 
+	_ = os.MkdirAll(h.scenariosDir, 0755)
 	path := filepath.Join(h.scenariosDir, s.ID+".json")
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {

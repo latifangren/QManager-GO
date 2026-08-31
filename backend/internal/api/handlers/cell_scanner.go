@@ -12,7 +12,7 @@ import (
 	"qmanager/internal/atengine"
 )
 
-const (
+var (
 	cellScanPidFile    = "/tmp/qmanager_cell_scan.pid"
 	cellScanResultFile = "/tmp/qmanager_cell_scan_result.json"
 	cellScanErrorFile  = "/tmp/qmanager_cell_scan_error"

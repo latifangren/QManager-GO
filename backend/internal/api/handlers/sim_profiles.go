@@ -20,11 +20,14 @@ import (
 )
 
 const (
-	defaultProfileDir         = "/etc/qmanager/profiles"
-	defaultActiveProfilePath  = "/etc/qmanager/active_profile"
-	defaultProfileStatePath   = "/tmp/qmanager_profile_state.json"
-	defaultSimRegistryPath    = "/etc/qmanager/sim_registry.json"
-	maxProfiles               = 10
+	maxProfiles = 10
+)
+
+var (
+	defaultProfileDir        = "/etc/qmanager/profiles"
+	defaultActiveProfilePath = "/etc/qmanager/active_profile"
+	defaultProfileStatePath  = "/tmp/qmanager_profile_state.json"
+	defaultSimRegistryPath   = "/etc/qmanager/sim_registry.json"
 )
 
 // ProfileSettings represents core radio/network settings in a profile.

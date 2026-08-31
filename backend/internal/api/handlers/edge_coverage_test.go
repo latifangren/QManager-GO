@@ -15,11 +15,21 @@ import (
 )
 
 func TestHandlers_EdgeCoverage(t *testing.T) {
+	tmpDir := t.TempDir()
+	origBackupPath := imeiBackupPath
+	origFlagPath := imeiRebootPendingFlag
+	imeiBackupPath = filepath.Join(tmpDir, "imei_backup.json")
+	imeiRebootPendingFlag = filepath.Join(tmpDir, "qm_imei_reboot_pending")
+	t.Cleanup(func() {
+		imeiBackupPath = origBackupPath
+		imeiRebootPendingFlag = origFlagPath
+	})
+
 	mock := atengine.NewMockTransport()
 	eng := atengine.NewEngine(mock)
 	defer eng.Close()
 
-	cfgPath := filepath.Join(t.TempDir(), "qmanager.conf")
+	cfgPath := filepath.Join(tmpDir, "qmanager.conf")
 	cfgMgr, _ := config.NewManager(cfgPath)
 	identity := platform.Identity{Model: "RG501Q-EU"}
 	poller := telemetry.NewPoller(eng, identity, 100)

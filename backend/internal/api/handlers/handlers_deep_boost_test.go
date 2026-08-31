@@ -126,6 +126,10 @@ func TestHandlers_DeepBoost(t *testing.T) {
 	}
 
 	// 4. VideoOptimizerHandler - hostlist and install actions
+	dpiConfigFile = filepath.Join(tmpDir, "dpi_config.json")
+	dpiHostlistFile = filepath.Join(tmpDir, "dpi_hostlist.txt")
+	dpiVerifyFile = filepath.Join(tmpDir, "dpi_verify.json")
+	dpiInstallFile = filepath.Join(tmpDir, "dpi_install.json")
 	dpiH := NewVideoOptimizerHandler()
 
 	// GET section=hostlist
@@ -158,6 +162,8 @@ func TestHandlers_DeepBoost(t *testing.T) {
 	}
 
 	// 5. CellularApnHandler - handleDeactivate & handleToggle
+	apnSettingPath = filepath.Join(tmpDir, "apn_setting.json")
+	apnNamesPath = filepath.Join(tmpDir, "apn_names.json")
 	apnH := NewCellularApnHandler(eng, cfgMgr)
 	mock.SetResponse(`AT+CGDCONT=1,"IPV4V6",""`, "OK")
 	bodyDeact, _ := json.Marshal(ApnSavePayload{Action: "deactivate"})

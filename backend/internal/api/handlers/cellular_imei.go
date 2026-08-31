@@ -17,7 +17,7 @@ import (
 	"qmanager/internal/telemetry"
 )
 
-const (
+var (
 	imeiBackupPath        = "/etc/qmanager/imei_backup.json"
 	imeiRebootPendingFlag = "/tmp/qm_imei_reboot_pending"
 )

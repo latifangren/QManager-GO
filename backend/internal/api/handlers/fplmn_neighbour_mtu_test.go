@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"qmanager/internal/atengine"
 )
 
 func TestFplmnNeighbourAndMtu_Deep(t *testing.T) {
+	tmpDir := t.TempDir()
 	mock := atengine.NewMockTransport()
 	eng := atengine.NewEngine(mock)
 	defer eng.Close()
@@ -56,6 +58,11 @@ OK`)
 	}
 
 	// 3. Network MTU Handler
+	origMtu := mtuFirewallFile
+	mtuFirewallFile = filepath.Join(tmpDir, "firewall.user.mtu")
+	t.Cleanup(func() {
+		mtuFirewallFile = origMtu
+	})
 	mtuH := NewNetworkMTUHandler()
 
 	// 3a. GET MTU

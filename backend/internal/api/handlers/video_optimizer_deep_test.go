@@ -12,8 +12,20 @@ import (
 
 func TestVideoOptimizer_DeepBranches(t *testing.T) {
 	tmpDir := t.TempDir()
-	cfgPath := filepath.Join(tmpDir, "dpi_config.json")
-	hostlistPath := filepath.Join(tmpDir, "dpi_hostlist.txt")
+	origDpiConfig := dpiConfigFile
+	origDpiHostlist := dpiHostlistFile
+	origDpiVerify := dpiVerifyFile
+	origDpiInstall := dpiInstallFile
+	dpiConfigFile = filepath.Join(tmpDir, "dpi_config.json")
+	dpiHostlistFile = filepath.Join(tmpDir, "dpi_hostlist.txt")
+	dpiVerifyFile = filepath.Join(tmpDir, "dpi_verify.json")
+	dpiInstallFile = filepath.Join(tmpDir, "dpi_install.json")
+	t.Cleanup(func() {
+		dpiConfigFile = origDpiConfig
+		dpiHostlistFile = origDpiHostlist
+		dpiVerifyFile = origDpiVerify
+		dpiInstallFile = origDpiInstall
+	})
 
 	h := NewVideoOptimizerHandler()
 
@@ -31,7 +43,7 @@ func TestVideoOptimizer_DeepBranches(t *testing.T) {
 	}
 
 	// 2. Hostlist reading & count
-	_ = os.WriteFile(hostlistPath, []byte("google.com\nyoutube.com\nnetflix.com\n"), 0644)
+	_ = os.WriteFile(dpiHostlistFile, []byte("google.com\nyoutube.com\nnetflix.com\n"), 0644)
 	domains := readHostlistDomains()
 	_ = domains
 	count := countHostlistDomains()
@@ -68,6 +80,4 @@ func TestVideoOptimizer_DeepBranches(t *testing.T) {
 	if wDoUninst.Code != http.StatusOK {
 		t.Errorf("uninstall action returned %d, want 200", wDoUninst.Code)
 	}
-
-	_ = cfgPath
 }

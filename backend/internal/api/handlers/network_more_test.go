@@ -24,6 +24,13 @@ func newTestNetworkEngine(t *testing.T) (*atengine.MockTransport, *atengine.Engi
 
 // 1. Network MTU Handler Tests
 func TestNetworkMTUHandler(t *testing.T) {
+	tmpDir := t.TempDir()
+	origMtu := mtuFirewallFile
+	mtuFirewallFile = filepath.Join(tmpDir, "firewall.user.mtu")
+	t.Cleanup(func() {
+		mtuFirewallFile = origMtu
+	})
+
 	h := NewNetworkMTUHandler()
 
 	// GET MTU
@@ -81,6 +88,13 @@ func TestNetworkMTUHandler(t *testing.T) {
 
 // 2. IP Passthrough Handler Tests
 func TestIPPassthroughHandler(t *testing.T) {
+	tmpDir := t.TempDir()
+	origIppt := ipptConfigPath
+	ipptConfigPath = filepath.Join(tmpDir, "ippt_config.json")
+	t.Cleanup(func() {
+		ipptConfigPath = origIppt
+	})
+
 	mock, eng := newTestNetworkEngine(t)
 	h := NewIPPassthroughHandler(eng)
 
@@ -214,6 +228,16 @@ func TestEthernetHandler(t *testing.T) {
 
 // 5. Custom DNS / Traffic Engine Handler Tests
 func TestCustomDNSHandler(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDnsmasq := dnsmasqConfPath
+	origCustomDNS := customDNSConfig
+	dnsmasqConfPath = filepath.Join(tmpDir, "dnsmasq.conf")
+	customDNSConfig = filepath.Join(tmpDir, "custom_dns.json")
+	t.Cleanup(func() {
+		dnsmasqConfPath = origDnsmasq
+		customDNSConfig = origCustomDNS
+	})
+
 	h := NewCustomDNSHandler()
 
 	// GET DNS

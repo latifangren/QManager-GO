@@ -12,11 +12,14 @@ import (
 )
 
 const (
+	sentinelBegin = "# QMANAGER-CUSTOM-DNS-BEGIN v1"
+	sentinelEnd   = "# QMANAGER-CUSTOM-DNS-END v1"
+	maxDNSServers = 4
+)
+
+var (
 	dnsmasqConfPath = "/etc/data/dnsmasq.conf"
 	customDNSConfig = "/etc/qmanager/custom_dns.json"
-	sentinelBegin   = "# QMANAGER-CUSTOM-DNS-BEGIN v1"
-	sentinelEnd     = "# QMANAGER-CUSTOM-DNS-END v1"
-	maxDNSServers   = 4
 )
 
 // CustomDNSConfig represents stored DNS configuration.

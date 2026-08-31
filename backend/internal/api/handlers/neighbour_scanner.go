@@ -12,7 +12,7 @@ import (
 	"qmanager/internal/atengine"
 )
 
-const (
+var (
 	neighbourScanPidFile    = "/tmp/qmanager_neighbour_scan.pid"
 	neighbourScanResultFile = "/tmp/qmanager_neighbour_scan_result.json"
 	neighbourScanErrorFile  = "/tmp/qmanager_neighbour_scan_error"
