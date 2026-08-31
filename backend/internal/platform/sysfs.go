@@ -98,6 +98,9 @@ func ReadCpuTemp() float64 {
 	zones, err := filepath.Glob(thermalPattern)
 	if err == nil {
 		for _, z := range zones {
+			if strings.Contains(z, "cooling_device") {
+				continue
+			}
 			if data, err := os.ReadFile(z); err == nil {
 				val, err := strconv.ParseFloat(strings.TrimSpace(string(data)), 64)
 				if err == nil && val > 0 {
