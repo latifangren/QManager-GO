@@ -191,3 +191,62 @@ func TestScheduler_JobsTriggerWhenSane(t *testing.T) {
 		t.Errorf("duplicate trigger occurred for reboot in same slot")
 	}
 }
+
+func TestScheduler_LifecycleAndTowerTransitions(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "qmanager.conf")
+	cfgMgr, _ := config.NewManager(cfgPath)
+
+	mock := atengine.NewMockTransport()
+	eng := atengine.NewEngine(mock)
+	defer eng.Close()
+
+	sched := NewScheduler(eng, cfgMgr)
+
+	// Test BootSettled helper
+	if BootSettled(100.0, 300.0) {
+		t.Errorf("BootSettled(100, 300) should be false")
+	}
+	if !BootSettled(350.0, 300.0) {
+		t.Errorf("BootSettled(350, 300) should be true")
+	}
+
+	// Test Start/Stop lifecycle
+	sched.Start()
+	sched.Start() // Idempotent
+	time.Sleep(50 * time.Millisecond)
+	sched.Stop()
+	sched.Stop() // Idempotent
+
+	// Test Tower Clear transition
+	towerPath := filepath.Join(tmpDir, "tower_lock.json")
+	towerData := `{
+		"lte": { "enabled": true },
+		"schedule": {
+			"enabled": true,
+			"start_time": "22:00",
+			"end_time": "08:00",
+			"days": [0,1,2,3,4,5,6]
+		}
+	}`
+	_ = os.WriteFile(towerPath, []byte(towerData), 0644)
+	sched.SetTowerConfigPath(towerPath)
+
+	var towerClearCount int32
+	sched.SetExecutor(JobExecutor{
+		TowerClearFunc: func(ctx context.Context) error {
+			atomic.AddInt32(&towerClearCount, 1)
+			return nil
+		},
+		GetTimeFunc: func() time.Time {
+			// 08:00 is end time -> should trigger TowerClearFunc
+			return time.Date(2026, 8, 30, 8, 0, 0, 0, time.UTC)
+		},
+		GetUptimeFunc: func() float64 { return 1000.0 },
+	})
+
+	sched.Evaluate()
+	if atomic.LoadInt32(&towerClearCount) != 1 {
+		t.Errorf("expected 1 tower clear action at 08:00, got %d", towerClearCount)
+	}
+}

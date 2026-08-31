@@ -625,6 +625,9 @@ func CompareSemver(v1, v2 string) int {
 }
 
 func extractBinaryFromTar(tarPath, destDir string) (string, error) {
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return "", err
+	}
 	file, err := os.Open(tarPath)
 	if err != nil {
 		return "", err

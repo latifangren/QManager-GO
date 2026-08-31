@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"log"
@@ -20,8 +21,11 @@ import (
 //go:embed all:dist
 var distFS embed.FS
 
-func main() {
-	port := os.Getenv("PORT")
+// AppMain initializes and runs all components with given arguments and context.
+func AppMain(ctx context.Context, port string) error {
+	if port == "" {
+		port = os.Getenv("PORT")
+	}
 	if port == "" {
 		port = "8080"
 	}
@@ -88,14 +92,28 @@ func main() {
 	go func() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-		<-sigChan
-
-		fmt.Println("\n🛑 Shutting down QManager daemon...")
-		_ = server.Close()
+		select {
+		case <-sigChan:
+			fmt.Println("\n🛑 Shutting down QManager daemon...")
+			_ = server.Close()
+		case <-ctx.Done():
+			_ = server.Close()
+		}
 	}()
 
 	fmt.Printf("🌐 QManager HTTP API & Web UI listening on :%s\n", port)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
+}
+
+var mainRunner = func() {
+	if err := AppMain(context.Background(), ""); err != nil {
 		log.Fatalf("❌ Server listen failed: %v\n", err)
 	}
+}
+
+func main() {
+	mainRunner()
 }

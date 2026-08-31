@@ -85,13 +85,16 @@ func (e *Engine) GetTimeout() time.Duration {
 
 // Close cleanly stops the priority worker goroutine.
 func (e *Engine) Close() error {
+	e.mu.Lock()
 	select {
 	case <-e.stopChan:
 		// already closed
+		e.mu.Unlock()
 		return nil
 	default:
 		close(e.stopChan)
 	}
+	e.mu.Unlock()
 
 	e.wg.Wait()
 	if e.transport != nil {
@@ -203,27 +206,41 @@ func (e *Engine) ExecContextWithPriority(ctx context.Context, cmd string, prio P
 	}
 
 	// Submit to appropriate priority queue
-	var targetChan chan commandRequest
 	switch prio {
 	case PriorityHigh:
-		targetChan = e.highChan
+		select {
+		case <-e.stopChan:
+			return nil, fmt.Errorf("engine closed")
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case e.highChan <- req:
+		}
+	case PriorityNormal:
+		select {
+		case <-e.stopChan:
+			return nil, fmt.Errorf("engine closed")
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case e.normChan <- req:
+		}
 	case PriorityLow:
-		targetChan = e.lowChan
-	default:
-		targetChan = e.normChan
-	}
-
-	select {
-	case <-e.stopChan:
-		return nil, fmt.Errorf("engine closed")
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case targetChan <- req:
+		select {
+		case <-e.stopChan:
+			return nil, fmt.Errorf("engine closed")
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case e.lowChan <- req:
+		default:
+			// Low priority queue is saturated / full; drop immediately without blocking caller
+			return nil, ErrQueueFull
+		}
 	}
 
 	// Wait for response or cancellation
 	var resp commandResponse
 	select {
+	case <-e.stopChan:
+		return nil, fmt.Errorf("engine closed")
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case resp = <-req.respChan:

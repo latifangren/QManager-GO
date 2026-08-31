@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+var (
+	thermalPattern = "/sys/class/thermal/thermal_zone*/temp"
+	hwmonPattern   = "/sys/class/hwmon/hwmon*/temp1_input"
+)
+
 // NetworkStats holds interface transfer counters from /proc/net/dev.
 type NetworkStats struct {
 	Interface string `json:"interface"`
@@ -90,7 +95,7 @@ func ReadMemInfo(path string) (total, free, avail uint64, err error) {
 // ReadCpuTemp searches /sys/class/thermal or hwmon for modem CPU temperature.
 func ReadCpuTemp() float64 {
 	// 1. Check thermal_zone
-	zones, err := filepath.Glob("/sys/class/thermal/thermal_zone*/temp")
+	zones, err := filepath.Glob(thermalPattern)
 	if err == nil {
 		for _, z := range zones {
 			if data, err := os.ReadFile(z); err == nil {
@@ -106,7 +111,7 @@ func ReadCpuTemp() float64 {
 	}
 
 	// 2. Check hwmon
-	hwmon, err := filepath.Glob("/sys/class/hwmon/hwmon*/temp1_input")
+	hwmon, err := filepath.Glob(hwmonPattern)
 	if err == nil {
 		for _, h := range hwmon {
 			if data, err := os.ReadFile(h); err == nil {

@@ -53,81 +53,136 @@ type SignalQuality struct {
 
 // ParseQENGServingCell parses `+QENG: "servingcell",...` lines.
 func ParseQENGServingCell(raw string) *CellInfo {
-	lines := strings.Split(raw, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "+QENG: \"servingcell\",") {
-			continue
+	idx := strings.Index(raw, "+QENG: \"servingcell\",")
+	if idx == -1 {
+		idx = strings.Index(raw, "+QENG: \"servingcell\"")
+		if idx == -1 {
+			return nil
 		}
+	}
+	line := raw[idx:]
+	if end := strings.IndexByte(line, '\r'); end != -1 {
+		line = line[:end]
+	} else if end := strings.IndexByte(line, '\n'); end != -1 {
+		line = line[:end]
+	}
+	line = strings.TrimSpace(line)
 
-		parts := parseCSVLine(strings.TrimPrefix(line, "+QENG: \"servingcell\","))
-		if len(parts) < 3 {
-			continue
-		}
+	prefix := "+QENG: \"servingcell\","
+	var content string
+	if strings.HasPrefix(line, prefix) {
+		content = line[len(prefix):]
+	} else {
+		content = strings.TrimPrefix(line, "+QENG: \"servingcell\"")
+		content = strings.TrimPrefix(content, ",")
+	}
 
-		info := &CellInfo{
-			State: parts[0],
-			Mode:  parts[1],
-		}
+	parts := parseCSVLine(content)
+	if len(parts) == 0 {
+		return nil
+	}
 
-		if info.State == "SEARCH" || info.State == "LIMSRV" {
-			return info
-		}
+	info := &CellInfo{
+		State: parts[0],
+	}
+	if len(parts) > 1 {
+		info.Mode = parts[1]
+	}
 
-		switch info.Mode {
-		case "LTE", "eMMT", "NB-IoT":
-			// LTE: "CONNECT"/"NOCONN", "LTE", is_tdd, mcc, mnc, cellid, pcid, earfcn, freq_band_ind, ul_bandwidth, dl_bandwidth, tac, rsrp, rsrq, rssi, sinr, cqi, tx_power, srxlev
-			if len(parts) >= 16 {
-				info.Duplex = parts[2]
-				info.MCC = parts[3]
-				info.MNC = parts[4]
-				info.CellID = parts[5]
-				info.PCID, _ = strconv.Atoi(parts[6])
-				info.EARFCN, _ = strconv.Atoi(parts[7])
-				info.Band = "B" + parts[8]
-				info.ULBandwidth = parts[9]
-				info.DLBandwidth = parts[10]
-				info.Bandwidth = parts[10]
-				info.TAC = parts[11]
-				info.RSRP, _ = strconv.Atoi(parts[12])
-				info.RSRQ, _ = strconv.Atoi(parts[13])
-				info.RSSI, _ = strconv.Atoi(parts[14])
-				info.SINR, _ = strconv.Atoi(parts[15])
-				if len(parts) >= 17 {
-					info.CQI, _ = strconv.Atoi(parts[16])
-				}
-			}
-		case "NR5G-SA":
-			// NR5G-SA: "CONNECT"/"NOCONN", "NR5G-SA", is_tdd, mcc, mnc, cellid, pcid, tac, arfcn, band, nr_dl_bandwidth, rsrp, rsrq, sinr, tx_power, srxlev
-			if len(parts) >= 14 {
-				info.Duplex = parts[2]
-				info.MCC = parts[3]
-				info.MNC = parts[4]
-				info.CellID = parts[5]
-				info.PCID, _ = strconv.Atoi(parts[6])
-				info.TAC = parts[7]
-				info.EARFCN, _ = strconv.Atoi(parts[8])
-				info.Band = "n" + parts[9]
-				info.DLBandwidth = parts[10]
-				info.Bandwidth = parts[10]
-				info.RSRP, _ = strconv.Atoi(parts[11])
-				info.RSRQ, _ = strconv.Atoi(parts[12])
-				info.SINR, _ = strconv.Atoi(parts[13])
-			}
-		}
-
+	if info.State == "SEARCH" || info.State == "LIMSRV" {
 		return info
 	}
 
-	return nil
+	if len(parts) < 3 {
+		return info
+	}
+
+	switch info.Mode {
+	case "LTE", "eMMT", "NB-IoT":
+		// LTE: "CONNECT"/"NOCONN", "LTE", is_tdd, mcc, mnc, cellid, pcid, earfcn, freq_band_ind, ul_bandwidth, dl_bandwidth, tac, rsrp, rsrq, rssi, sinr, cqi, tx_power, srxlev
+		if len(parts) >= 16 {
+			info.Duplex = parts[2]
+			info.MCC = parts[3]
+			info.MNC = parts[4]
+			info.CellID = parts[5]
+			info.PCID, _ = strconv.Atoi(parts[6])
+			info.EARFCN, _ = strconv.Atoi(parts[7])
+			info.Band = "B" + parts[8]
+			info.ULBandwidth = parts[9]
+			info.DLBandwidth = parts[10]
+			info.Bandwidth = parts[10]
+			info.TAC = parts[11]
+			info.RSRP, _ = strconv.Atoi(parts[12])
+			info.RSRQ, _ = strconv.Atoi(parts[13])
+			info.RSSI, _ = strconv.Atoi(parts[14])
+			info.SINR, _ = strconv.Atoi(parts[15])
+			if len(parts) >= 17 {
+				info.CQI, _ = strconv.Atoi(parts[16])
+			}
+		}
+	case "NR5G-SA":
+		// NR5G-SA: "CONNECT"/"NOCONN", "NR5G-SA", is_tdd, mcc, mnc, cellid, pcid, tac, arfcn, band, nr_dl_bandwidth, rsrp, rsrq, sinr, tx_power, srxlev
+		if len(parts) >= 14 {
+			info.Duplex = parts[2]
+			info.MCC = parts[3]
+			info.MNC = parts[4]
+			info.CellID = parts[5]
+			info.PCID, _ = strconv.Atoi(parts[6])
+			info.TAC = parts[7]
+			info.EARFCN, _ = strconv.Atoi(parts[8])
+			info.Band = "n" + parts[9]
+			info.DLBandwidth = parts[10]
+			info.Bandwidth = parts[10]
+			info.RSRP, _ = strconv.Atoi(parts[11])
+			info.RSRQ, _ = strconv.Atoi(parts[12])
+			info.SINR, _ = strconv.Atoi(parts[13])
+		}
+	case "NR5G-NSA":
+		// NR5G-NSA: "CONNECT"/"NOCONN", "NR5G-NSA", mcc, mnc, pcid, rsrp, sinr, rsrq, arfcn, band, nr_dl_bandwidth
+		if len(parts) >= 10 {
+			info.MCC = parts[2]
+			info.MNC = parts[3]
+			info.PCID, _ = strconv.Atoi(parts[4])
+			info.RSRP, _ = strconv.Atoi(parts[5])
+			info.SINR, _ = strconv.Atoi(parts[6])
+			info.RSRQ, _ = strconv.Atoi(parts[7])
+			info.EARFCN, _ = strconv.Atoi(parts[8])
+			info.Band = "n" + parts[9]
+			if len(parts) >= 11 {
+				info.DLBandwidth = parts[10]
+				info.Bandwidth = parts[10]
+			}
+		}
+	case "WCDMA":
+		if len(parts) >= 10 {
+			info.MCC = parts[2]
+			info.MNC = parts[3]
+			info.TAC = parts[4]
+			info.CellID = parts[5]
+			info.EARFCN, _ = strconv.Atoi(parts[6])
+			info.PCID, _ = strconv.Atoi(parts[7])
+			info.RSRP, _ = strconv.Atoi(parts[9])
+		}
+	}
+
+	return info
 }
 
 // ParseQCAINFO parses `+QCAINFO: ...` lines for carrier aggregation.
 func ParseQCAINFO(raw string) []CarrierComponent {
 	var list []CarrierComponent
-	lines := strings.Split(raw, "\n")
+	remaining := raw
 
-	for _, line := range lines {
+	for len(remaining) > 0 {
+		var line string
+		if idx := strings.IndexByte(remaining, '\n'); idx != -1 {
+			line = remaining[:idx]
+			remaining = remaining[idx+1:]
+		} else {
+			line = remaining
+			remaining = ""
+		}
+
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "+QCAINFO:") {
 			continue
@@ -207,65 +262,214 @@ func ParseQCAINFO(raw string) []CarrierComponent {
 	return list
 }
 
-// ParseCSQ parses `+CSQ: <rssi>,<ber>` response.
-func ParseCSQ(raw string) *SignalQuality {
+// BatteryStatus holds parsed battery info from +CBC.
+type BatteryStatus struct {
+	BCS     int `json:"bcs"`     // Battery connection status (0: powered by battery, 1: battery connected, 2: no battery)
+	BCL     int `json:"bcl"`     // Battery charge level (0-100%)
+	Voltage int `json:"voltage"` // Battery voltage in mV (if reported)
+}
+
+// TemperatureInfo holds parsed module temperature sensors from +QTEMP.
+type TemperatureInfo struct {
+	Sensors map[string]int `json:"sensors"` // Sensor name to temperature in Celsius
+	MaxTemp int            `json:"max_temp"`
+}
+
+var urcPrefixes = []string{
+	"+QIURC:",
+	"+CMTI:",
+	"+CEREG:",
+	"+CGREG:",
+	"+CREG:",
+	"+QIND:",
+	"+QSIMSTAT:",
+	"^MODE:",
+	"^DSFLOWRPT:",
+	"RDY",
+	"RING",
+	"NO CARRIER",
+}
+
+// FilterURC removes common asynchronous Unsolicited Result Codes from raw AT responses.
+func FilterURC(raw string) string {
+	hasURC := false
+	for _, prefix := range urcPrefixes {
+		if strings.Contains(raw, prefix) {
+			hasURC = true
+			break
+		}
+	}
+	if !hasURC {
+		return raw
+	}
+
 	lines := strings.Split(raw, "\n")
+	var filtered []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		isURC := false
+		for _, prefix := range urcPrefixes {
+			if strings.HasPrefix(trimmed, prefix) {
+				isURC = true
+				break
+			}
+		}
+		if !isURC {
+			filtered = append(filtered, line)
+		}
+	}
+	return strings.Join(filtered, "\n")
+}
+
+// ParseCBC parses `+CBC: <bcs>,<bcl>[,<voltage>]` response.
+func ParseCBC(raw string) *BatteryStatus {
+	clean := FilterURC(raw)
+	lines := strings.Split(clean, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "+CSQ:") {
+		if !strings.HasPrefix(line, "+CBC:") {
 			continue
 		}
 
-		parts := parseCSVLine(strings.TrimPrefix(line, "+CSQ:"))
+		parts := parseCSVLine(strings.TrimPrefix(line, "+CBC:"))
 		if len(parts) < 2 {
 			continue
 		}
 
-		rssi, _ := strconv.Atoi(parts[0])
-		ber, _ := strconv.Atoi(parts[1])
-
-		dbm := 0
-		if rssi == 0 {
-			dbm = -113
-		} else if rssi == 1 {
-			dbm = -111
-		} else if rssi >= 2 && rssi <= 30 {
-			dbm = -109 + (rssi-2)*2
-		} else if rssi == 31 {
-			dbm = -51
+		bcs, err1 := strconv.Atoi(parts[0])
+		bcl, err2 := strconv.Atoi(parts[1])
+		if err1 != nil || err2 != nil {
+			continue
 		}
 
-		return &SignalQuality{
-			RSSI:    rssi,
-			BER:     ber,
-			RSRPDbm: dbm,
+		volt := 0
+		if len(parts) >= 3 {
+			volt, _ = strconv.Atoi(parts[2])
+		}
+
+		return &BatteryStatus{
+			BCS:     bcs,
+			BCL:     bcl,
+			Voltage: volt,
+		}
+	}
+	return nil
+}
+
+// ParseQTEMP parses `+QTEMP: ...` lines reporting thermals.
+// Example:
+// +QTEMP: "xo_therm_buf","35"
+// +QTEMP: "mdm_case_therm","38"
+// +QTEMP: "pa_therm0","34"
+func ParseQTEMP(raw string) *TemperatureInfo {
+	clean := FilterURC(raw)
+	lines := strings.Split(clean, "\n")
+	sensors := make(map[string]int)
+	maxT := -999
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "+QTEMP:") {
+			continue
+		}
+
+		parts := parseCSVLine(strings.TrimPrefix(line, "+QTEMP:"))
+		if len(parts) < 2 {
+			continue
+		}
+
+		name := strings.Trim(parts[0], `"`)
+		val, err := strconv.Atoi(strings.Trim(parts[1], `"`))
+		if err != nil {
+			continue
+		}
+
+		sensors[name] = val
+		if val > maxT {
+			maxT = val
 		}
 	}
 
-	return nil
+	if len(sensors) == 0 {
+		return nil
+	}
+
+	return &TemperatureInfo{
+		Sensors: sensors,
+		MaxTemp: maxT,
+	}
+}
+
+// ParseCSQ parses `+CSQ: <rssi>,<ber>` response.
+func ParseCSQ(raw string) *SignalQuality {
+	idx := strings.Index(raw, "+CSQ:")
+	if idx == -1 {
+		return nil
+	}
+	line := raw[idx+5:]
+	if end := strings.IndexByte(line, '\r'); end != -1 {
+		line = line[:end]
+	} else if end := strings.IndexByte(line, '\n'); end != -1 {
+		line = line[:end]
+	}
+
+	parts := parseCSVLine(line)
+	if len(parts) < 2 {
+		return nil
+	}
+
+	rssi, err1 := strconv.Atoi(parts[0])
+	ber, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return nil
+	}
+
+	dbm := 0
+	if rssi == 0 {
+		dbm = -113
+	} else if rssi == 1 {
+		dbm = -111
+	} else if rssi >= 2 && rssi <= 30 {
+		dbm = -109 + (rssi-2)*2
+	} else if rssi == 31 {
+		dbm = -51
+	}
+
+	return &SignalQuality{
+		RSSI:    rssi,
+		BER:     ber,
+		RSRPDbm: dbm,
+	}
 }
 
 func parseCSVLine(line string) []string {
 	var parts []string
-	var cur strings.Builder
+	start := 0
 	inQuotes := false
+	n := len(line)
 
-	for _, ch := range line {
+	for i := 0; i < n; i++ {
+		ch := line[i]
 		switch ch {
 		case '"':
 			inQuotes = !inQuotes
 		case ',':
-			if inQuotes {
-				cur.WriteRune(ch)
-			} else {
-				parts = append(parts, strings.TrimSpace(cur.String()))
-				cur.Reset()
+			if !inQuotes {
+				part := strings.TrimSpace(line[start:i])
+				part = strings.Trim(part, `"`)
+				parts = append(parts, part)
+				start = i + 1
 			}
-		default:
-			cur.WriteRune(ch)
 		}
 	}
-	parts = append(parts, strings.TrimSpace(cur.String()))
+	if start <= n {
+		part := strings.TrimSpace(line[start:])
+		part = strings.Trim(part, `"`)
+		parts = append(parts, part)
+	}
 
 	return parts
 }

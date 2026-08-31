@@ -18,6 +18,7 @@ var (
 	ErrBusy      = errors.New("modem busy")
 	ErrATCommand = errors.New("at command returned error")
 	ErrNoDevice  = errors.New("at device not found")
+	ErrQueueFull = errors.New("at command queue full")
 )
 
 // Transport is the low-level interface for sending raw AT commands.
@@ -30,6 +31,7 @@ type Transport interface {
 type MockTransport struct {
 	mu        sync.Mutex
 	Responses map[string]string
+	History   []string
 	Default   string
 }
 
@@ -37,6 +39,7 @@ type MockTransport struct {
 func NewMockTransport() *MockTransport {
 	return &MockTransport{
 		Responses: make(map[string]string),
+		History:   make([]string, 0),
 		Default:   "OK",
 	}
 }
@@ -50,6 +53,7 @@ func (m *MockTransport) Send(ctx context.Context, cmd string) (string, error) {
 	defer m.mu.Unlock()
 
 	trimmed := strings.TrimSpace(cmd)
+	m.History = append(m.History, trimmed)
 	if resp, ok := m.Responses[trimmed]; ok {
 		return resp, nil
 	}
@@ -60,6 +64,22 @@ func (m *MockTransport) SetResponse(cmd, resp string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Responses[strings.TrimSpace(cmd)] = resp
+}
+
+// GetHistory returns a thread-safe copy of all AT commands sent.
+func (m *MockTransport) GetHistory() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	dst := make([]string, len(m.History))
+	copy(dst, m.History)
+	return dst
+}
+
+// ClearHistory resets the recorded command history.
+func (m *MockTransport) ClearHistory() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.History = make([]string, 0)
 }
 
 func (m *MockTransport) Close() error {

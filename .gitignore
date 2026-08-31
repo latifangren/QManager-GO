@@ -69,6 +69,7 @@ backend/*.exe
 /.claude
 /.vscode/
 /.idea/
+/.slim/deepwork/
 
 # simpleadmin source & scratch
 /simpleadmin-source

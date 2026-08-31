@@ -26,20 +26,26 @@ func NewWatchdogHandler(cfgMgr *config.Manager, wd *telemetry.Watchdog) *Watchdo
 func (h *WatchdogHandler) HandleWatchdog(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		cfg := h.cfgMgr.Get().Watchcat
+		var status telemetry.WatchdogStatus
+		if h.watchdog != nil {
+			status = h.watchdog.GetStatus()
+		} else {
+			status = telemetry.WatchdogStatus{
+				Running:             cfg.Enabled == 1,
+				State:               "connected",
+				CurrentStep:         0,
+				Fails:               0,
+				RebootsInWindow:     0,
+				RebootsLimit:        cfg.MaxRebootsPerHour,
+				WindowRemainingSecs: 3600,
+				ActiveSimSlot:       1,
+				FailoverActive:      false,
+			}
+		}
 		JSON(w, http.StatusOK, map[string]interface{}{
 			"success":  true,
 			"settings": cfg,
-			"status": map[string]interface{}{
-				"running":               cfg.Enabled == 1,
-				"state":                 "connected",
-				"current_step":          0,
-				"fails":                 0,
-				"reboots_in_window":     0,
-				"reboots_limit":         cfg.MaxRebootsPerHour,
-				"window_remaining_secs": 3600,
-				"active_sim_slot":       1,
-				"failover_active":       false,
-			},
+			"status":   status,
 		})
 		return
 	}

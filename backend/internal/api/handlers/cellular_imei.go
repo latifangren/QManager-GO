@@ -107,6 +107,12 @@ func (h *CellularImeiHandler) handleSetIMEI(w http.ResponseWriter, newImei strin
 		return
 	}
 
+	if len(newImei) == 14 && isDigitsOnly(newImei) {
+		if cd, ok := CalculateLuhnCheckDigit(newImei); ok {
+			newImei = newImei + string('0'+byte(cd))
+		}
+	}
+
 	if !ValidateLuhnIMEI(newImei) {
 		Error(w, http.StatusBadRequest, "Invalid IMEI (fails 15-digit format or Luhn checksum)")
 		return
@@ -125,6 +131,7 @@ func (h *CellularImeiHandler) handleSetIMEI(w http.ResponseWriter, newImei strin
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success":         true,
+		"imei":            newImei,
 		"detail":          "IMEI written to modem NVM. Reboot required to take effect.",
 		"reboot_required": true,
 	})

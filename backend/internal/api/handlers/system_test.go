@@ -11,6 +11,7 @@ import (
 
 	"qmanager/internal/config"
 	"qmanager/internal/platform"
+	"qmanager/internal/telemetry"
 )
 
 func TestCompareSemver(t *testing.T) {
@@ -130,6 +131,7 @@ func TestParseLogLine(t *testing.T) {
 }
 
 func TestLogsHandler_GetAndClearLogs(t *testing.T) {
+	telemetry.GetGlobalLogger().Clear()
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "qmanager.log")
 	rot1 := filepath.Join(tmpDir, "qmanager.log.1")
