@@ -27,10 +27,69 @@ func NewSystemHandler(id platform.Identity, cfgMgr *config.Manager) *SystemHandl
 // Info returns device platform info & identity.
 func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
 	metrics := platform.GetSystemMetrics()
-	Success(w, map[string]interface{}{
+
+	manufacturer := "Quectel"
+	if h.identity.CustomName != "" && h.identity.CustomName != "unknown" && h.identity.CustomName != "STD" {
+		manufacturer = h.identity.CustomName
+	}
+
+	lteRelease := "Rel 15"
+	nrRelease := "Rel 15"
+	if h.identity.IsSDX65 {
+		lteRelease = "Rel 16"
+		nrRelease = "Rel 16"
+	}
+
+	lanGateway := platform.GetDefaultGatewayIP()
+	wanIPv4, wanIPv6 := platform.GetInterfaceIP("rmnet_data0")
+	if wanIPv4 == "" && wanIPv6 == "" {
+		wanIPv4, wanIPv6 = platform.GetInterfaceIP("rmnet_mhi0")
+	}
+	if wanIPv4 == "" && wanIPv6 == "" {
+		wanIPv4, wanIPv6 = platform.GetInterfaceIP("wwan0")
+	}
+
+	hostname := platform.GetHostname()
+	kernelVersion := platform.GetKernelVersion()
+	osVersion := platform.GetOSVersion()
+
+	payload := map[string]interface{}{
+		"success": true,
+		"device": map[string]interface{}{
+			"model":        h.identity.Model,
+			"manufacturer": manufacturer,
+			"firmware":     h.identity.Revision,
+			"serial":       h.identity.Serial,
+			"build_date":   "",
+			"imei":         "",
+		},
+		"3gpp_release": map[string]interface{}{
+			"lte":  lteRelease,
+			"nr5g": nrRelease,
+		},
+		"network": map[string]interface{}{
+			"device_ip":   lanGateway,
+			"lan_gateway": lanGateway,
+			"wan_ipv4":    wanIPv4,
+			"wan_ipv6":    wanIPv6,
+			"public_ipv4": "",
+			"public_ipv6": "",
+		},
+		"system": map[string]interface{}{
+			"hostname":        hostname,
+			"kernel_version":  kernelVersion,
+			"openwrt_version": osVersion,
+		},
 		"identity": h.identity,
 		"metrics":  metrics,
-	})
+	}
+
+	payload["data"] = map[string]interface{}{
+		"identity": h.identity,
+		"metrics":  metrics,
+	}
+
+	JSON(w, http.StatusOK, payload)
 }
 
 // GetConfig returns complete active config.

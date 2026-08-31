@@ -535,23 +535,46 @@ func (p *Poller) poll() {
 	// Record in-memory signal history sample (Zero Flash Wear)
 	var lteRsrp, lteRsrq, lteSinr []*int
 	if status.LTE.RSRP != nil {
-		lteRsrp = []*int{status.LTE.RSRP}
+		lteRsrp = []*int{status.LTE.RSRP, nil, nil, nil}
+	} else {
+		lteRsrp = []*int{nil, nil, nil, nil}
 	}
 	if status.LTE.RSRQ != nil {
-		lteRsrq = []*int{status.LTE.RSRQ}
+		lteRsrq = []*int{status.LTE.RSRQ, nil, nil, nil}
+	} else {
+		lteRsrq = []*int{nil, nil, nil, nil}
 	}
 	if status.LTE.SINR != nil {
-		lteSinr = []*int{status.LTE.SINR}
+		lteSinr = []*int{status.LTE.SINR, nil, nil, nil}
+	} else {
+		lteSinr = []*int{nil, nil, nil, nil}
+	}
+
+	var nrRsrp, nrRsrq, nrSinr []*int
+	if status.NR.RSRP != nil {
+		nrRsrp = []*int{status.NR.RSRP, nil, nil, nil}
+	} else {
+		nrRsrp = []*int{nil, nil, nil, nil}
+	}
+	if status.NR.RSRQ != nil {
+		nrRsrq = []*int{status.NR.RSRQ, nil, nil, nil}
+	} else {
+		nrRsrq = []*int{nil, nil, nil, nil}
+	}
+	if status.NR.SINR != nil {
+		nrSinr = []*int{status.NR.SINR, nil, nil, nil}
+	} else {
+		nrSinr = []*int{nil, nil, nil, nil}
 	}
 
 	GetGlobalHistory().RecordSignal(SignalHistoryPoint{
-		Timestamp: status.Timestamp,
-		LteRSRP:   lteRsrp,
-		LteRSRQ:   lteRsrq,
-		LteSINR:   lteSinr,
-		NrRSRP:    []*int{},
-		NrRSRQ:    []*int{},
-		NrSINR:    []*int{},
+		TS:      status.Timestamp,
+		LteRsrp: lteRsrp,
+		LteRsrq: lteRsrq,
+		LteSinr: lteSinr,
+		NrRsrp:  nrRsrp,
+		NrRsrq:  nrRsrq,
+		NrSinr:  nrSinr,
 	})
 
 	_ = writeStatusFile("/tmp/qmanager_status.json", status)

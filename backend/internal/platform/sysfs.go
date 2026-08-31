@@ -3,7 +3,9 @@ package platform
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -202,4 +204,130 @@ func GetSystemMetrics() SystemMetrics {
 	}
 
 	return m
+}
+
+// GetInterfaceIP returns the first valid IPv4 and IPv6 addresses for a given interface name.
+func GetInterfaceIP(ifaceName string) (ipv4, ipv6 string) {
+	iface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		return "", ""
+	}
+
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return "", ""
+	}
+
+	for _, addr := range addrs {
+		var ip net.IP
+		switch v := addr.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+
+		if ip == nil || ip.IsLoopback() {
+			continue
+		}
+
+		if ip4 := ip.To4(); ip4 != nil {
+			if ipv4 == "" {
+				ipv4 = ip4.String()
+			}
+		} else if ip.To16() != nil {
+			if ipv6 == "" && !ip.IsLinkLocalUnicast() {
+				ipv6 = ip.String()
+			}
+		}
+	}
+
+	return ipv4, ipv6
+}
+
+// GetDefaultGatewayIP scans active local interfaces (bridge0, eth0, ecm0, rndis0) for an IP address.
+func GetDefaultGatewayIP() string {
+	candidates := []string{"bridge0", "br0", "eth0", "ecm0", "rndis0", "usb0"}
+	for _, name := range candidates {
+		ip4, _ := GetInterfaceIP(name)
+		if ip4 != "" {
+			return ip4
+		}
+	}
+
+	// Fallback to iterating all non-loopback interfaces
+	ifaces, err := net.Interfaces()
+	if err == nil {
+		for _, iface := range ifaces {
+			if (iface.Flags&net.FlagUp) == 0 || (iface.Flags&net.FlagLoopback) != 0 {
+				continue
+			}
+			ip4, _ := GetInterfaceIP(iface.Name)
+			if ip4 != "" && !strings.HasPrefix(iface.Name, "rmnet") {
+				return ip4
+			}
+		}
+	}
+
+	return "192.168.225.1"
+}
+
+// GetKernelVersion reads the active Linux kernel release version.
+func GetKernelVersion() string {
+	if data, err := os.ReadFile("/proc/sys/kernel/osrelease"); err == nil {
+		ver := strings.TrimSpace(string(data))
+		if ver != "" {
+			return ver
+		}
+	}
+	if out, err := exec.Command("uname", "-r").Output(); err == nil {
+		ver := strings.TrimSpace(string(out))
+		if ver != "" {
+			return ver
+		}
+	}
+	return "4.14.206"
+}
+
+// GetHostname returns the machine hostname from OS or /proc.
+func GetHostname() string {
+	if hn, err := os.Hostname(); err == nil && hn != "" {
+		return hn
+	}
+	if data, err := os.ReadFile("/proc/sys/kernel/hostname"); err == nil {
+		hn := strings.TrimSpace(string(data))
+		if hn != "" {
+			return hn
+		}
+	}
+	return "sdxprairie"
+}
+
+// GetOSVersion extracts the OS or OpenWrt/Yocto distribution version.
+func GetOSVersion() string {
+	// 1. Check /etc/openwrt_release
+	if file, err := os.Open("/etc/openwrt_release"); err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.HasPrefix(line, "DISTRIB_DESCRIPTION=") {
+				return strings.Trim(strings.TrimPrefix(line, "DISTRIB_DESCRIPTION="), "\"'")
+			}
+		}
+	}
+
+	// 2. Check /etc/os-release
+	if file, err := os.Open("/etc/os-release"); err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.HasPrefix(line, "PRETTY_NAME=") {
+				return strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"'")
+			}
+		}
+	}
+
+	return "QManager Embedded Linux"
 }

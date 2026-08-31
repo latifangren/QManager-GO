@@ -297,3 +297,35 @@ func TestGetSystemMetrics_MemUsageCalculation(t *testing.T) {
 		t.Errorf("expected 75.0%% usage, got %f", pct)
 	}
 }
+
+func TestPlatformHelpers(t *testing.T) {
+	// 1. GetHostname
+	hn := GetHostname()
+	if hn == "" {
+		t.Errorf("expected non-empty hostname")
+	}
+
+	// 2. GetKernelVersion
+	kv := GetKernelVersion()
+	if kv == "" {
+		t.Errorf("expected non-empty kernel version")
+	}
+
+	// 3. GetOSVersion
+	osv := GetOSVersion()
+	if osv == "" {
+		t.Errorf("expected non-empty OS version")
+	}
+
+	// 4. GetDefaultGatewayIP
+	gw := GetDefaultGatewayIP()
+	if gw == "" {
+		t.Errorf("expected non-empty default gateway IP")
+	}
+
+	// 5. GetInterfaceIP on invalid interface
+	ip4, ip6 := GetInterfaceIP("nonexistent_iface_xyz")
+	if ip4 != "" || ip6 != "" {
+		t.Errorf("expected empty IPs for non-existent interface, got ip4=%s ip6=%s", ip4, ip6)
+	}
+}

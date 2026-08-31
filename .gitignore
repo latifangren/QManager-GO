@@ -78,3 +78,4 @@ backend/*.exe
 /scratch/
 /reimagine/
 /scripts-dev/rescue/
+/.playwright-mcp

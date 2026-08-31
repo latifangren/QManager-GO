@@ -73,12 +73,20 @@ export function useRecentActivities(
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const json: NetworkEvent[] = await response.json();
+      const json = await response.json();
 
       if (!mountedRef.current) return;
 
+      const eventData: NetworkEvent[] = Array.isArray(json)
+        ? json
+        : Array.isArray(json?.events)
+        ? json.events
+        : Array.isArray(json?.data)
+        ? json.data
+        : [];
+
       // Events come oldest-first from the file; reverse for newest-first display
-      const reversed = [...json].reverse().slice(0, maxEvents);
+      const reversed = [...eventData].reverse().slice(0, maxEvents);
       setEvents(reversed);
       setError(null);
       hasLoadedOnce.current = true;
