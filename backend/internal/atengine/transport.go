@@ -86,11 +86,11 @@ func (m *MockTransport) Close() error {
 	return nil
 }
 
-// DeviceTransport performs direct character device read/write (e.g. /dev/smd11, /dev/smd7, /dev/ttyUSB2).
-// Modeled after the direct character device logic in atcli_rust.
+// DeviceTransport communicates directly with modem character device nodes (e.g. /dev/smd11).
 type DeviceTransport struct {
-	devPath string
-	mu      sync.Mutex
+	devPath  string
+	lockPath string
+	mu       sync.Mutex
 }
 
 // NewDeviceTransport opens direct connection to modem character device.
@@ -98,8 +98,13 @@ func NewDeviceTransport(devPath string) *DeviceTransport {
 	if devPath == "" {
 		devPath = "/dev/smd11"
 	}
+	lockPath := "/var/lock/qmanager.lock"
+	if _, err := os.Stat("/var/lock"); err != nil {
+		lockPath = "/tmp/qmanager_at.lock"
+	}
 	return &DeviceTransport{
-		devPath: devPath,
+		devPath:  devPath,
+		lockPath: lockPath,
 	}
 }
 
@@ -123,52 +128,62 @@ func isTerminator(buf []byte) bool {
 
 // readResponse reads from an io.Reader until an AT terminator or context timeout.
 func readResponse(ctx context.Context, r io.Reader) (string, error) {
-	var out bytes.Buffer
-	readBuf := make([]byte, 1024)
+	type readResult struct {
+		data []byte
+		err  error
+	}
 
+	readChan := make(chan readResult, 1)
+
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := r.Read(buf)
+			if n > 0 {
+				chunk := make([]byte, n)
+				copy(chunk, buf[:n])
+				readChan <- readResult{data: chunk, err: err}
+			} else if err != nil {
+				readChan <- readResult{data: nil, err: err}
+				return
+			}
+		}
+	}()
+
+	var out bytes.Buffer
 	for {
 		select {
 		case <-ctx.Done():
 			return out.String(), ErrTimeout
-		default:
-		}
-
-		if f, ok := r.(*os.File); ok {
-			_ = f.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-		}
-
-		n, rErr := r.Read(readBuf)
-		if n > 0 {
-			out.Write(readBuf[:n])
-			if isTerminator(out.Bytes()) {
-				break
-			}
-		}
-
-		if rErr != nil {
-			if errors.Is(rErr, io.EOF) {
-				break
-			}
-			if os.IsTimeout(rErr) {
-				if ctx.Err() != nil {
-					return out.String(), ErrTimeout
-				}
+		case res := <-readChan:
+			if len(res.data) > 0 {
+				out.Write(res.data)
 				if isTerminator(out.Bytes()) {
-					break
+					resp := out.String()
+					if strings.Contains(resp, "\r\nERROR\r\n") || strings.Contains(resp, "\nERROR\n") || strings.Contains(resp, "+CME ERROR:") || strings.Contains(resp, "+CMS ERROR:") {
+						return resp, ErrATCommand
+					}
+					if strings.Contains(resp, "\r\nBUSY\r\n") {
+						return resp, ErrBusy
+					}
+					return resp, nil
 				}
+			}
+			if res.err != nil {
+				if errors.Is(res.err, io.EOF) {
+					resp := out.String()
+					if strings.Contains(resp, "\r\nERROR\r\n") || strings.Contains(resp, "\nERROR\n") || strings.Contains(resp, "+CME ERROR:") || strings.Contains(resp, "+CMS ERROR:") {
+						return resp, ErrATCommand
+					}
+					if strings.Contains(resp, "\r\nBUSY\r\n") {
+						return resp, ErrBusy
+					}
+					return resp, nil
+				}
+				return out.String(), res.err
 			}
 		}
 	}
-
-	res := out.String()
-	if strings.Contains(res, "\r\nERROR\r\n") || strings.Contains(res, "\nERROR\n") || strings.Contains(res, "+CME ERROR:") || strings.Contains(res, "+CMS ERROR:") {
-		return res, ErrATCommand
-	}
-	if strings.Contains(res, "\r\nBUSY\r\n") {
-		return res, ErrBusy
-	}
-
-	return res, nil
 }
 
 // Send sends an AT command directly to the character device and reads the response until a terminator or timeout.
@@ -176,9 +191,32 @@ func (d *DeviceTransport) Send(ctx context.Context, cmd string) (string, error) 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	f, err := os.OpenFile(d.devPath, os.O_RDWR, 0)
+	lockFile, err := acquireFileLock(d.lockPath)
 	if err != nil {
-		return "", fmt.Errorf("%w: %s (%v)", ErrNoDevice, d.devPath, err)
+		return "", fmt.Errorf("failed to acquire lock %s: %w", d.lockPath, err)
+	}
+	defer releaseFileLock(lockFile)
+
+	var f *os.File
+	var openErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		select {
+		case <-ctx.Done():
+			return "", ErrTimeout
+		default:
+		}
+		f, openErr = os.OpenFile(d.devPath, os.O_RDWR, 0)
+		if openErr == nil {
+			break
+		}
+		if isEBUSY(openErr) && attempt < 2 {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	if openErr != nil {
+		return "", fmt.Errorf("%w: %s (%v)", ErrNoDevice, d.devPath, openErr)
 	}
 	defer f.Close()
 
@@ -187,18 +225,37 @@ func (d *DeviceTransport) Send(ctx context.Context, cmd string) (string, error) 
 		cleanCmd += "\r\n"
 	}
 
-	if _, err := f.Write([]byte(cleanCmd)); err != nil {
-		return "", fmt.Errorf("failed to write to %s: %w", d.devPath, err)
+	var writeErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		select {
+		case <-ctx.Done():
+			return "", ErrTimeout
+		default:
+		}
+		_, writeErr = f.Write([]byte(cleanCmd))
+		if writeErr == nil {
+			break
+		}
+		if isEBUSY(writeErr) && attempt < 2 {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	if writeErr != nil {
+		return "", fmt.Errorf("failed to write to %s: %w", d.devPath, writeErr)
 	}
 
-	return readResponse(ctx, f)
+	return readDeviceResponse(ctx, f)
 }
 
 func (d *DeviceTransport) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	return nil
 }
 
-// CliTransport invokes the modem CLI utility (/usr/bin/atcli_smd11).
+// CliTransport invokes the modem CLI utility (/usr/bin/atcli_smd11, /usr/bin/qcmd, etc.).
 type CliTransport struct {
 	cliPath string
 }
@@ -211,8 +268,10 @@ func NewCliTransport(path string) *CliTransport {
 }
 
 func (c *CliTransport) Send(ctx context.Context, cmd string) (string, error) {
-	if _, err := os.Stat(c.cliPath); err != nil {
-		return "", fmt.Errorf("%w: %s", ErrNoDevice, c.cliPath)
+	if _, err := exec.LookPath(c.cliPath); err != nil {
+		if _, statErr := os.Stat(c.cliPath); statErr != nil {
+			return "", fmt.Errorf("%w: %s", ErrNoDevice, c.cliPath)
+		}
 	}
 
 	cmdExec := exec.CommandContext(ctx, c.cliPath, cmd)
@@ -233,7 +292,35 @@ func (c *CliTransport) Close() error {
 
 // AutoDetectTransport automatically detects the optimal transport for the modem platform.
 func AutoDetectTransport() Transport {
-	// 1. Direct Character Devices (Qualcomm SMD / TTY)
+	// 1. Check if qcmd executable exists
+	qcmdCandidates := []string{
+		"/usr/bin/qcmd",
+		"/opt/bin/qcmd",
+	}
+	for _, p := range qcmdCandidates {
+		if _, err := os.Stat(p); err == nil {
+			return NewCliTransport(p)
+		}
+	}
+	if p, err := exec.LookPath("qcmd"); err == nil {
+		return NewCliTransport(p)
+	}
+
+	// 2. Check if atcli_smd11 exists
+	atcliCandidates := []string{
+		"/usr/bin/atcli_smd11",
+		"/usr/local/bin/atcli_smd11",
+	}
+	for _, p := range atcliCandidates {
+		if _, err := os.Stat(p); err == nil {
+			return NewCliTransport(p)
+		}
+	}
+	if p, err := exec.LookPath("atcli_smd11"); err == nil {
+		return NewCliTransport(p)
+	}
+
+	// 3. Direct Character Devices (Qualcomm SMD / TTY)
 	deviceCandidates := []string{
 		"/dev/smd11",
 		"/dev/smd7",
@@ -246,11 +333,6 @@ func AutoDetectTransport() Transport {
 		}
 	}
 
-	// 2. Legacy helper binary if present
-	if _, err := os.Stat("/usr/bin/atcli_smd11"); err == nil {
-		return NewCliTransport("/usr/bin/atcli_smd11")
-	}
-
-	// 3. Fallback to mock transport for testing & local development
+	// 4. Fallback to mock transport for testing & local development
 	return NewMockTransport()
 }

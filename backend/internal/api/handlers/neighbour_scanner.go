@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,36 +10,34 @@ import (
 	"qmanager/internal/atengine"
 )
 
-var (
-	neighbourScanPidFile    = "/tmp/qmanager_neighbour_scan.pid"
-	neighbourScanResultFile = "/tmp/qmanager_neighbour_scan_result.json"
-	neighbourScanErrorFile  = "/tmp/qmanager_neighbour_scan_error"
-)
-
 // NeighbourCell represents one neighbour cell from AT+QENG="neighbourcell".
 type NeighbourCell struct {
-	ID             string `json:"id"`
-	NetworkType    string `json:"networkType"`
-	EARFCN         int    `json:"earfcn"`
-	PCI            int    `json:"pci"`
-	RSRP           int    `json:"rsrp"`
-	RSRQ           *int   `json:"rsrq,omitempty"`
-	RSSI           *int   `json:"rssi,omitempty"`
-	SINR           *int   `json:"sinr,omitempty"`
-	Band           int    `json:"band,omitempty"`
+	ID          string `json:"id"`
+	NetworkType string `json:"networkType"`
+	EARFCN      int    `json:"earfcn"`
+	PCI         int    `json:"pci"`
+	RSRP        int    `json:"rsrp"`
+	RSRQ        *int   `json:"rsrq,omitempty"`
+	RSSI        *int   `json:"rssi,omitempty"`
+	SINR        *int   `json:"sinr,omitempty"`
+	Band        int    `json:"band,omitempty"`
 }
 
-// NeighbourScannerHandler manages AT+QENG="neighbourcell" queries.
+// NeighbourScannerHandler manages AT+QENG="neighbourcell" queries in memory (RAM-First).
 type NeighbourScannerHandler struct {
 	engine   *atengine.Engine
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	scanning bool
+	status   string // "idle", "running", "complete", "error"
+	results  []NeighbourCell
+	err      string
 }
 
 // NewNeighbourScannerHandler creates a NeighbourScannerHandler.
 func NewNeighbourScannerHandler(engine *atengine.Engine) *NeighbourScannerHandler {
 	return &NeighbourScannerHandler{
 		engine: engine,
+		status: "idle",
 	}
 }
 
@@ -54,35 +50,36 @@ func (h *NeighbourScannerHandler) StartScan(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	h.scanning = true
+	h.status = "running"
+	h.results = nil
+	h.err = ""
 	h.mu.Unlock()
-
-	_ = os.Remove(neighbourScanResultFile)
-	_ = os.Remove(neighbourScanErrorFile)
-	_ = os.WriteFile(neighbourScanPidFile, []byte(strconv.Itoa(os.Getpid())), 0644)
 
 	go func() {
 		defer func() {
 			h.mu.Lock()
 			h.scanning = false
 			h.mu.Unlock()
-			_ = os.Remove(neighbourScanPidFile)
 		}()
 
 		res, err := h.engine.Exec(`AT+QENG="neighbourcell"`)
+		h.mu.Lock()
+		defer h.mu.Unlock()
+
 		if err != nil || !strings.Contains(res.Raw, "+QENG:") {
 			errMsg := "Neighbourcell command failed"
 			if err != nil {
 				errMsg = err.Error()
 			}
-			_ = os.WriteFile(neighbourScanErrorFile, []byte(errMsg), 0644)
+			h.status = "error"
+			h.err = errMsg
 			return
 		}
 
 		cells := ParseNeighbourCellOutput(res.Raw)
-		data, err := json.MarshalIndent(cells, "", "  ")
-		if err == nil {
-			_ = os.WriteFile(neighbourScanResultFile, data, 0644)
-		}
+		h.results = cells
+		h.status = "complete"
+		h.err = ""
 	}()
 
 	JSON(w, http.StatusOK, map[string]interface{}{
@@ -93,35 +90,31 @@ func (h *NeighbourScannerHandler) StartScan(w http.ResponseWriter, r *http.Reque
 
 // ScanStatus handles GET /api/v1/cellular/neighbour/status and /cgi-bin/quecmanager/at_cmd/neighbour_scan_status.sh
 func (h *NeighbourScannerHandler) ScanStatus(w http.ResponseWriter, r *http.Request) {
-	h.mu.Lock()
-	running := h.scanning
-	h.mu.Unlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 
-	if running {
+	if h.scanning || h.status == "running" {
 		JSON(w, http.StatusOK, map[string]interface{}{
 			"status": "running",
 		})
 		return
 	}
 
-	if errData, err := os.ReadFile(neighbourScanErrorFile); err == nil && len(errData) > 0 {
+	if h.status == "error" {
 		JSON(w, http.StatusOK, map[string]interface{}{
 			"status": "error",
-			"error":  string(errData),
+			"error":  h.err,
 		})
 		return
 	}
 
-	if resData, err := os.ReadFile(neighbourScanResultFile); err == nil {
-		var items []NeighbourCell
-		if err := json.Unmarshal(resData, &items); err == nil {
-			JSON(w, http.StatusOK, map[string]interface{}{
-				"status":  "complete",
-				"results": items,
-				"count":   len(items),
-			})
-			return
-		}
+	if h.status == "complete" {
+		JSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "complete",
+			"results": h.results,
+			"count":   len(h.results),
+		})
+		return
 	}
 
 	JSON(w, http.StatusOK, map[string]interface{}{

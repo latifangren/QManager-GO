@@ -197,39 +197,30 @@ func ParseQCAINFO(raw string) []CarrierComponent {
 		// Example: "PCC",1675,100,"LTE BAND 3",1,218,-85,-9,-62,18
 		role := parts[0]
 		earfcn, _ := strconv.Atoi(parts[1])
-		rb, _ := strconv.Atoi(parts[2])
+		rawBW := parts[2]
 		bandStr := parts[3]
 		pcid, _ := strconv.Atoi(parts[5])
 
-		bwMHz := 0
-		switch rb {
-		case 6:
-			bwMHz = 1
-		case 15:
-			bwMHz = 3
-		case 25:
-			bwMHz = 5
-		case 50:
-			bwMHz = 10
-		case 75:
-			bwMHz = 15
-		case 100:
-			bwMHz = 20
-		default:
-			if rb > 0 {
-				bwMHz = rb / 5
-			}
-		}
-
 		tech := "LTE"
-		if strings.Contains(strings.ToUpper(bandStr), "NR") {
+		upperBand := strings.ToUpper(bandStr)
+		if strings.Contains(upperBand, "NR") || strings.HasPrefix(upperBand, "N") {
 			tech = "NR"
 		}
 
+		bwMHz := parseBandwidthMHz(rawBW, tech)
+
 		cleanBand := bandStr
-		if strings.Contains(bandStr, "BAND ") {
-			idx := strings.Index(bandStr, "BAND ")
-			num := bandStr[idx+5:]
+		if strings.Contains(upperBand, "BAND ") {
+			idx := strings.Index(upperBand, "BAND ")
+			num := strings.TrimSpace(bandStr[idx+5:])
+			if tech == "NR" {
+				cleanBand = "n" + num
+			} else {
+				cleanBand = "B" + num
+			}
+		} else if strings.Contains(upperBand, "BAND") {
+			idx := strings.Index(upperBand, "BAND")
+			num := strings.TrimSpace(bandStr[idx+4:])
 			if tech == "NR" {
 				cleanBand = "n" + num
 			} else {
@@ -260,6 +251,107 @@ func ParseQCAINFO(raw string) []CarrierComponent {
 	}
 
 	return list
+}
+
+func parseBandwidthMHz(rawBW string, tech string) int {
+	rawBW = strings.Trim(strings.TrimSpace(rawBW), "\"")
+	if rawBW == "" {
+		return 0
+	}
+	upper := strings.ToUpper(rawBW)
+
+	// String suffixes: "MHZ", "M", "KHZ", "K"
+	if strings.HasSuffix(upper, "MHZ") {
+		numStr := strings.TrimSpace(strings.TrimSuffix(upper, "MHZ"))
+		if v, err := strconv.Atoi(numStr); err == nil {
+			return v
+		}
+		if f, err := strconv.ParseFloat(numStr, 64); err == nil {
+			return int(f)
+		}
+	}
+	if strings.HasSuffix(upper, "M") {
+		numStr := strings.TrimSpace(strings.TrimSuffix(upper, "M"))
+		if v, err := strconv.Atoi(numStr); err == nil {
+			return v
+		}
+		if f, err := strconv.ParseFloat(numStr, 64); err == nil {
+			return int(f)
+		}
+	}
+	if strings.HasSuffix(upper, "KHZ") {
+		numStr := strings.TrimSpace(strings.TrimSuffix(upper, "KHZ"))
+		if v, err := strconv.Atoi(numStr); err == nil {
+			return v / 1000
+		}
+	}
+	if strings.HasSuffix(upper, "K") {
+		numStr := strings.TrimSpace(strings.TrimSuffix(upper, "K"))
+		if v, err := strconv.Atoi(numStr); err == nil {
+			return v / 1000
+		}
+	}
+
+	val, err := strconv.Atoi(rawBW)
+	if err != nil {
+		return 0
+	}
+	if val <= 0 {
+		return 0
+	}
+
+	// Value in kHz (e.g. 100000 kHz = 100 MHz, 80000 kHz = 80 MHz, 20000 kHz = 20 MHz)
+	if val >= 1000 {
+		return val / 1000
+	}
+
+	if tech == "NR" {
+		// Common NR Resource Blocks (SCS 30kHz / 15kHz)
+		switch val {
+		case 273:
+			return 100
+		case 217, 216:
+			return 80
+		case 162, 160:
+			return 60
+		case 133, 135:
+			return 50
+		case 106:
+			return 40
+		case 79:
+			return 15
+		case 51, 52:
+			return 20
+		case 24, 25:
+			return 10
+		}
+		// Direct NR bandwidth in MHz (e.g. 100, 90, 80, 70, 60, 50, 40, 30, 25, 20, 15, 10, 5)
+		if val == 100 || val == 90 || val == 80 || val == 70 || val == 60 || val == 50 || val == 40 || val == 30 || val == 25 || val == 20 || val == 15 || val == 10 || val == 5 {
+			return val
+		}
+		return val
+	}
+
+	// LTE Resource Blocks (RB)
+	switch val {
+	case 6:
+		return 1 // 1.4 MHz (approx 1 MHz)
+	case 15:
+		return 3
+	case 25:
+		return 5
+	case 50:
+		return 10
+	case 75:
+		return 15
+	case 100:
+		return 20
+	default:
+		if val <= 20 {
+			return val
+		}
+		return val / 5
+	}
 }
 
 // BatteryStatus holds parsed battery info from +CBC.

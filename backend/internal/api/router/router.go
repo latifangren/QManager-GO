@@ -49,8 +49,8 @@ func NewRouter(s AppServices) http.Handler {
 	}))
 
 	authH := handlers.NewAuthHandler("admin")
-	cellH := handlers.NewCellularHandler(s.Engine, s.Poller)
 	bandFailoverH := handlers.NewBandFailoverHandler()
+	cellH := handlers.NewCellularHandler(s.Engine, s.Poller, bandFailoverH)
 	apnH := handlers.NewCellularApnHandler(s.Engine, s.ConfigMgr)
 	imeiH := handlers.NewCellularImeiHandler(s.Engine, s.Poller, s.ConfigMgr)
 	fplmnH := handlers.NewCellularFplmnHandler(s.Engine)
@@ -89,6 +89,7 @@ func NewRouter(s AppServices) http.Handler {
 	r.Route("/api/v1", func(api chi.Router) {
 		// Public Auth & Overview
 		api.Post("/auth/login", authH.Login)
+		api.Post("/auth/setup", authH.Login)
 		api.Get("/auth/check", authH.Check)
 		api.Post("/auth/logout", authH.Logout)
 		api.Get("/public/overview", publicH.Overview)
@@ -107,11 +108,11 @@ func NewRouter(s AppServices) http.Handler {
 
 		// Protected Routes
 		api.Group(func(prot chi.Router) {
-			prot.Use(func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					next.ServeHTTP(w, r)
-				})
-			})
+			prot.Use(authH.Middleware)
+
+			// Auth Password Management
+			prot.Post("/auth/password", authH.ChangePassword)
+			prot.Post("/auth/ssh_password", authH.ChangeSSHPassword)
 
 			// Cellular / AT / Bands / Towers
 			prot.Post("/at/send", cellH.SendCommand)
@@ -244,7 +245,10 @@ func NewRouter(s AppServices) http.Handler {
 		// Auth
 		cgi.Get("/auth/check.sh", authH.Check)
 		cgi.Post("/auth/login.sh", authH.Login)
+		cgi.Post("/auth/setup.sh", authH.Login)
 		cgi.Post("/auth/logout.sh", authH.Logout)
+		cgi.Post("/auth/password.sh", authH.ChangePassword)
+		cgi.Post("/auth/ssh_password.sh", authH.ChangeSSHPassword)
 
 		// Public Overview
 		cgi.Get("/public/overview.sh", publicH.Overview)

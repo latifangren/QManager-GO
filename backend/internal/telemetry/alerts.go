@@ -1,10 +1,12 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/smtp"
-	"strings"
 	"sync"
 	"time"
 
@@ -36,20 +38,42 @@ type SMSAlertConfig struct {
 	PhoneNumber string `json:"phone_number"`
 }
 
-// AlertDispatcher handles routing alerts to enabled channels (SMS, Email).
+// DiscordConfig holds Discord webhook notifications config.
+type DiscordConfig struct {
+	Enabled    bool   `json:"enabled"`
+	WebhookURL string `json:"webhook_url"`
+	Username   string `json:"username,omitempty"`
+	Token      string `json:"token,omitempty"`
+	OwnerID    string `json:"owner_id,omitempty"`
+}
+
+// WebhookConfig holds generic webhook notification settings.
+type WebhookConfig struct {
+	Enabled bool              `json:"enabled"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// AlertDispatcher handles routing alerts to enabled channels (SMS, Email, Discord, Webhook).
 type AlertDispatcher struct {
-	engine    *atengine.Engine
-	emailCfg  EmailConfig
-	smsCfg    SMSAlertConfig
-	mu        sync.RWMutex
-	history   []AlertPayload
-	maxEvents int
+	engine     *atengine.Engine
+	emailCfg   EmailConfig
+	smsCfg     SMSAlertConfig
+	discordCfg DiscordConfig
+	webhookCfg WebhookConfig
+	httpClient *http.Client
+	mu         sync.RWMutex
+	history    []AlertPayload
+	maxEvents  int
 }
 
 // NewAlertDispatcher creates a new alert manager.
 func NewAlertDispatcher(eng *atengine.Engine) *AlertDispatcher {
 	return &AlertDispatcher{
-		engine:    eng,
+		engine: eng,
+		httpClient: &http.Client{
+			Timeout: 5 * time.Second,
+		},
 		history:   make([]AlertPayload, 0, 50),
 		maxEvents: 50,
 	}
@@ -69,6 +93,20 @@ func (a *AlertDispatcher) SetSMSConfig(cfg SMSAlertConfig) {
 	a.smsCfg = cfg
 }
 
+// SetDiscordConfig updates Discord webhook settings.
+func (a *AlertDispatcher) SetDiscordConfig(cfg DiscordConfig) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.discordCfg = cfg
+}
+
+// SetWebhookConfig updates generic webhook settings.
+func (a *AlertDispatcher) SetWebhookConfig(cfg WebhookConfig) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.webhookCfg = cfg
+}
+
 // Dispatch sends alert to all enabled destinations asynchronously.
 func (a *AlertDispatcher) Dispatch(ctx context.Context, alert AlertPayload) {
 	a.mu.Lock()
@@ -78,6 +116,8 @@ func (a *AlertDispatcher) Dispatch(ctx context.Context, alert AlertPayload) {
 	a.history = append(a.history, alert)
 	emailCfg := a.emailCfg
 	smsCfg := a.smsCfg
+	discordCfg := a.discordCfg
+	webhookCfg := a.webhookCfg
 	a.mu.Unlock()
 
 	// 1. Send Email
@@ -89,6 +129,81 @@ func (a *AlertDispatcher) Dispatch(ctx context.Context, alert AlertPayload) {
 	if smsCfg.Enabled && smsCfg.PhoneNumber != "" && a.engine != nil {
 		go a.sendSMS(ctx, smsCfg.PhoneNumber, fmt.Sprintf("[%s] %s: %s", alert.Level, alert.Title, alert.Message))
 	}
+
+	// 3. Send Discord Webhook
+	if discordCfg.Enabled && discordCfg.WebhookURL != "" {
+		go a.sendDiscord(discordCfg, alert)
+	}
+
+	// 4. Send Generic Webhook
+	if webhookCfg.Enabled && webhookCfg.URL != "" {
+		go a.sendWebhook(webhookCfg, alert)
+	}
+}
+
+func (a *AlertDispatcher) sendDiscord(cfg DiscordConfig, alert AlertPayload) {
+	// Pick color based on alert level
+	color := 3447003 // Blue / INFO default
+	switch alert.Level {
+	case "WARNING":
+		color = 16776960 // Yellow
+	case "CRITICAL", "ERROR":
+		color = 16711680 // Red
+	}
+
+	embed := map[string]interface{}{
+		"title":       fmt.Sprintf("[%s] %s", alert.Level, alert.Title),
+		"description": alert.Message,
+		"color":       color,
+		"timestamp":   alert.Timestamp.UTC().Format(time.RFC3339),
+	}
+
+	payload := map[string]interface{}{
+		"embeds": []interface{}{embed},
+	}
+	if cfg.Username != "" {
+		payload["username"] = cfg.Username
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	req, err := http.NewRequest(http.MethodPost, cfg.WebhookURL, bytes.NewBuffer(data))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if cfg.Token != "" {
+		req.Header.Set("Authorization", "Bot "+cfg.Token)
+	}
+
+	resp, err := a.httpClient.Do(req)
+	if err == nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+}
+
+func (a *AlertDispatcher) sendWebhook(cfg WebhookConfig, alert AlertPayload) {
+	data, err := json.Marshal(alert)
+	if err != nil {
+		return
+	}
+
+	req, err := http.NewRequest(http.MethodPost, cfg.URL, bytes.NewBuffer(data))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range cfg.Headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := a.httpClient.Do(req)
+	if err == nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 }
 
 func (a *AlertDispatcher) sendEmail(cfg EmailConfig, alert AlertPayload) {
@@ -98,7 +213,7 @@ func (a *AlertDispatcher) sendEmail(cfg EmailConfig, alert AlertPayload) {
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: [%s] QManager Alert: %s\r\n\r\n%s\r\nTimestamp: %s\r\n",
 		cfg.From, cfg.To, alert.Level, alert.Title, alert.Message, alert.Timestamp.Format(time.RFC1123))
 
-	_ = smtp.SendMail(addr, auth, cfg.From, strings.Split(cfg.To, ","), []byte(msg))
+	_ = smtp.SendMail(addr, auth, cfg.From, []string{cfg.To}, []byte(msg))
 }
 
 func (a *AlertDispatcher) sendSMS(ctx context.Context, phone, message string) {

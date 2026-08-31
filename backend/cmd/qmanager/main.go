@@ -35,6 +35,7 @@ func AppMain(ctx context.Context, port string) error {
 	// 1. Hardware & Platform Detection
 	identity := platform.DetectIdentity("", "")
 	fmt.Printf("📦 Detected Platform: Model=%s, SoC=%s, Serial=%s\n", identity.Model, identity.SoC, identity.Serial)
+	_ = platform.InitFirewallRules()
 
 	// 2. Configuration Store
 	cfgMgr, err := config.NewManager("")

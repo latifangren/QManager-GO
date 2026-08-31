@@ -14,23 +14,22 @@ import (
 	"time"
 )
 
-var (
-	speedtestPidFile      = "/tmp/qmanager_speedtest.pid"
-	speedtestProgressFile = "/tmp/qmanager_speedtest_progress.json"
-	speedtestResultFile   = "/tmp/qmanager_speedtest_result.json"
-	speedtestErrorFile    = "/tmp/qmanager_speedtest_error"
-)
-
-// SpeedtestHandler manages speedtest execution and progress reporting.
+// SpeedtestHandler manages speedtest execution and progress reporting in-memory (RAM-First).
 type SpeedtestHandler struct {
-	mu      sync.Mutex
-	running bool
-	cmd     *exec.Cmd
+	mu       sync.RWMutex
+	running  bool
+	cmd      *exec.Cmd
+	status   string      // "idle", "running", "complete", "error"
+	progress interface{} // parsed json object or map
+	result   interface{} // parsed final result json object
+	err      string
 }
 
 // NewSpeedtestHandler creates a SpeedtestHandler.
 func NewSpeedtestHandler() *SpeedtestHandler {
-	return &SpeedtestHandler{}
+	return &SpeedtestHandler{
+		status: "idle",
+	}
 }
 
 // CheckAvailable handles GET /api/v1/diagnostics/speedtest/check and /cgi-bin/quecmanager/at_cmd/speedtest_check.sh
@@ -93,14 +92,14 @@ func (h *SpeedtestHandler) StartTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.running = true
+	h.status = "running"
+	h.progress = nil
+	h.result = nil
+	h.err = ""
 	h.mu.Unlock()
 
 	var payload StartTestPayload
 	_ = json.NewDecoder(r.Body).Decode(&payload)
-
-	_ = os.Remove(speedtestResultFile)
-	_ = os.Remove(speedtestErrorFile)
-	_ = os.Remove(speedtestProgressFile)
 
 	args := []string{"-f", "json", "-p", "yes", "--accept-license", "--accept-gdpr"}
 	if payload.ServerID != nil && *payload.ServerID > 0 {
@@ -108,12 +107,17 @@ func (h *SpeedtestHandler) StartTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cmd := exec.Command("speedtest", args...)
+	h.mu.Lock()
 	h.cmd = cmd
+	h.mu.Unlock()
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		h.mu.Lock()
 		h.running = false
+		h.status = "error"
+		h.err = "Failed to start speedtest stdout pipe"
+		h.cmd = nil
 		h.mu.Unlock()
 		Error(w, http.StatusInternalServerError, "Failed to start speedtest stdout pipe")
 		return
@@ -122,12 +126,13 @@ func (h *SpeedtestHandler) StartTest(w http.ResponseWriter, r *http.Request) {
 	if err := cmd.Start(); err != nil {
 		h.mu.Lock()
 		h.running = false
+		h.status = "error"
+		h.err = fmt.Sprintf("Failed to spawn speedtest: %v", err)
+		h.cmd = nil
 		h.mu.Unlock()
 		Error(w, http.StatusInternalServerError, fmt.Sprintf("Failed to spawn speedtest: %v", err))
 		return
 	}
-
-	_ = os.WriteFile(speedtestPidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0644)
 
 	go func() {
 		defer func() {
@@ -135,7 +140,6 @@ func (h *SpeedtestHandler) StartTest(w http.ResponseWriter, r *http.Request) {
 			h.running = false
 			h.cmd = nil
 			h.mu.Unlock()
-			_ = os.Remove(speedtestPidFile)
 		}()
 
 		scanner := bufio.NewScanner(stdout)
@@ -146,8 +150,12 @@ func (h *SpeedtestHandler) StartTest(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			// Write line to progress file
-			_ = os.WriteFile(speedtestProgressFile, []byte(line), 0644)
+			var lineObj interface{}
+			if err := json.Unmarshal([]byte(line), &lineObj); err == nil {
+				h.mu.Lock()
+				h.progress = lineObj
+				h.mu.Unlock()
+			}
 
 			// Check if this line is the final result object (type: "result")
 			if strings.Contains(line, `"type":"result"`) {
@@ -157,10 +165,22 @@ func (h *SpeedtestHandler) StartTest(w http.ResponseWriter, r *http.Request) {
 
 		_ = cmd.Wait()
 
+		h.mu.Lock()
+		defer h.mu.Unlock()
 		if lastResult != "" {
-			_ = os.WriteFile(speedtestResultFile, []byte(lastResult), 0644)
-		} else {
-			_ = os.WriteFile(speedtestErrorFile, []byte("Speedtest terminated without result"), 0644)
+			var resultObj interface{}
+			if err := json.Unmarshal([]byte(lastResult), &resultObj); err == nil {
+				h.result = resultObj
+				h.status = "complete"
+				h.err = ""
+			} else {
+				h.result = lastResult
+				h.status = "complete"
+				h.err = ""
+			}
+		} else if h.status != "idle" {
+			h.status = "error"
+			h.err = "Speedtest terminated without result"
 		}
 	}()
 
@@ -172,40 +192,31 @@ func (h *SpeedtestHandler) StartTest(w http.ResponseWriter, r *http.Request) {
 
 // GetStatus handles GET /api/v1/diagnostics/speedtest/status and /cgi-bin/quecmanager/at_cmd/speedtest_status.sh
 func (h *SpeedtestHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
-	h.mu.Lock()
-	running := h.running
-	h.mu.Unlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 
-	if running {
-		var progressObj interface{}
-		if data, err := os.ReadFile(speedtestProgressFile); err == nil && len(data) > 0 {
-			_ = json.Unmarshal(data, &progressObj)
-		}
-
+	if h.running || h.status == "running" {
 		JSON(w, http.StatusOK, map[string]interface{}{
 			"status":   "running",
-			"progress": progressObj,
+			"progress": h.progress,
 		})
 		return
 	}
 
-	if errData, err := os.ReadFile(speedtestErrorFile); err == nil && len(errData) > 0 {
+	if h.status == "error" {
 		JSON(w, http.StatusOK, map[string]interface{}{
 			"status": "error",
-			"error":  string(errData),
+			"error":  h.err,
 		})
 		return
 	}
 
-	if resData, err := os.ReadFile(speedtestResultFile); err == nil && len(resData) > 0 {
-		var resultObj interface{}
-		if err := json.Unmarshal(resData, &resultObj); err == nil {
-			JSON(w, http.StatusOK, map[string]interface{}{
-				"status": "complete",
-				"result": resultObj,
-			})
-			return
-		}
+	if h.status == "complete" && h.result != nil {
+		JSON(w, http.StatusOK, map[string]interface{}{
+			"status": "complete",
+			"result": h.result,
+		})
+		return
 	}
 
 	JSON(w, http.StatusOK, map[string]interface{}{
@@ -226,8 +237,8 @@ func (h *SpeedtestHandler) StopTest(w http.ResponseWriter, r *http.Request) {
 		}(h.cmd.Process)
 	}
 
-	_ = os.Remove(speedtestPidFile)
 	h.running = false
+	h.status = "idle"
 	h.cmd = nil
 
 	Success(w, map[string]string{"message": "Speedtest stopped"})

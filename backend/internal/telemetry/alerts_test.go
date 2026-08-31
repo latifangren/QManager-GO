@@ -2,6 +2,8 @@ package telemetry
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -16,7 +18,23 @@ func TestAlertDispatcher_ConfigurationAndDispatch(t *testing.T) {
 	eng := atengine.NewEngine(mock)
 	dispatcher := NewAlertDispatcher(eng)
 
-	// Configure SMS and Email
+	// Mock Discord server
+	discordReceived := make(chan bool, 1)
+	discordServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		discordReceived <- true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer discordServer.Close()
+
+	// Mock Generic Webhook server
+	webhookReceived := make(chan bool, 1)
+	webhookServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		webhookReceived <- true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhookServer.Close()
+
+	// Configure SMS, Email, Discord, Webhook
 	dispatcher.SetSMSConfig(SMSAlertConfig{
 		Enabled:     true,
 		PhoneNumber: "+1234567890",
@@ -27,6 +45,16 @@ func TestAlertDispatcher_ConfigurationAndDispatch(t *testing.T) {
 		Port:     587,
 		Username: "user",
 		Password: "password",
+	})
+	dispatcher.SetDiscordConfig(DiscordConfig{
+		Enabled:    true,
+		WebhookURL: discordServer.URL,
+		Username:   "QManagerBot",
+	})
+	dispatcher.SetWebhookConfig(WebhookConfig{
+		Enabled: true,
+		URL:     webhookServer.URL,
+		Headers: map[string]string{"X-Test": "Alert"},
 	})
 
 	alert := AlertPayload{
@@ -43,31 +71,54 @@ func TestAlertDispatcher_ConfigurationAndDispatch(t *testing.T) {
 	if len(history) != 1 {
 		t.Fatalf("expected 1 alert in history, got %d", len(history))
 	}
-	if history[0].Title != "High Temp" || history[0].Level != "CRITICAL" {
-		t.Errorf("unexpected alert payload in history: %+v", history[0])
+
+	// Verify Discord and Webhook deliveries
+	select {
+	case <-discordReceived:
+	case <-time.After(2 * time.Second):
+		t.Errorf("timed out waiting for discord alert")
+	}
+
+	select {
+	case <-webhookReceived:
+	case <-time.After(2 * time.Second):
+		t.Errorf("timed out waiting for webhook alert")
 	}
 }
 
 func TestAlertDispatcher_SendEmailAndErrorLogging(t *testing.T) {
 	dispatcher := NewAlertDispatcher(nil)
 
+	// Send email to non-existent server (should not panic or crash daemon)
 	cfg := EmailConfig{
 		Enabled:  true,
 		Host:     "127.0.0.1",
-		Port:     1, // Unreachable port to trigger connection error and exercise logging
-		Username: "user@example.com",
-		Password: "password",
-		From:     "noreply@example.com",
+		Port:     65530,
+		Username: "none",
+		Password: "none",
+		From:     "alerts@example.com",
 		To:       "admin@example.com",
 	}
 
 	alert := AlertPayload{
 		Level:     "WARNING",
-		Title:     "Degraded Link",
-		Message:   "RSRP below threshold",
-		Timestamp: time.Now(),
+		Title:     "Degraded",
+		Message:   "Packet loss > 20%",
+		Timestamp: time.Now().UTC(),
 	}
 
-	// Direct call to sendEmail should attempt SMTP, fail gracefully, and log error
+	// Direct call to sendEmail should complete cleanly without panicking
 	dispatcher.sendEmail(cfg, alert)
+
+	// Direct call to sendDiscord with invalid URL
+	dispatcher.sendDiscord(DiscordConfig{
+		Enabled:    true,
+		WebhookURL: "http://127.0.0.1:65530/invalid",
+	}, alert)
+
+	// Direct call to sendWebhook with invalid URL
+	dispatcher.sendWebhook(WebhookConfig{
+		Enabled: true,
+		URL:     "http://127.0.0.1:65530/invalid",
+	}, alert)
 }

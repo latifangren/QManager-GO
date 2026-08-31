@@ -46,6 +46,14 @@ func TestNewDeviceTransport(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error opening non-existent device /dev/smd11 on non-modem host")
 	}
+	_ = customDev.Close()
+}
+
+func TestDeviceTransport_Close(t *testing.T) {
+	dev := NewDeviceTransport("/dev/null")
+	if err := dev.Close(); err != nil {
+		t.Errorf("expected nil error closing uninitialized device, got %v", err)
+	}
 }
 
 func TestNewCliTransport(t *testing.T) {
@@ -75,4 +83,19 @@ func TestAutoDetectTransport(t *testing.T) {
 		t.Fatalf("expected non-nil transport")
 	}
 	_ = transport.Close()
+}
+
+func TestFileLock(t *testing.T) {
+	tmpDir := t.TempDir()
+	lockPath := filepath.Join(tmpDir, "qmanager.lock")
+
+	f1, err := acquireFileLock(lockPath)
+	if err != nil {
+		t.Fatalf("failed to acquire file lock: %v", err)
+	}
+	if f1 == nil {
+		t.Fatalf("expected non-nil lock file")
+	}
+
+	releaseFileLock(f1)
 }

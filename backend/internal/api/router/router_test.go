@@ -2,6 +2,7 @@ package router
 
 import (
 	"embed"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -216,5 +217,63 @@ func TestRouter_MountsAndEndpoints(t *testing.T) {
 	handler.ServeHTTP(wEvents, reqEvents)
 	if wEvents.Code != http.StatusOK {
 		t.Errorf("expected status 200 for CGI fetch_events.sh, got %d", wEvents.Code)
+	}
+
+	// 12. Test Auth Middleware on Protected Routes
+	// Unauthorized request (no token)
+	reqProtNoAuth := httptest.NewRequest("GET", "/api/v1/cellular/bands", nil)
+	wProtNoAuth := httptest.NewRecorder()
+	handler.ServeHTTP(wProtNoAuth, reqProtNoAuth)
+	if wProtNoAuth.Code != http.StatusUnauthorized {
+		t.Errorf("expected status 401 for unauthenticated protected route, got %d", wProtNoAuth.Code)
+	}
+
+	// Login/Setup to obtain valid token (length >= 6 when setup_required)
+	reqLogin := httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(`{"password":"admin123","confirm":"admin123"}`))
+	wLogin := httptest.NewRecorder()
+	handler.ServeHTTP(wLogin, reqLogin)
+	if wLogin.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for login, got %d", wLogin.Code)
+	}
+	var loginResp struct {
+		Token string `json:"token"`
+	}
+	_ = json.NewDecoder(wLogin.Body).Decode(&loginResp)
+	if loginResp.Token == "" {
+		t.Fatalf("login did not return token")
+	}
+
+	// Authenticated request with Bearer header
+	mock.SetResponse(`AT+QNWPREFCFG="lte_band";+QNWPREFCFG="nsa_nr5g_band";+QNWPREFCFG="nr5g_band"`, `+QNWPREFCFG: "lte_band",1:3:5:8:40`+"\r\n"+`+QNWPREFCFG: "nsa_nr5g_band",1:3:41:78`+"\r\n"+`+QNWPREFCFG: "nr5g_band",1:3:41:78`+"\r\nOK")
+	reqProtAuth := httptest.NewRequest("GET", "/api/v1/cellular/bands", nil)
+	reqProtAuth.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	wProtAuth := httptest.NewRecorder()
+	handler.ServeHTTP(wProtAuth, reqProtAuth)
+	if wProtAuth.Code != http.StatusOK {
+		t.Errorf("expected status 200 for authenticated protected route with Bearer token, got %d: %s", wProtAuth.Code, wProtAuth.Body.String())
+	}
+
+	// Authenticated request with Cookie
+	reqProtCookie := httptest.NewRequest("GET", "/api/v1/cellular/bands", nil)
+	reqProtCookie.AddCookie(&http.Cookie{Name: "qm_auth_token", Value: loginResp.Token})
+	wProtCookie := httptest.NewRecorder()
+	handler.ServeHTTP(wProtCookie, reqProtCookie)
+	if wProtCookie.Code != http.StatusOK {
+		t.Errorf("expected status 200 for authenticated protected route with cookie, got %d: %s", wProtCookie.Code, wProtCookie.Body.String())
+	}
+
+	// Public routes bypass check
+	reqStatus := httptest.NewRequest("GET", "/api/v1/status", nil)
+	wStatus := httptest.NewRecorder()
+	handler.ServeHTTP(wStatus, reqStatus)
+	if wStatus.Code != http.StatusOK {
+		t.Errorf("expected status 200 for public /status, got %d", wStatus.Code)
+	}
+
+	reqAuthCheck := httptest.NewRequest("GET", "/api/v1/auth/check", nil)
+	wAuthCheck := httptest.NewRecorder()
+	handler.ServeHTTP(wAuthCheck, reqAuthCheck)
+	if wAuthCheck.Code != http.StatusUnauthorized { // Auth check returns 401 JSON when not logged in, but is handled by authH.Check, not blocked by middleware
+		t.Errorf("expected status 401 for unauthenticated /auth/check, got %d", wAuthCheck.Code)
 	}
 }

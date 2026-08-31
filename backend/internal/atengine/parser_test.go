@@ -157,6 +157,13 @@ func TestParseQCAINFO_EdgeCases(t *testing.T) {
 			expected: 1,
 		},
 		{
+			name: "NR carrier with 273 RBs / kHz / MHz",
+			input: `+QCAINFO: "PCC",627392,273,"NR BAND 78",1,320,-80,-10,-60,20
++QCAINFO: "SCC",633334,"100MHz","NR BAND 78",1,321,-82,-11,-62,18
++QCAINFO: "SCC",640000,"80000kHz","n77",1,322,-85,-12,-65,15`,
+			expected: 3,
+		},
+		{
 			name: "various resource block bandwidths",
 			input: `+QCAINFO: "PCC",1675,6,"LTE BAND 3",1,218
 +QCAINFO: "SCC",300,15,"LTE BAND 1",1,120

@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,42 +10,39 @@ import (
 	"qmanager/internal/atengine"
 )
 
-var (
-	cellScanPidFile    = "/tmp/qmanager_cell_scan.pid"
-	cellScanResultFile = "/tmp/qmanager_cell_scan_result.json"
-	cellScanErrorFile  = "/tmp/qmanager_cell_scan_error"
-	longRunningFlag    = "/tmp/qmanager_long_running"
-)
-
 // CellScanItem represents one detected cell.
 type CellScanItem struct {
-	ID             string   `json:"id"`
-	NetworkType    string   `json:"networkType"`
-	EARFCN         int      `json:"earfcn"`
-	PCI            int      `json:"pci"`
-	Band           int      `json:"band"`
-	Bandwidth      int      `json:"bandwidth"`
-	CellID         int      `json:"cellID"`
-	TAC            int      `json:"tac"`
-	SignalStrength int      `json:"signalStrength"`
-	RSRQ           *int     `json:"rsrq"`
-	MCC            int      `json:"mcc"`
-	MNC            int      `json:"mnc"`
-	Provider       string   `json:"provider"`
-	SCS            *int     `json:"scs,omitempty"`
+	ID             string `json:"id"`
+	NetworkType    string `json:"networkType"`
+	EARFCN         int    `json:"earfcn"`
+	PCI            int    `json:"pci"`
+	Band           int    `json:"band"`
+	Bandwidth      int    `json:"bandwidth"`
+	CellID         int    `json:"cellID"`
+	TAC            int    `json:"tac"`
+	SignalStrength int    `json:"signalStrength"`
+	RSRQ           *int   `json:"rsrq"`
+	MCC            int    `json:"mcc"`
+	MNC            int    `json:"mnc"`
+	Provider       string `json:"provider"`
+	SCS            *int   `json:"scs,omitempty"`
 }
 
-// CellScannerHandler manages asynchronous AT+QSCAN sweeps.
+// CellScannerHandler manages asynchronous AT+QSCAN sweeps in memory (RAM-First).
 type CellScannerHandler struct {
 	engine   *atengine.Engine
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	scanning bool
+	status   string // "idle", "running", "complete", "error"
+	results  []CellScanItem
+	err      string
 }
 
 // NewCellScannerHandler creates a new CellScannerHandler.
 func NewCellScannerHandler(engine *atengine.Engine) *CellScannerHandler {
 	return &CellScannerHandler{
 		engine: engine,
+		status: "idle",
 	}
 }
 
@@ -60,13 +55,10 @@ func (h *CellScannerHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.scanning = true
+	h.status = "running"
+	h.results = nil
+	h.err = ""
 	h.mu.Unlock()
-
-	// Clear previous result and error
-	_ = os.Remove(cellScanResultFile)
-	_ = os.Remove(cellScanErrorFile)
-	_ = os.WriteFile(cellScanPidFile, []byte(strconv.Itoa(os.Getpid())), 0644)
-	_ = os.WriteFile(longRunningFlag, []byte("cell_scanner"), 0644)
 
 	// Launch async scan
 	go func() {
@@ -74,26 +66,27 @@ func (h *CellScannerHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 			h.mu.Lock()
 			h.scanning = false
 			h.mu.Unlock()
-			_ = os.Remove(cellScanPidFile)
-			_ = os.Remove(longRunningFlag)
 		}()
 
 		// Execute AT+QSCAN="all"
 		res, err := h.engine.Exec(`AT+QSCAN="all"`)
+		h.mu.Lock()
+		defer h.mu.Unlock()
+
 		if err != nil || !strings.Contains(res.Raw, "+QSCAN:") {
 			errMsg := "QSCAN execution failed"
 			if err != nil {
 				errMsg = err.Error()
 			}
-			_ = os.WriteFile(cellScanErrorFile, []byte(errMsg), 0644)
+			h.status = "error"
+			h.err = errMsg
 			return
 		}
 
 		cells := ParseQScanOutput(res.Raw)
-		data, err := json.MarshalIndent(cells, "", "  ")
-		if err == nil {
-			_ = os.WriteFile(cellScanResultFile, data, 0644)
-		}
+		h.results = cells
+		h.status = "complete"
+		h.err = ""
 	}()
 
 	JSON(w, http.StatusOK, map[string]interface{}{
@@ -104,35 +97,31 @@ func (h *CellScannerHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 
 // ScanStatus handles GET /api/v1/cellular/scanner/status and /cgi-bin/quecmanager/at_cmd/cell_scan_status.sh
 func (h *CellScannerHandler) ScanStatus(w http.ResponseWriter, r *http.Request) {
-	h.mu.Lock()
-	running := h.scanning
-	h.mu.Unlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 
-	if running {
+	if h.scanning || h.status == "running" {
 		JSON(w, http.StatusOK, map[string]interface{}{
 			"status": "running",
 		})
 		return
 	}
 
-	if errData, err := os.ReadFile(cellScanErrorFile); err == nil && len(errData) > 0 {
+	if h.status == "error" {
 		JSON(w, http.StatusOK, map[string]interface{}{
 			"status": "error",
-			"error":  string(errData),
+			"error":  h.err,
 		})
 		return
 	}
 
-	if resData, err := os.ReadFile(cellScanResultFile); err == nil {
-		var items []CellScanItem
-		if err := json.Unmarshal(resData, &items); err == nil {
-			JSON(w, http.StatusOK, map[string]interface{}{
-				"status":  "complete",
-				"results": items,
-				"count":   len(items),
-			})
-			return
-		}
+	if h.status == "complete" {
+		JSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "complete",
+			"results": h.results,
+			"count":   len(h.results),
+		})
+		return
 	}
 
 	JSON(w, http.StatusOK, map[string]interface{}{

@@ -50,7 +50,7 @@ func TestCellularHandler_Full(t *testing.T) {
 	}
 
 	// GetBands
-	mock.SetResponse(`AT+QNWPREFCFG="gw_band";+QNWPREFCFG="lte_band";+QNWPREFCFG="nsa_nr5g_band";+QNWPREFCFG="nr5g_band"`, `+QNWPREFCFG: "lte_band",1:3:5:7:8:20:28:38:40:41`+"\r\nOK")
+	mock.SetResponse(`AT+QNWPREFCFG="lte_band";+QNWPREFCFG="nsa_nr5g_band";+QNWPREFCFG="nr5g_band"`, `+QNWPREFCFG: "lte_band",1:3:5:7:8:20:28:38:40:41`+"\r\nOK")
 	reqGetBands := httptest.NewRequest(http.MethodGet, "/api/cellular/bands", nil)
 	wGetBands := httptest.NewRecorder()
 	h.GetBands(wGetBands, reqGetBands)

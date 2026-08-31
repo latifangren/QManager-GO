@@ -25,6 +25,50 @@ func NewBandFailoverHandler() *BandFailoverHandler {
 	}
 }
 
+// GetState returns the current failover state.
+func (h *BandFailoverHandler) GetState() (enabled, activated, watcherRunning bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.enabled, h.activated, h.watcherRunning
+}
+
+// IsEnabled returns true if failover is enabled.
+func (h *BandFailoverHandler) IsEnabled() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.enabled
+}
+
+// SetState updates all failover state fields.
+func (h *BandFailoverHandler) SetState(enabled, activated, watcherRunning bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.enabled = enabled
+	h.activated = activated
+	h.watcherRunning = watcherRunning
+}
+
+// SetEnabled updates the enabled state.
+func (h *BandFailoverHandler) SetEnabled(enabled bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.enabled = enabled
+}
+
+// SetActivated updates the activated state.
+func (h *BandFailoverHandler) SetActivated(activated bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.activated = activated
+}
+
+// SetWatcherRunning updates the watcher running state.
+func (h *BandFailoverHandler) SetWatcherRunning(running bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.watcherRunning = running
+}
+
 // Status handles GET /cgi-bin/quecmanager/bands/failover_status.sh and /api/cellular/bands/failover/status
 func (h *BandFailoverHandler) Status(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()

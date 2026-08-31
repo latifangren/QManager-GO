@@ -40,6 +40,13 @@ func TestSpeedtestAndTailscale_Deep(t *testing.T) {
 		t.Fatalf("GetStatus returned %d", wProg.Code)
 	}
 
+	// Start test (simulated failure or execution)
+	wStart := httptest.NewRecorder()
+	stH.StartTest(wStart, httptest.NewRequest(http.MethodPost, "/api/diagnostics/speedtest/start", bytes.NewBufferString(`{}`)))
+	if wStart.Code != http.StatusOK && wStart.Code != http.StatusInternalServerError {
+		t.Fatalf("StartTest returned %d", wStart.Code)
+	}
+
 	// 2. Tailscale Handler
 	tsH := NewTailscaleHandler()
 
