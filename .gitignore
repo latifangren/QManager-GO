@@ -58,7 +58,7 @@ qmanager-armv7*
 /qmanager-armv7
 /backend/qmanager*
 /backend/cmd/qmanager/dist/*
-!/backend/cmd/qmanager/dist/.gitkeep
+!/backend/cmd/qmanager/dist/index.html
 backend/*.exe
 *.exe
 *.test
