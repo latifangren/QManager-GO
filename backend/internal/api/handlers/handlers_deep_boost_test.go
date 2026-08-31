@@ -108,6 +108,7 @@ func TestHandlers_DeepBoost(t *testing.T) {
 	}
 
 	// Delete profile
+	simProfH.WaitForAsync()
 	bodyDelProf, _ := json.Marshal(map[string]string{"id": profID})
 	reqDelProf := httptest.NewRequest(http.MethodPost, "/api/cellular/profiles/delete.sh", bytes.NewBuffer(bodyDelProf))
 	wDelProf := httptest.NewRecorder()
@@ -115,6 +116,7 @@ func TestHandlers_DeepBoost(t *testing.T) {
 	if wDelProf.Code != http.StatusOK {
 		t.Fatalf("Delete profile returned %d, want 200", wDelProf.Code)
 	}
+	simProfH.WaitForAsync()
 
 	// 3. LogsHandler - ModemSubsys diagnostic
 	logsH := NewLogsHandler()

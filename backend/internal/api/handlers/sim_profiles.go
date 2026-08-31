@@ -102,6 +102,7 @@ type SIMProfileHandler struct {
 	activeProfilePath string
 	profileStatePath  string
 	mu                sync.Mutex
+	wg                sync.WaitGroup
 }
 
 // NewSIMProfileHandler creates a new SIMProfileHandler.
@@ -121,6 +122,11 @@ func (h *SIMProfileHandler) SetStoragePaths(profileDir, activePath, statePath st
 	h.profileDir = profileDir
 	h.activeProfilePath = activePath
 	h.profileStatePath = statePath
+}
+
+// WaitForAsync blocks until any running background tasks complete.
+func (h *SIMProfileHandler) WaitForAsync() {
+	h.wg.Wait()
 }
 
 func (h *SIMProfileHandler) getActiveProfileID() string {
@@ -423,7 +429,9 @@ func (h *SIMProfileHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 
 	// Execute apply steps asynchronously or synchronously via AT engine
+	h.wg.Add(1)
 	go func() {
+		defer h.wg.Done()
 		h.mu.Lock()
 		defer h.mu.Unlock()
 
