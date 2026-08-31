@@ -27,7 +27,7 @@ func AppMain(ctx context.Context, port string) error {
 		port = os.Getenv("PORT")
 	}
 	if port == "" {
-		port = "8080"
+		port = "80"
 	}
 
 	fmt.Println("🚀 Initializing QManager Go Single-Binary Engine...")

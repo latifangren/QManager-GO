@@ -9,21 +9,13 @@ User=root
 WorkingDirectory=/usrdata/qmanager
 ExecStart=/usrdata/qmanager/qmanager
 Restart=always
-RestartSec=5s
+RestartSec=3s
 LimitNOFILE=65535
-
-# Network & Port Binding (Port 80 for Direct Modem WebUI)
-Environment="PORT=80"
-
-# Cortex-A7 Runtime & Memory Protection
-Environment="GOMEMLIMIT=30MiB"
-Environment="GOGC=50"
-
-# In-memory logging to journald / RAM ring buffer
+Environment=PORT=80
+Environment=GOMEMLIMIT=30MiB
+Environment=GOGC=50
 StandardOutput=journal
 StandardError=journal
-
-# Graceful termination
 TimeoutStopSec=10s
 KillMode=mixed
 
