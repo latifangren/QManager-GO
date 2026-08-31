@@ -108,25 +108,52 @@ func NewDeviceTransport(devPath string) *DeviceTransport {
 	}
 }
 
-// isTerminator checks if the response stream contains standard 3GPP AT terminators.
+// isTerminator checks if the response stream contains standard 3GPP AT terminators line-by-line.
 func isTerminator(buf []byte) bool {
-	str := string(buf)
-	if strings.Contains(str, "\r\nOK\r\n") ||
-		strings.Contains(str, "\nOK\n") ||
-		strings.HasSuffix(strings.TrimSpace(str), "OK") ||
-		strings.Contains(str, "\r\nERROR\r\n") ||
-		strings.Contains(str, "\nERROR\n") ||
-		strings.HasSuffix(strings.TrimSpace(str), "ERROR") ||
-		strings.Contains(str, "+CME ERROR:") ||
-		strings.Contains(str, "+CMS ERROR:") ||
-		strings.Contains(str, "\r\nNO CARRIER\r\n") ||
-		strings.Contains(str, "\r\nBUSY\r\n") {
-		return true
+	lines := strings.Split(string(buf), "\n")
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" {
+			continue
+		}
+		if trimmed == "OK" ||
+			trimmed == "ERROR" ||
+			strings.HasPrefix(trimmed, "+CME ERROR:") ||
+			strings.HasPrefix(trimmed, "+CMS ERROR:") ||
+			trimmed == "NO CARRIER" ||
+			trimmed == "BUSY" ||
+			trimmed == "CONNECT" ||
+			strings.HasPrefix(trimmed, "CONNECT ") ||
+			trimmed == "RING" {
+			return true
+		}
 	}
 	return false
 }
 
-// readResponse reads from an io.Reader until an AT terminator or context timeout.
+// evaluateResponseTerminator scans lines in the response buffer to detect final AT result codes.
+// Returns whether response is terminated and any corresponding error.
+func evaluateResponseTerminator(resp string) (bool, error) {
+	lines := strings.Split(resp, "\n")
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" {
+			continue
+		}
+		if trimmed == "OK" || trimmed == "CONNECT" || strings.HasPrefix(trimmed, "CONNECT ") || trimmed == "RING" {
+			return true, nil
+		}
+		if trimmed == "ERROR" || strings.HasPrefix(trimmed, "+CME ERROR:") || strings.HasPrefix(trimmed, "+CMS ERROR:") || trimmed == "NO CARRIER" {
+			return true, ErrATCommand
+		}
+		if trimmed == "BUSY" {
+			return true, ErrBusy
+		}
+	}
+	return false, nil
+}
+
+// readResponse reads from an io.Reader dynamically until an AT terminator, EOF, or context timeout.
 func readResponse(ctx context.Context, r io.Reader) (string, error) {
 	type readResult struct {
 		data []byte
@@ -158,25 +185,15 @@ func readResponse(ctx context.Context, r io.Reader) (string, error) {
 		case res := <-readChan:
 			if len(res.data) > 0 {
 				out.Write(res.data)
-				if isTerminator(out.Bytes()) {
-					resp := out.String()
-					if strings.Contains(resp, "\r\nERROR\r\n") || strings.Contains(resp, "\nERROR\n") || strings.Contains(resp, "+CME ERROR:") || strings.Contains(resp, "+CMS ERROR:") {
-						return resp, ErrATCommand
-					}
-					if strings.Contains(resp, "\r\nBUSY\r\n") {
-						return resp, ErrBusy
-					}
-					return resp, nil
+				if terminated, termErr := evaluateResponseTerminator(out.String()); terminated {
+					return out.String(), termErr
 				}
 			}
 			if res.err != nil {
 				if errors.Is(res.err, io.EOF) {
 					resp := out.String()
-					if strings.Contains(resp, "\r\nERROR\r\n") || strings.Contains(resp, "\nERROR\n") || strings.Contains(resp, "+CME ERROR:") || strings.Contains(resp, "+CMS ERROR:") {
-						return resp, ErrATCommand
-					}
-					if strings.Contains(resp, "\r\nBUSY\r\n") {
-						return resp, ErrBusy
+					if terminated, termErr := evaluateResponseTerminator(resp); terminated {
+						return resp, termErr
 					}
 					return resp, nil
 				}

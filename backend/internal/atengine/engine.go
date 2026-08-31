@@ -42,6 +42,7 @@ type commandResponse struct {
 type Engine struct {
 	transport Transport
 	timeout   time.Duration
+	debounce  time.Duration
 
 	highChan chan commandRequest
 	normChan chan commandRequest
@@ -57,6 +58,7 @@ func NewEngine(transport Transport) *Engine {
 	e := &Engine{
 		transport: transport,
 		timeout:   5 * time.Second,
+		debounce:  25 * time.Millisecond,
 		highChan:  make(chan commandRequest, 64),
 		normChan:  make(chan commandRequest, 128),
 		lowChan:   make(chan commandRequest, 64),
@@ -81,6 +83,20 @@ func (e *Engine) GetTimeout() time.Duration {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.timeout
+}
+
+// SetDebounce configures the inter-command debounce delay.
+func (e *Engine) SetDebounce(d time.Duration) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.debounce = d
+}
+
+// GetDebounce returns the configured inter-command debounce delay.
+func (e *Engine) GetDebounce() time.Duration {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.debounce
 }
 
 // Close cleanly stops the priority worker goroutine.
@@ -159,6 +175,15 @@ func (e *Engine) processRequest(req commandRequest) {
 	select {
 	case req.respChan <- commandResponse{raw: raw, err: err}:
 	default:
+	}
+
+	// Inter-command debounce to allow baseband shared memory buffers to flush
+	debounce := e.GetDebounce()
+	if debounce > 0 {
+		select {
+		case <-e.stopChan:
+		case <-time.After(debounce):
+		}
 	}
 }
 
@@ -305,11 +330,63 @@ func (e *Engine) ExecuteBatch(ctx context.Context, commands []string) ([]*Result
 	return results, nil
 }
 
+// WaitReady probes the modem with AT command repeatedly until it responds OK or ctx is canceled.
+func (e *Engine) WaitReady(ctx context.Context, maxAttempts int, retryDelay time.Duration) error {
+	if maxAttempts <= 0 {
+		maxAttempts = 10
+	}
+	if retryDelay <= 0 {
+		retryDelay = 500 * time.Millisecond
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		res, err := e.ExecContextWithPriority(ctx, "AT", PriorityHigh)
+		if err == nil && res != nil && res.Success {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		} else if res != nil && !res.Success {
+			lastErr = fmt.Errorf("unexpected AT response: %s", res.Raw)
+		}
+
+		if attempt < maxAttempts {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-e.stopChan:
+				return fmt.Errorf("engine closed")
+			case <-time.After(retryDelay):
+			}
+		}
+	}
+
+	if lastErr != nil {
+		return fmt.Errorf("modem readiness probe failed after %d attempts: %w", maxAttempts, lastErr)
+	}
+	return fmt.Errorf("modem readiness probe failed after %d attempts", maxAttempts)
+}
+
 func isATError(resp string) bool {
-	t := strings.TrimSpace(resp)
-	return strings.HasSuffix(t, "ERROR") ||
-		strings.Contains(t, "+CME ERROR:") ||
-		strings.Contains(t, "+CMS ERROR:") ||
-		strings.Contains(t, "NO CARRIER") ||
-		strings.Contains(t, "BUSY")
+	lines := strings.Split(resp, "\n")
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" {
+			continue
+		}
+		if trimmed == "ERROR" ||
+			strings.HasPrefix(trimmed, "+CME ERROR:") ||
+			strings.HasPrefix(trimmed, "+CMS ERROR:") ||
+			trimmed == "NO CARRIER" ||
+			strings.HasPrefix(trimmed, "NO CARRIER") ||
+			trimmed == "BUSY" {
+			return true
+		}
+	}
+	return false
 }

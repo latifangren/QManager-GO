@@ -498,6 +498,9 @@ func (p *Poller) poll() {
 		}
 	}
 
+	// Micro-sleep between consecutive low-priority AT commands in 1Hz cycle
+	time.Sleep(15 * time.Millisecond)
+
 	// 2. Carrier aggregation
 	if res, err := p.engine.ExecLow(ctx, `AT+QCAINFO`); err == nil {
 		caList := atengine.ParseQCAINFO(res.Raw)
@@ -517,6 +520,9 @@ func (p *Poller) poll() {
 		status.Network.TotalBandwidthMHz = totalBW
 		status.Network.BandwidthDetails = strings.Join(bwDetails, " + ")
 	}
+
+	// Micro-sleep before CSQ query
+	time.Sleep(15 * time.Millisecond)
 
 	// 3. Signal CSQ fallback if RSRP not parsed
 	if status.RSSI == 0 {

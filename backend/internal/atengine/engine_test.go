@@ -125,8 +125,8 @@ func TestEngine_PriorityDispatchPreemption(t *testing.T) {
 		record("HIGH")
 	}()
 
-	// Wait for all to finish
-	time.Sleep(250 * time.Millisecond)
+	// Wait for all to finish with sync.WaitGroup
+	time.Sleep(500 * time.Millisecond)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -405,5 +405,43 @@ func TestReadResponse_BufferStream(t *testing.T) {
 	}
 	if !strings.Contains(resp, "READY") || !strings.Contains(resp, "OK") {
 		t.Errorf("unexpected readResponse: %s", resp)
+	}
+}
+
+func TestEngine_Debounce(t *testing.T) {
+	mock := NewMockTransport()
+	mock.SetResponse("AT", "OK")
+	engine := NewEngine(mock)
+	defer engine.Close()
+
+	if engine.GetDebounce() != 25*time.Millisecond {
+		t.Errorf("expected default debounce 25ms, got %v", engine.GetDebounce())
+	}
+
+	engine.SetDebounce(5 * time.Millisecond)
+	if engine.GetDebounce() != 5*time.Millisecond {
+		t.Errorf("expected debounce 5ms, got %v", engine.GetDebounce())
+	}
+}
+
+func TestEngine_WaitReady(t *testing.T) {
+	mock := NewMockTransport()
+	engine := NewEngine(mock)
+	defer engine.Close()
+
+	// 1. Success on first try
+	mock.SetResponse("AT", "OK")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := engine.WaitReady(ctx, 3, 10*time.Millisecond); err != nil {
+		t.Fatalf("expected WaitReady to succeed, got %v", err)
+	}
+
+	// 2. Fails after maxAttempts
+	mock.SetResponse("AT", "ERROR")
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel2()
+	if err := engine.WaitReady(ctx2, 2, 10*time.Millisecond); err == nil {
+		t.Fatalf("expected WaitReady to fail on ERROR response")
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -71,24 +70,14 @@ func readDeviceResponse(ctx context.Context, f *os.File) (string, error) {
 		n, err := f.Read(buf)
 		if n > 0 {
 			out.Write(buf[:n])
-			if isTerminator(out.Bytes()) {
-				resp := out.String()
-				if strings.Contains(resp, "\r\nERROR\r\n") || strings.Contains(resp, "\nERROR\n") || strings.Contains(resp, "+CME ERROR:") || strings.Contains(resp, "+CMS ERROR:") {
-					return resp, ErrATCommand
-				}
-				if strings.Contains(resp, "\r\nBUSY\r\n") {
-					return resp, ErrBusy
-				}
-				return resp, nil
+			if terminated, termErr := evaluateResponseTerminator(out.String()); terminated {
+				return out.String(), termErr
 			}
 		} else if err != nil {
 			if errors.Is(err, io.EOF) {
 				resp := out.String()
-				if strings.Contains(resp, "\r\nERROR\r\n") || strings.Contains(resp, "\nERROR\n") || strings.Contains(resp, "+CME ERROR:") || strings.Contains(resp, "+CMS ERROR:") {
-					return resp, ErrATCommand
-				}
-				if strings.Contains(resp, "\r\nBUSY\r\n") {
-					return resp, ErrBusy
+				if terminated, termErr := evaluateResponseTerminator(resp); terminated {
+					return resp, termErr
 				}
 				return resp, nil
 			}

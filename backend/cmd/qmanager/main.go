@@ -88,6 +88,23 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 	atTransport := atengine.AutoDetectTransport(atDevice)
 	defer atTransport.Close()
 	engine := atengine.NewEngine(atTransport)
+	defer engine.Close()
+
+	// Baseband Readiness Probe / Warmup
+	probeCtx, probeCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer probeCancel()
+	if err := engine.WaitReady(probeCtx, 10, 500*time.Millisecond); err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
+		log.Printf("⚠️ Modem readiness probe warning: %v (continuing startup)...\n", err)
+	} else {
+		fmt.Println("📡 Modem baseband ready. Starting telemetry poller & watchdog...")
+	}
+
+	if ctx.Err() != nil {
+		return nil
+	}
 
 	// 4. Background Telemetry & Probers
 	poller := telemetry.NewPoller(engine, identity, 1*time.Second)
