@@ -500,6 +500,24 @@ func (h *SIMProfileHandler) ApplyStatus(w http.ResponseWriter, r *http.Request) 
 	JSON(w, http.StatusOK, state)
 }
 
+// Deactivate handles POST /cgi-bin/quecmanager/profiles/deactivate.sh and resets the active SIM profile.
+func (h *SIMProfileHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	_ = h.setActiveProfileID("")
+	state := ProfileApplyState{
+		Status:    "idle",
+		Timestamp: time.Now().Unix(),
+	}
+	_ = h.writeState(state)
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Active profile deactivated",
+	})
+}
+
 func (h *SIMProfileHandler) writeState(st ProfileApplyState) error {
 	_ = os.MkdirAll(filepath.Dir(h.profileStatePath), 0755)
 	data, err := json.MarshalIndent(st, "", "  ")

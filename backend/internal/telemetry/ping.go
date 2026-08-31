@@ -3,6 +3,7 @@ package telemetry
 import (
 	"math"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -54,6 +55,19 @@ func NewPingProber(target string, interval time.Duration) *PingProber {
 		stopCh:      make(chan struct{}),
 		dialTimeout: 1500 * time.Millisecond,
 	}
+}
+
+// SetTarget updates the probe destination target.
+func (p *PingProber) SetTarget(target string) {
+	if target == "" {
+		return
+	}
+	if !strings.Contains(target, ":") {
+		target = target + ":53"
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.target = target
 }
 
 // Start begins probe background loop.

@@ -84,6 +84,8 @@ func NewRouter(s AppServices) http.Handler {
 	langPacksH := handlers.NewLanguagePacksHandler()
 	healthCheckH := handlers.NewHealthCheckHandler(s.Engine, s.Poller, s.Identity)
 	historyH := handlers.NewHistoryHandler()
+	qualityH := handlers.NewQualityThresholdsHandler()
+	pingProfH := handlers.NewPingProfileHandler(s.Prober)
 
 	// API Routes (v1)
 	r.Route("/api/v1", func(api chi.Router) {
@@ -230,6 +232,12 @@ func NewRouter(s AppServices) http.Handler {
 			prot.Get("/system/logs", logsH.GetLogs)
 			prot.Post("/system/logs", logsH.HandleLogsAction)
 			prot.Get("/system/modem-subsys", logsH.ModemSubsys)
+
+			// Settings / Quality Thresholds & Ping Profile
+			prot.Get("/settings/quality-thresholds", qualityH.Get)
+			prot.Post("/settings/quality-thresholds", qualityH.Save)
+			prot.Get("/settings/ping-profile", pingProfH.Get)
+			prot.Post("/settings/ping-profile", pingProfH.Save)
 		})
 	})
 
@@ -287,6 +295,7 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Post("/profiles/save.sh", profileH.Save)
 		cgi.Post("/profiles/delete.sh", profileH.Delete)
 		cgi.Post("/profiles/apply.sh", profileH.Apply)
+		cgi.Post("/profiles/deactivate.sh", profileH.Deactivate)
 		cgi.Get("/profiles/apply_status.sh", profileH.ApplyStatus)
 		cgi.Get("/profiles/current_settings.sh", profileH.CurrentSettings)
 
@@ -341,6 +350,7 @@ func NewRouter(s AppServices) http.Handler {
 		// Language Packs CGI endpoints
 		cgi.Get("/system/language-packs/list.sh", langPacksH.List)
 		cgi.Post("/system/language-packs/install.sh", langPacksH.Install)
+		cgi.Post("/system/language-packs/install_cancel.sh", langPacksH.InstallCancel)
 		cgi.Get("/system/language-packs/install_status.sh", langPacksH.InstallStatus)
 		cgi.Post("/system/language-packs/remove.sh", langPacksH.Remove)
 
@@ -354,8 +364,13 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Get("/device/about.sh", sysH.Info)
 		cgi.Get("/system/settings.sh", sysH.GetConfig)
 		cgi.Post("/system/settings.sh", sysH.SaveConfig)
+		cgi.Get("/settings/quality_thresholds.sh", qualityH.Handle)
+		cgi.Post("/settings/quality_thresholds.sh", qualityH.Handle)
+		cgi.Get("/settings/ping_profile.sh", pingProfH.Handle)
+		cgi.Post("/settings/ping_profile.sh", pingProfH.Handle)
 		cgi.Get("/system/sim_registry.sh", simRegH.HandleRegistry)
 		cgi.Post("/system/sim_registry.sh", simRegH.HandleRegistry)
+		cgi.Get("/system/known_sims.sh", simRegH.HandleRegistry)
 		cgi.Post("/system/reboot.sh", sysH.Reboot)
 		cgi.Get("/system/update.sh", updateH.CheckUpdate)
 		cgi.Post("/system/update.sh", updateH.HandleUpdateAction)

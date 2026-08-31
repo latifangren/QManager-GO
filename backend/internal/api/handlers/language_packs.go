@@ -145,6 +145,24 @@ func (h *LanguagePacksHandler) InstallStatus(w http.ResponseWriter, r *http.Requ
 	JSON(w, http.StatusOK, h.installState)
 }
 
+// InstallCancel handles POST /cgi-bin/quecmanager/system/language-packs/install_cancel.sh and cancels an in-progress install.
+func (h *LanguagePacksHandler) InstallCancel(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.installState = LanguagePackInstallState{
+		State:     "idle",
+		Progress:  0,
+		Message:   "Installation canceled",
+		UpdatedAt: time.Now().Unix(),
+	}
+
+	Success(w, map[string]interface{}{
+		"success": true,
+		"message": "Language pack installation canceled",
+	})
+}
+
 // Remove handles POST /cgi-bin/quecmanager/system/language-packs/remove.sh and /api/system/language-packs/remove
 func (h *LanguagePacksHandler) Remove(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()

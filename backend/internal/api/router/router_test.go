@@ -276,4 +276,40 @@ func TestRouter_MountsAndEndpoints(t *testing.T) {
 	if wAuthCheck.Code != http.StatusUnauthorized { // Auth check returns 401 JSON when not logged in, but is handled by authH.Check, not blocked by middleware
 		t.Errorf("expected status 401 for unauthenticated /auth/check, got %d", wAuthCheck.Code)
 	}
+
+	// 13. Test newly mounted CGI & REST settings endpoints
+	reqQT := httptest.NewRequest("GET", "/cgi-bin/quecmanager/settings/quality_thresholds.sh", nil)
+	wQT := httptest.NewRecorder()
+	handler.ServeHTTP(wQT, reqQT)
+	if wQT.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI settings/quality_thresholds.sh, got %d", wQT.Code)
+	}
+
+	reqPP := httptest.NewRequest("GET", "/cgi-bin/quecmanager/settings/ping_profile.sh", nil)
+	wPP := httptest.NewRecorder()
+	handler.ServeHTTP(wPP, reqPP)
+	if wPP.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI settings/ping_profile.sh, got %d", wPP.Code)
+	}
+
+	reqDeact := httptest.NewRequest("POST", "/cgi-bin/quecmanager/profiles/deactivate.sh", nil)
+	wDeact := httptest.NewRecorder()
+	handler.ServeHTTP(wDeact, reqDeact)
+	if wDeact.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI profiles/deactivate.sh, got %d", wDeact.Code)
+	}
+
+	reqKnownSims := httptest.NewRequest("GET", "/cgi-bin/quecmanager/system/known_sims.sh", nil)
+	wKnownSims := httptest.NewRecorder()
+	handler.ServeHTTP(wKnownSims, reqKnownSims)
+	if wKnownSims.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI system/known_sims.sh, got %d", wKnownSims.Code)
+	}
+
+	reqLangCancel := httptest.NewRequest("POST", "/cgi-bin/quecmanager/system/language-packs/install_cancel.sh", nil)
+	wLangCancel := httptest.NewRecorder()
+	handler.ServeHTTP(wLangCancel, reqLangCancel)
+	if wLangCancel.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI system/language-packs/install_cancel.sh, got %d", wLangCancel.Code)
+	}
 }
