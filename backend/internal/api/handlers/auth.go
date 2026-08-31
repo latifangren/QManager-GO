@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -53,24 +54,50 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	tokenBytes := make([]byte, 16)
 	_, _ = rand.Read(tokenBytes)
 	token := hex.EncodeToString(tokenBytes)
+	expires := time.Now().Add(h.timeout)
 
 	h.mu.Lock()
-	h.tokens[token] = time.Now().Add(h.timeout)
+	h.tokens[token] = expires
 	h.mu.Unlock()
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "qm_auth_token",
 		Value:    token,
 		Path:     "/",
-		Expires:  time.Now().Add(h.timeout),
+		MaxAge:   86400,
+		Expires:  expires,
 		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
 	})
 
-	Success(w, map[string]interface{}{
-		"token":     token,
-		"expires":   time.Now().Add(h.timeout).Unix(),
-		"role":      "admin",
-		"auth_type": "session",
+	http.SetCookie(w, &http.Cookie{
+		Name:     "qm_logged_in",
+		Value:    "1",
+		Path:     "/",
+		MaxAge:   86400,
+		Expires:  expires,
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	dataMap := map[string]interface{}{
+		"token":          token,
+		"expires":        expires.Unix(),
+		"role":           "admin",
+		"auth_type":      "session",
+		"authenticated":  true,
+		"setup_required": false,
+	}
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success":        true,
+		"authenticated":  true,
+		"token":          token,
+		"expires":        expires.Unix(),
+		"role":           "admin",
+		"setup_required": false,
+		"auth_type":      "session",
+		"data":           dataMap,
 	})
 }
 
@@ -78,13 +105,25 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Check(w http.ResponseWriter, r *http.Request) {
 	token := h.extractToken(r)
 	if token == "" || !h.validateToken(token) {
-		Error(w, http.StatusUnauthorized, "Not authenticated")
+		JSON(w, http.StatusUnauthorized, map[string]interface{}{
+			"success":        false,
+			"authenticated":  false,
+			"setup_required": false,
+			"error":          "Not authenticated",
+		})
 		return
 	}
 
-	Success(w, map[string]interface{}{
-		"authenticated": true,
-		"role":          "admin",
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success":        true,
+		"authenticated":  true,
+		"role":           "admin",
+		"setup_required": false,
+		"data": map[string]interface{}{
+			"authenticated":  true,
+			"role":           "admin",
+			"setup_required": false,
+		},
 	})
 }
 
@@ -101,11 +140,26 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Name:     "qm_auth_token",
 		Value:    "",
 		Path:     "/",
+		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
 	})
 
-	Success(w, map[string]string{"message": "Logged out successfully"})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "qm_logged_in",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Logged out successfully",
+	})
 }
 
 // ValidateToken is helper for auth middleware.
@@ -126,8 +180,8 @@ func (h *AuthHandler) validateToken(token string) bool {
 
 func (h *AuthHandler) extractToken(r *http.Request) string {
 	if auth := r.Header.Get("Authorization"); auth != "" {
-		if len(auth) > 7 && auth[:7] == "Bearer " {
-			return auth[7:]
+		if len(auth) > 7 && strings.EqualFold(auth[:7], "Bearer ") {
+			return strings.TrimSpace(auth[7:])
 		}
 	}
 	if cookie, err := r.Cookie("qm_auth_token"); err == nil {

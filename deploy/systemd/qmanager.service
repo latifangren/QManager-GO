@@ -12,6 +12,9 @@ Restart=always
 RestartSec=5s
 LimitNOFILE=65535
 
+# Network & Port Binding (Port 80 for Direct Modem WebUI)
+Environment="PORT=80"
+
 # Cortex-A7 Runtime & Memory Protection
 Environment="GOMEMLIMIT=30MiB"
 Environment="GOGC=50"
