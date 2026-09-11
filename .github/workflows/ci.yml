@@ -14,6 +14,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+
 jobs:
   test-backend:
     name: Backend Tests & Vet
@@ -22,10 +25,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Set up Go 1.23
+      - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.23'
+          go-version-file: 'backend/go.mod'
           cache: true
           cache-dependency-path: backend/go.sum
 
@@ -50,6 +53,14 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: bun install
+
+      - name: Restore Next.js build cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/frontend/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('frontend/bun.lock') }}-${{ hashFiles('frontend/**.[jt]s', 'frontend/**.[jt]sx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('frontend/bun.lock') }}-
 
       - name: Build Next.js Static Export
         working-directory: frontend
@@ -91,10 +102,10 @@ jobs:
           name: frontend-dist
           path: backend/cmd/qmanager/dist
 
-      - name: Set up Go 1.23
+      - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.23'
+          go-version-file: 'backend/go.mod'
           cache: true
           cache-dependency-path: backend/go.sum
 

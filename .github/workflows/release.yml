@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+
 jobs:
   build-and-release:
     name: Build & Publish Single-Binary Release
@@ -23,6 +26,14 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Restore Next.js build cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/frontend/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('frontend/bun.lock') }}-${{ hashFiles('frontend/**.[jt]s', 'frontend/**.[jt]sx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('frontend/bun.lock') }}-
+
       - name: Build Next.js Static Export
         working-directory: frontend
         run: |
@@ -35,10 +46,10 @@ jobs:
           mkdir -p backend/cmd/qmanager/dist
           cp -r frontend/out/* backend/cmd/qmanager/dist/
 
-      - name: Set up Go 1.23
+      - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.23'
+          go-version-file: 'backend/go.mod'
           cache: true
           cache-dependency-path: backend/go.sum
 
