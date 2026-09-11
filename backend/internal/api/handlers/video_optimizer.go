@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"qmanager/internal/dpi"
 )
@@ -76,10 +75,10 @@ func (h *VideoOptimizerHandler) HandleGet(w http.ResponseWriter, r *http.Request
 
 	// Status response
 	cfg := readDpiConfig()
-	isMasquerade := section == "masquerade"
+	isFullBypass := section == "full_bypass" || section == "masquerade"
 
 	enabled := cfg.VideoOptimizerEnabled
-	if isMasquerade {
+	if isFullBypass {
 		enabled = cfg.MasqueradeEnabled
 	}
 
@@ -107,9 +106,11 @@ func (h *VideoOptimizerHandler) HandleGet(w http.ResponseWriter, r *http.Request
 		"domains_loaded":       domainsLoaded,
 		"binary_installed":     true, // Embedded tpws is always ready
 		"kernel_module_loaded": true,
+		"force_tcp":            cfg.ForceTCP,
+		"force_tcp_active":     dpi.IsForceTCPActive(),
 	}
 
-	if isMasquerade {
+	if isFullBypass {
 		sni := cfg.SNIDomain
 		if sni == "" {
 			sni = "speedtest.net"
@@ -122,7 +123,7 @@ func (h *VideoOptimizerHandler) HandleGet(w http.ResponseWriter, r *http.Request
 
 // VideoOptimizerSavePayload represents the POST request body.
 type VideoOptimizerSavePayload struct {
-	Action    string   `json:"action"` // "save", "save_masquerade", "install", "uninstall", "verify", "save_hostlist", "restore_hostlist"
+	Action    string   `json:"action"` // "save", "save_full_bypass", "save_masquerade", "save_force_tcp", "install", "uninstall", "verify", "save_hostlist", "restore_hostlist"
 	Enabled   *bool    `json:"enabled,omitempty"`
 	SNIDomain string   `json:"sni_domain,omitempty"`
 	Domains   []string `json:"domains,omitempty"`
@@ -139,8 +140,10 @@ func (h *VideoOptimizerHandler) HandlePost(w http.ResponseWriter, r *http.Reques
 	switch payload.Action {
 	case "save":
 		h.handleSaveVideoOptimizer(w, payload)
-	case "save_masquerade":
-		h.handleSaveMasquerade(w, payload)
+	case "save_full_bypass", "save_masquerade":
+		h.handleSaveFullBypass(w, payload)
+	case "save_force_tcp":
+		h.handleSaveForceTCP(w, payload)
 	case "save_hostlist":
 		h.handleSaveHostlist(w, payload)
 	case "restore_hostlist":
@@ -188,7 +191,7 @@ func (h *VideoOptimizerHandler) handleSaveVideoOptimizer(w http.ResponseWriter, 
 	})
 }
 
-func (h *VideoOptimizerHandler) handleSaveMasquerade(w http.ResponseWriter, p VideoOptimizerSavePayload) {
+func (h *VideoOptimizerHandler) handleSaveFullBypass(w http.ResponseWriter, p VideoOptimizerSavePayload) {
 	enabled := false
 	if p.Enabled != nil {
 		enabled = *p.Enabled
@@ -221,6 +224,29 @@ func (h *VideoOptimizerHandler) handleSaveMasquerade(w http.ResponseWriter, p Vi
 		"enabled":    enabled,
 		"status":     status,
 		"sni_domain": cfg.SNIDomain,
+	})
+}
+
+func (h *VideoOptimizerHandler) handleSaveForceTCP(w http.ResponseWriter, p VideoOptimizerSavePayload) {
+	enabled := false
+	if p.Enabled != nil {
+		enabled = *p.Enabled
+	}
+
+	cfg := readDpiConfig()
+	cfg.ForceTCP = enabled
+	_ = writeDpiConfig(cfg)
+
+	if enabled {
+		_ = dpi.ApplyForceTCPRule()
+	} else {
+		dpi.RemoveForceTCPRule()
+	}
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success":          true,
+		"force_tcp":        enabled,
+		"force_tcp_active": dpi.IsForceTCPActive(),
 	})
 }
 
@@ -262,7 +288,7 @@ func (h *VideoOptimizerHandler) handleRestoreHostlist(w http.ResponseWriter) {
 
 func (h *VideoOptimizerHandler) handleInstall(w http.ResponseWriter) {
 	_ = dpi.GetManager().EnsureBinaryExtracted()
-	_ = os.WriteFile(dpiInstallFile, []byte(`{"status":"complete","message":"tpws ready"}`), 0644)
+	_ = os.WriteFile(dpiInstallFile, []byte(`{"success":true,"status":"complete","message":"tpws ready"}`), 0644)
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
@@ -281,14 +307,11 @@ func (h *VideoOptimizerHandler) handleUninstall(w http.ResponseWriter) {
 }
 
 func (h *VideoOptimizerHandler) handleVerify(w http.ResponseWriter) {
-	go func() {
-		_ = os.WriteFile(dpiVerifyFile, []byte(`{"status":"running","message":"Testing bypass..."}`), 0644)
-		time.Sleep(2 * time.Second)
-		_ = os.WriteFile(dpiVerifyFile, []byte(`{"status":"complete","result":{"direct_speed_mbps":25.4,"bypass_speed_mbps":78.2,"improvement_factor":3.07}}`), 0644)
-	}()
+	dpi.GetManager().StartVerify()
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
+		"status":  "running",
 		"message": "Verify started",
 	})
 }
@@ -297,6 +320,7 @@ func (h *VideoOptimizerHandler) getVerifyStatus(w http.ResponseWriter) {
 	data, err := os.ReadFile(dpiVerifyFile)
 	if err != nil {
 		JSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
 			"status":  "idle",
 			"message": "No verification run",
 		})
@@ -306,35 +330,26 @@ func (h *VideoOptimizerHandler) getVerifyStatus(w http.ResponseWriter) {
 	var resp map[string]interface{}
 	if err := json.Unmarshal(data, &resp); err != nil {
 		JSON(w, http.StatusOK, map[string]interface{}{
-			"status":  "error",
-			"message": "Failed to parse verify status",
+			"success": true,
+			"status":  "idle",
+			"message": "No verification run",
 		})
 		return
+	}
+
+	if _, ok := resp["success"]; !ok {
+		resp["success"] = true
 	}
 
 	JSON(w, http.StatusOK, resp)
 }
 
 func (h *VideoOptimizerHandler) getInstallStatus(w http.ResponseWriter) {
-	data, err := os.ReadFile(dpiInstallFile)
-	if err != nil {
-		JSON(w, http.StatusOK, map[string]interface{}{
-			"status":  "complete",
-			"message": "tpws binary embedded and ready",
-		})
-		return
-	}
-
-	var resp map[string]interface{}
-	if err := json.Unmarshal(data, &resp); err != nil {
-		JSON(w, http.StatusOK, map[string]interface{}{
-			"status":  "complete",
-			"message": "tpws binary embedded and ready",
-		})
-		return
-	}
-
-	JSON(w, http.StatusOK, resp)
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"status":  "complete",
+		"message": "tpws binary embedded and ready",
+	})
 }
 
 func (h *VideoOptimizerHandler) getHostlist(w http.ResponseWriter) {
