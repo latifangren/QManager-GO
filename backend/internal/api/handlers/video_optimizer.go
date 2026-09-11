@@ -84,8 +84,9 @@ func (h *VideoOptimizerHandler) HandleGet(w http.ResponseWriter, r *http.Request
 
 	mgr := dpi.GetManager()
 	isRunning := mgr.IsRunning()
+	engineEnabled := cfg.VideoOptimizerEnabled || cfg.MasqueradeEnabled
 	status := "stopped"
-	if enabled {
+	if engineEnabled {
 		if isRunning {
 			status = "running"
 		} else {
