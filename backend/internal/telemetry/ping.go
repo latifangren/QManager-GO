@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"net"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -104,20 +105,60 @@ func getPingBinary() string {
 	return "/bin/ping"
 }
 
-// findWanInterface looks for the active cellular network interface.
+// findWanInterface looks for the active cellular network interface dynamically.
 func findWanInterface() string {
-	ifaces, err := net.Interfaces()
-	if err == nil {
-		for _, iface := range ifaces {
-			if strings.HasPrefix(iface.Name, "rmnet_data") ||
-				strings.HasPrefix(iface.Name, "rmnet_mhi") ||
-				strings.HasPrefix(iface.Name, "wwan") {
-				if (iface.Flags & net.FlagUp) != 0 {
-					return iface.Name
+	// 1. Check kernel default route table from /proc/net/route
+	if data, err := os.ReadFile("/proc/net/route"); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 && fields[1] == "00000000" { // Destination 0.0.0.0 (default route)
+				iface := fields[0]
+				if iface != "lo" && !strings.HasPrefix(iface, "bridge") && !strings.HasPrefix(iface, "rndis") {
+					return iface
 				}
 			}
 		}
 	}
+
+	// 2. Inspect active network interfaces with IP addresses
+	ifaces, err := net.Interfaces()
+	if err == nil {
+		// Prefer rmnet*, wwan*, usb*, qmi*, ppp*, lte* with FlagUp and assigned IP
+		for _, iface := range ifaces {
+			name := iface.Name
+			if (iface.Flags&net.FlagUp != 0) && (iface.Flags&net.FlagLoopback == 0) {
+				if strings.HasPrefix(name, "rmnet") ||
+					strings.HasPrefix(name, "wwan") ||
+					strings.HasPrefix(name, "usb") ||
+					strings.HasPrefix(name, "qmi") ||
+					strings.HasPrefix(name, "ppp") ||
+					strings.HasPrefix(name, "lte") {
+					addrs, _ := iface.Addrs()
+					if len(addrs) > 0 {
+						return name
+					}
+				}
+			}
+		}
+
+		// Fallback: any UP interface that is not loopback / bridge / rndis / eth
+		for _, iface := range ifaces {
+			name := iface.Name
+			if (iface.Flags&net.FlagUp != 0) && (iface.Flags&net.FlagLoopback == 0) {
+				if !strings.HasPrefix(name, "bridge") &&
+					!strings.HasPrefix(name, "rndis") &&
+					!strings.HasPrefix(name, "eth") &&
+					!strings.HasPrefix(name, "docker") &&
+					!strings.HasPrefix(name, "tunl") &&
+					!strings.HasPrefix(name, "sit") &&
+					!strings.HasPrefix(name, "gre") {
+					return name
+				}
+			}
+		}
+	}
+
 	return "rmnet_data0"
 }
 
