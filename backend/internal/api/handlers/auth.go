@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -34,9 +35,54 @@ func defaultSSHUpdater(password string) error {
 	if runtime.GOOS != "linux" {
 		return nil
 	}
-	cmd := exec.Command("chpasswd")
-	cmd.Stdin = strings.NewReader(fmt.Sprintf("root:%s\n", password))
-	return cmd.Run()
+
+	// Method 1: Generate MD5-crypt / SHA-512 crypt via openssl and update /etc/shadow atomically
+	cmd := exec.Command("openssl", "passwd", "-1", "-stdin")
+	cmd.Stdin = strings.NewReader(password + "\n")
+	out, err := cmd.Output()
+	var hash string
+	if err == nil && len(bytes.TrimSpace(out)) > 0 {
+		hash = string(bytes.TrimSpace(out))
+	}
+
+	if hash != "" {
+		shadowPath := "/etc/shadow"
+		data, err := os.ReadFile(shadowPath)
+		if err == nil {
+			lines := strings.Split(string(data), "\n")
+			updated := false
+			for i, line := range lines {
+				if strings.HasPrefix(line, "root:") {
+					parts := strings.Split(line, ":")
+					if len(parts) >= 2 {
+						parts[1] = hash
+						lines[i] = strings.Join(parts, ":")
+						updated = true
+					}
+					break
+				}
+			}
+			if updated {
+				tmpPath := fmt.Sprintf("%s.tmp.%d", shadowPath, time.Now().UnixNano())
+				if err := os.WriteFile(tmpPath, []byte(strings.Join(lines, "\n")), 0600); err == nil {
+					if err := os.Rename(tmpPath, shadowPath); err == nil {
+						return nil
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback to chpasswd if available
+	if path, err := exec.LookPath("chpasswd"); err == nil {
+		c := exec.Command(path)
+		c.Stdin = strings.NewReader(fmt.Sprintf("root:%s\n", password))
+		if err := c.Run(); err == nil {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("failed to update root password in /etc/shadow")
 }
 
 // AuthHandler manages session tokens, password verification, and credentials persistence.
@@ -537,7 +583,10 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 type ChangeSSHPasswordRequest struct {
-	Password string `json:"password"`
+	Password        string `json:"password,omitempty"`
+	NewPassword     string `json:"new_password,omitempty"`
+	CurrentPassword string `json:"current_password,omitempty"`
+	ConfirmPassword string `json:"confirm_password,omitempty"`
 }
 
 // ChangeSSHPassword updates the system root SSH password.
@@ -548,8 +597,29 @@ func (h *AuthHandler) ChangeSSHPassword(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if len(req.Password) < 6 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// If current_password is provided, verify against QManager auth
+	if req.CurrentPassword != "" {
+		if !h.verifyPassword(req.CurrentPassword) {
+			Error(w, http.StatusBadRequest, "Current QManager password is incorrect")
+			return
+		}
+	}
+
+	targetPass := req.NewPassword
+	if targetPass == "" {
+		targetPass = req.Password
+	}
+
+	if len(targetPass) < 6 {
 		Error(w, http.StatusBadRequest, "Password must be at least 6 characters")
+		return
+	}
+
+	if req.ConfirmPassword != "" && targetPass != req.ConfirmPassword {
+		Error(w, http.StatusBadRequest, "Passwords do not match")
 		return
 	}
 
@@ -557,7 +627,7 @@ func (h *AuthHandler) ChangeSSHPassword(w http.ResponseWriter, r *http.Request) 
 	if updater == nil {
 		updater = defaultSSHUpdater
 	}
-	if err := updater(req.Password); err != nil {
+	if err := updater(targetPass); err != nil {
 		Error(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update system SSH password: %v", err))
 		return
 	}
