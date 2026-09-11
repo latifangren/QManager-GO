@@ -117,14 +117,15 @@ func TestUpdateHandler_CheckAndSaveSettings(t *testing.T) {
 }
 
 func TestParseLogLine(t *testing.T) {
+	h := NewLogsHandler()
 	line1 := "2026-08-30 14:20:00 [INFO] [poller:1234] Cell lock confirmed on Band 3"
-	entry1, ok1 := parseLogLine(line1)
+	entry1, ok1 := h.parseLogLine(line1)
 	if !ok1 || entry1.Level != "INFO" || entry1.Component != "poller" || entry1.PID != "1234" || entry1.Message != "Cell lock confirmed on Band 3" {
 		t.Errorf("parseLogLine line1 mismatch: %+v", entry1)
 	}
 
-	line2 := "[ERROR] [watchdog:999] Ping probe failed 5 consecutive times"
-	entry2, ok2 := parseLogLine(line2)
+	line2 := "[2026-08-30 14:20:00] ERROR [watchdog:999] Ping probe failed 5 consecutive times"
+	entry2, ok2 := h.parseLogLine(line2)
 	if !ok2 || entry2.Level != "ERROR" || entry2.Component != "watchdog" || entry2.Message != "Ping probe failed 5 consecutive times" {
 		t.Errorf("parseLogLine line2 mismatch: %+v", entry2)
 	}

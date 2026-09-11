@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"qmanager/internal/config"
 	"qmanager/internal/platform"
 	"qmanager/internal/telemetry"
 )
@@ -92,6 +93,7 @@ type ModemSubsysData struct {
 // LogsHandler implements /system/logs and /system/modem-subsys.
 type LogsHandler struct {
 	ringLogger   *telemetry.RingBufferLogger
+	cfgMgr       *config.Manager
 	logFilePath  string
 	subsysPath   string
 	crashLogPath string
@@ -100,7 +102,11 @@ type LogsHandler struct {
 }
 
 // NewLogsHandler initializes a LogsHandler.
-func NewLogsHandler() *LogsHandler {
+func NewLogsHandler(cfgMgr ...*config.Manager) *LogsHandler {
+	var cm *config.Manager
+	if len(cfgMgr) > 0 {
+		cm = cfgMgr[0]
+	}
 	logPath := os.Getenv("QMANAGER_LOG_FILE")
 	if logPath == "" {
 		logPath = DefaultLogFilePath
@@ -120,6 +126,7 @@ func NewLogsHandler() *LogsHandler {
 
 	return &LogsHandler{
 		ringLogger:   telemetry.GetGlobalLogger(),
+		cfgMgr:       cm,
 		logFilePath:  logPath,
 		subsysPath:   subsys,
 		crashLogPath: crashLog,
@@ -129,19 +136,64 @@ func NewLogsHandler() *LogsHandler {
 
 var syslogRe = regexp.MustCompile(`^([A-Z][a-z]{2}\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?:[^\s]+\s+)?(?:([a-z]+\.[a-z]+)\s+)?([a-zA-Z0-9_.-]+)(?:\[(\d+)\])?:\s+(.*)$`)
 var bracketLogRe = regexp.MustCompile(`^(?:(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+)?\[(.*?)\]\s+\[(.*?)(?::(.*?))?\]\s+(.*)$`)
+var legacyLogRe = regexp.MustCompile(`^\[(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\]\s+([A-Z]+)\s+\[(.*?)(?::(\d+))?\]\s+(.*)$`)
+
+func cleanLogMessage(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r == '	' || (r >= 32 && r != 127) {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune(' ')
+		}
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+func (h *LogsHandler) getTzLocation() *time.Location {
+	if h.cfgMgr == nil {
+		return time.FixedZone("WIB", 7*3600)
+	}
+	cfg := h.cfgMgr.Get()
+	tz := cfg.Settings.Timezone
+	zone := cfg.Settings.Zonename
+	if loc, err := time.LoadLocation(zone); err == nil {
+		return loc
+	}
+	if strings.HasPrefix(tz, "WIB-7") || zone == "Asia/Jakarta" || zone == "Asia/Pontianak" {
+		return time.FixedZone("WIB", 7*3600)
+	}
+	if strings.HasPrefix(tz, "WITA-8") || zone == "Asia/Makassar" || zone == "Asia/Denpasar" {
+		return time.FixedZone("WITA", 8*3600)
+	}
+	if strings.HasPrefix(tz, "WIT-9") || zone == "Asia/Jayapura" {
+		return time.FixedZone("WIT", 9*3600)
+	}
+	abbr, offsetStr := parsePosixTZ(tz)
+	if off, err := strconv.Atoi(offsetStr); err == nil {
+		hours := off / 100
+		mins := off % 100
+		totalSec := (hours*60 + mins) * 60
+		return time.FixedZone(abbr, totalSec)
+	}
+	return time.FixedZone("WIB", 7*3600)
+}
 
 // parseLogLine parses a line from log format into LogEntry.
-func parseLogLine(line string) (LogEntry, bool) {
+func (h *LogsHandler) parseLogLine(line string) (LogEntry, bool) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return LogEntry{}, false
 	}
 
-	// 1. Match bracket format: "2026-09-11 14:00:00 [INFO] [qmanager] Message"
-	if m := bracketLogRe.FindStringSubmatch(line); len(m) == 6 {
-		ts := m[1]
-		if ts == "" {
-			ts = time.Now().Format("2006-01-02 15:04:05")
+	loc := h.getTzLocation()
+
+	// 1. Match legacy bracket format: "[2026-09-11 15:33:37] ERROR [qcmd:3127] Command returned ERROR: AT+QRSRQ"
+	if m := legacyLogRe.FindStringSubmatch(line); len(m) == 6 {
+		tsStr := m[1]
+		ts := tsStr
+		if parsed, err := time.ParseInLocation("2006-01-02 15:04:05", tsStr, time.UTC); err == nil {
+			ts = parsed.In(loc).Format("2006-01-02 15:04:05")
 		}
 		pid := m[4]
 		if pid == "" {
@@ -152,34 +204,61 @@ func parseLogLine(line string) (LogEntry, bool) {
 			Level:     strings.ToUpper(m[2]),
 			Component: m[3],
 			PID:       pid,
-			Message:   m[5],
+			Message:   cleanLogMessage(m[5]),
 		}, true
 	}
 
-	// 2. Match standard Linux /var/log/messages syslog format
+	// 2. Match bracket format: "2026-09-11 14:00:00 [INFO] [qmanager] Message"
+	if m := bracketLogRe.FindStringSubmatch(line); len(m) == 6 {
+		ts := m[1]
+		if ts == "" {
+			ts = time.Now().In(loc).Format("2006-01-02 15:04:05")
+		} else if parsed, err := time.ParseInLocation("2006-01-02 15:04:05", ts, time.UTC); err == nil {
+			ts = parsed.In(loc).Format("2006-01-02 15:04:05")
+		}
+		pid := m[4]
+		if pid == "" {
+			pid = "-"
+		}
+		return LogEntry{
+			Timestamp: ts,
+			Level:     strings.ToUpper(m[2]),
+			Component: m[3],
+			PID:       pid,
+			Message:   cleanLogMessage(m[5]),
+		}, true
+	}
+
+	// 3. Match standard Linux /var/log/messages syslog format
 	if m := syslogRe.FindStringSubmatch(line); len(m) == 6 {
 		tsStr := m[1]
 		facLevel := m[2]
 		comp := m[3]
 		pid := m[4]
-		msg := m[5]
+		msg := cleanLogMessage(m[5])
 
 		if pid == "" {
 			pid = "-"
 		}
 
-		// Normalize timestamp to YYYY-MM-DD HH:MM:SS
-		ts := time.Now().Format("2006-01-02 15:04:05")
-		if parsed, err := time.Parse("Jan 2 15:04:05", tsStr); err == nil {
-			now := time.Now()
-			fullTime := time.Date(now.Year(), parsed.Month(), parsed.Day(), parsed.Hour(), parsed.Minute(), parsed.Second(), 0, time.Local)
-			ts = fullTime.Format("2006-01-02 15:04:05")
+		// Normalize timestamp from UTC syslog to configured timezone
+		ts := time.Now().In(loc).Format("2006-01-02 15:04:05")
+		if parsed, err := time.ParseInLocation("Jan 2 15:04:05", tsStr, time.UTC); err == nil {
+			now := time.Now().UTC()
+			utcTime := time.Date(now.Year(), parsed.Month(), parsed.Day(), parsed.Hour(), parsed.Minute(), parsed.Second(), 0, time.UTC)
+			localTime := utcTime.In(loc)
+			ts = localTime.Format("2006-01-02 15:04:05")
 		}
 
 		level := "INFO"
 		lowerFac := strings.ToLower(facLevel)
 		lowerMsg := strings.ToLower(msg)
-		if strings.Contains(lowerFac, "err") || strings.Contains(lowerFac, "crit") || strings.Contains(lowerFac, "alert") || strings.Contains(lowerFac, "emerg") || strings.Contains(lowerMsg, "error") || strings.Contains(lowerMsg, "fatal") {
+		lowerComp := strings.ToLower(comp)
+
+		// Filter noise / known benign read errors (e.g. thermal-engine udev attribute scan)
+		if strings.Contains(lowerComp, "thermal") && (strings.Contains(lowerMsg, "read error 0") || strings.Contains(lowerMsg, "libudev")) {
+			level = "DEBUG"
+		} else if strings.Contains(lowerFac, "err") || strings.Contains(lowerFac, "crit") || strings.Contains(lowerFac, "alert") || strings.Contains(lowerFac, "emerg") || strings.Contains(lowerMsg, "fatal") {
 			level = "ERROR"
 		} else if strings.Contains(lowerFac, "warn") || strings.Contains(lowerMsg, "warning") || strings.Contains(lowerMsg, "warn") {
 			level = "WARN"
@@ -197,11 +276,11 @@ func parseLogLine(line string) (LogEntry, bool) {
 	}
 
 	return LogEntry{
-		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+		Timestamp: time.Now().In(loc).Format("2006-01-02 15:04:05"),
 		Level:     "INFO",
 		Component: "system",
 		PID:       "-",
-		Message:   line,
+		Message:   cleanLogMessage(line),
 	}, true
 }
 
@@ -253,7 +332,7 @@ func (h *LogsHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 			count := 0
 			for scanner.Scan() && count < 2000 {
 				line := scanner.Text()
-				if entry, ok := parseLogLine(line); ok {
+				if entry, ok := h.parseLogLine(line); ok {
 					if entry.Component != "" {
 						compMap[entry.Component] = true
 					}

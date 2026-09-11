@@ -109,7 +109,7 @@ func NewRouter(s AppServices) http.Handler {
 	smsH := handlers.NewSMSHandler(s.Engine)
 	smsForwardH := handlers.NewSMSForwardingHandler(s.Engine, s.ConfigMgr)
 	updateH := handlers.NewUpdateHandler(s.ConfigMgr)
-	logsH := handlers.NewLogsHandler()
+	logsH := handlers.NewLogsHandler(s.ConfigMgr)
 	langPacksH := handlers.NewLanguagePacksHandler(localesPath)
 	healthCheckH := handlers.NewHealthCheckHandler(s.Engine, s.Poller, s.Identity)
 	historyH := handlers.NewHistoryHandler()
