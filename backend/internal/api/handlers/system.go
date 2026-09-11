@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -11,19 +12,26 @@ import (
 
 	"qmanager/internal/config"
 	"qmanager/internal/platform"
+	"qmanager/internal/telemetry"
 )
 
 // SystemHandler provides system metrics, hardware profile, and reboot controls.
 type SystemHandler struct {
 	identity platform.Identity
 	cfgMgr   *config.Manager
+	poller   *telemetry.Poller
 }
 
 // NewSystemHandler creates a SystemHandler.
-func NewSystemHandler(id platform.Identity, cfgMgr *config.Manager) *SystemHandler {
+func NewSystemHandler(id platform.Identity, cfgMgr *config.Manager, poller ...*telemetry.Poller) *SystemHandler {
+	var p *telemetry.Poller
+	if len(poller) > 0 {
+		p = poller[0]
+	}
 	return &SystemHandler{
 		identity: id,
 		cfgMgr:   cfgMgr,
+		poller:   p,
 	}
 }
 
@@ -52,6 +60,23 @@ func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
 		wanIPv4, wanIPv6 = platform.GetInterfaceIP("wwan0")
 	}
 
+	imei := ""
+	buildDate := h.identity.PackageTime
+	if h.poller != nil {
+		data := h.poller.GetStatus()
+		if data != nil {
+			if data.IMEI != "" {
+				imei = data.IMEI
+			}
+			if data.Device.BuildDate != "" {
+				buildDate = data.Device.BuildDate
+			}
+		}
+	}
+
+	// Fetch public IP via curl / rmnet_data0 if available
+	publicIPv4, publicIPv6 := fetchPublicIPs()
+
 	hostname := platform.GetHostname()
 	kernelVersion := platform.GetKernelVersion()
 	osVersion := platform.GetOSVersion()
@@ -63,8 +88,8 @@ func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
 			"manufacturer": manufacturer,
 			"firmware":     h.identity.Revision,
 			"serial":       h.identity.Serial,
-			"build_date":   "",
-			"imei":         "",
+			"build_date":   buildDate,
+			"imei":         imei,
 		},
 		"3gpp_release": map[string]interface{}{
 			"lte":  lteRelease,
@@ -75,8 +100,8 @@ func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
 			"lan_gateway": lanGateway,
 			"wan_ipv4":    wanIPv4,
 			"wan_ipv6":    wanIPv6,
-			"public_ipv4": "",
-			"public_ipv6": "",
+			"public_ipv4": publicIPv4,
+			"public_ipv6": publicIPv6,
 		},
 		"system": map[string]interface{}{
 			"hostname":        hostname,
@@ -93,6 +118,45 @@ func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
 	}
 
 	JSON(w, http.StatusOK, payload)
+}
+
+var (
+	cachedPublicIPv4 string
+	cachedPublicIPv6 string
+	lastPublicIPTime time.Time
+)
+
+func fetchPublicIPs() (string, string) {
+	if time.Since(lastPublicIPTime) < 30*time.Second && (cachedPublicIPv4 != "" || cachedPublicIPv6 != "") {
+		return cachedPublicIPv4, cachedPublicIPv6
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Try IPv4
+	cmd4 := exec.CommandContext(ctx, "curl", "-s", "-m", "2", "https://api.ipify.org")
+	if out, err := cmd4.Output(); err == nil && len(out) > 0 {
+		cachedPublicIPv4 = strings.TrimSpace(string(out))
+	} else {
+		// Fallback to rmnet_data0 if interface bound
+		cmd4Fallback := exec.CommandContext(ctx, "curl", "--interface", "rmnet_data0", "-s", "-m", "2", "http://api.ipify.org")
+		if outF, errF := cmd4Fallback.Output(); errF == nil && len(outF) > 0 {
+			cachedPublicIPv4 = strings.TrimSpace(string(outF))
+		}
+	}
+
+	// Try IPv6
+	cmd6 := exec.CommandContext(ctx, "curl", "-s", "-m", "2", "https://api64.ipify.org")
+	if out, err := cmd6.Output(); err == nil && len(out) > 0 {
+		res := strings.TrimSpace(string(out))
+		if strings.Contains(res, ":") {
+			cachedPublicIPv6 = res
+		}
+	}
+
+	lastPublicIPTime = time.Now()
+	return cachedPublicIPv4, cachedPublicIPv6
 }
 
 // GetConfig returns complete active config.

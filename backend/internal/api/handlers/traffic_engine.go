@@ -49,14 +49,46 @@ func (h *CustomDNSHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Read carrier resolv.conf if available
+	var carrierServers []string
+	if data, err := os.ReadFile("/etc/resolv.conf"); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, l := range lines {
+			l = strings.TrimSpace(l)
+			if strings.HasPrefix(l, "nameserver") {
+				parts := strings.Fields(l)
+				if len(parts) >= 2 {
+					carrierServers = append(carrierServers, parts[1])
+				}
+			}
+		}
+	}
+
+	currentUpstream := cfg.Servers
+	currentSource := "custom"
+	if !cfg.Enabled || len(cfg.Servers) == 0 {
+		currentUpstream = carrierServers
+		currentSource = "carrier"
+	}
+
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success":            true,
 		"enabled":            cfg.Enabled,
 		"servers":            cfg.Servers,
 		"ignore_carrier":     cfg.IgnoreCarrier,
+		"ignoreCarrier":      cfg.IgnoreCarrier,
 		"dnsmasq_available":  dnsmasqAvailable,
+		"available":          dnsmasqAvailable,
 		"dns_mode":           "LOCAL",
+		"dnsMode":            "LOCAL",
 		"passthrough_bypass": false,
+		"passthroughBypass":  false,
+		"current_upstream":   currentUpstream,
+		"currentUpstream":    currentUpstream,
+		"current_source":     currentSource,
+		"currentSource":      currentSource,
+		"block_corrupt":      false,
+		"blockCorrupt":       false,
 	})
 }
 

@@ -105,7 +105,7 @@ func NewRouter(s AppServices) http.Handler {
 	watchdogH := handlers.NewWatchdogHandler(s.ConfigMgr, s.Watchdog)
 	alertsH := handlers.NewAlertsHandler()
 	simRegH := handlers.NewSimRegistryHandler(filepath.Join(configDir, "known_sims.json"))
-	sysH := handlers.NewSystemHandler(s.Identity, s.ConfigMgr)
+	sysH := handlers.NewSystemHandler(s.Identity, s.ConfigMgr, s.Poller)
 	smsH := handlers.NewSMSHandler(s.Engine)
 	smsForwardH := handlers.NewSMSForwardingHandler(s.Engine, s.ConfigMgr)
 	updateH := handlers.NewUpdateHandler(s.ConfigMgr)

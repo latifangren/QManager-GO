@@ -137,8 +137,28 @@ export function useCustomDns(): UseCustomDnsReturn {
         throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
       }
 
-      const data = (await resp.json()) as CustomDnsSettingsResponse;
+      const raw = (await resp.json()) as any;
       if (!mountedRef.current) return;
+
+      const data: CustomDnsSettingsResponse = {
+        enabled: raw.enabled === true,
+        ignoreCarrier: raw.ignoreCarrier ?? raw.ignore_carrier ?? false,
+        servers: Array.isArray(raw.servers) ? raw.servers : [],
+        dnsMode: raw.dnsMode ?? raw.dns_mode ?? "LOCAL",
+        available: raw.available ?? raw.dnsmasq_available ?? true,
+        currentUpstream: Array.isArray(raw.currentUpstream)
+          ? raw.currentUpstream
+          : Array.isArray(raw.current_upstream)
+            ? raw.current_upstream
+            : [],
+        currentSource:
+          raw.currentSource ??
+          raw.current_source ??
+          (raw.enabled ? "custom" : "carrier"),
+        blockCorrupt: raw.blockCorrupt ?? raw.block_corrupt ?? false,
+        passthroughBypass:
+          raw.passthroughBypass ?? raw.passthrough_bypass ?? false,
+      };
 
       setSettings(data);
     } catch (err) {
