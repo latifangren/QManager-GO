@@ -285,20 +285,22 @@ export const PROMPT = {
 // -----------------------------------------------------------------------------
 
 export const POPOVER = {
-  CONTENT: "w-84 rounded-field p-0",
+  CONTENT: "w-[92vw] max-w-[560px] rounded-field p-0 shadow-xl",
   /** The `cmdk` list, off the primitive's own square-ish corners. */
-  LIST: "max-h-72",
+  LIST: "max-h-[380px] overflow-y-auto p-1.5",
   /** An item never repeats its container's radius — one step down (DESIGN.md). */
-  ITEM: "gap-2 rounded-inline",
-  LABEL: "min-w-0 flex-1 truncate text-[0.8125rem] font-medium",
-  /** The command preview: metadata, so an outline `Tag`, never a filled chip. */
-  PREVIEW: "max-w-36 shrink-0 font-mono",
-  PREVIEW_TEXT: "truncate",
-  FOOT: "text-on-surface-variant flex items-center justify-between gap-2 border-t px-4 py-2.5 text-xs",
+  ITEM: "flex flex-col items-start gap-1 rounded-inline px-3 py-2.5 transition-colors duration-[var(--duration-quick)] cursor-pointer aria-selected:bg-surface-container-high",
+  HEADER_ROW: "flex w-full items-center justify-between gap-2",
+  LABEL: "min-w-0 flex-1 font-medium text-[0.84375rem] text-on-surface leading-tight",
+  CATEGORY_BADGE: "shrink-0 font-sans text-[0.6875rem] uppercase tracking-wider font-semibold opacity-80",
+  COMMAND_ROW: "flex w-full items-center gap-1.5",
+  PREVIEW: "w-full shrink-0 font-mono text-[0.75rem] bg-surface-container/70 dark:bg-surface-container px-2 py-1 rounded text-primary border border-border/40 font-semibold tracking-tight",
+  PREVIEW_TEXT: "truncate block",
+  FOOT: "text-on-surface-variant flex items-center justify-between gap-2 border-t px-4 py-2.5 text-xs bg-surface-container/30",
   /** A live figure, so tabular. */
-  COUNT: "tabular-nums",
+  COUNT: "tabular-nums font-mono text-xs",
   /** Its ground is the popover panel, and touch takes it to the 44px floor. */
-  MANAGE: `inline-flex items-center rounded-pill px-2 py-0.5 text-xs font-medium underline underline-offset-2 transition-colors duration-[var(--duration-quick)] ease-out hover:text-on-surface pointer-coarse:h-11 pointer-coarse:px-3 ${FOCUS_RING_ON_POPOVER}`,
+  MANAGE: `inline-flex items-center rounded-pill px-2.5 py-1 text-xs font-semibold text-primary underline underline-offset-2 transition-colors duration-[var(--duration-quick)] ease-out hover:text-on-surface hover:bg-surface-container pointer-coarse:h-11 pointer-coarse:px-3 ${FOCUS_RING_ON_POPOVER}`,
 } as const;
 
 /** The Manage Custom Commands dialog. */

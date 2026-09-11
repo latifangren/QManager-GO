@@ -202,30 +202,37 @@ export default function CommandsPopover({
             <CommandList className={POPOVER.LIST}>
               <CommandEmpty>{t(`${K}.empty`)}</CommandEmpty>
 
-              {/* The 26 built-ins, split by function. One flat "Default" list
-                  asked the reader to scan a paragraph to find a band query. */}
+              {/* The built-in commands, split by function. */}
               {groups.map((group) => (
                 <CommandGroup
                   key={group.category}
                   heading={t(`${K}.groups.${group.category}`)}
                 >
-                  {group.items.map((preset) => (
-                    <CommandItem
-                      key={preset.command}
-                      value={t(`${K}.presets.${preset.id}`)}
-                      className={POPOVER.ITEM}
-                      onSelect={() => pick(preset.command)}
-                    >
-                      <span className={POPOVER.LABEL}>
-                        {t(`${K}.presets.${preset.id}`)}
-                      </span>
-                      <Tag variant="neutral" className={POPOVER.PREVIEW}>
-                        <span className={POPOVER.PREVIEW_TEXT}>
-                          {preset.command}
-                        </span>
-                      </Tag>
-                    </CommandItem>
-                  ))}
+                  {group.items.map((preset) => {
+                    const label = t(`${K}.presets.${preset.id}`);
+                    return (
+                      <CommandItem
+                        key={preset.id}
+                        value={`${label} ${preset.command}`}
+                        className={POPOVER.ITEM}
+                        onSelect={() => pick(preset.command)}
+                      >
+                        <div className={POPOVER.HEADER_ROW}>
+                          <span className={POPOVER.LABEL}>{label}</span>
+                          <span className={POPOVER.CATEGORY_BADGE}>
+                            {t(`${K}.groups.${group.category}`)}
+                          </span>
+                        </div>
+                        <div className={POPOVER.COMMAND_ROW}>
+                          <div className={POPOVER.PREVIEW}>
+                            <span className={POPOVER.PREVIEW_TEXT}>
+                              {preset.command}
+                            </span>
+                          </div>
+                        </div>
+                      </CommandItem>
+                    );
+                  })}
                 </CommandGroup>
               ))}
 
@@ -234,16 +241,23 @@ export default function CommandsPopover({
                   {customCommands.map((preset) => (
                     <CommandItem
                       key={preset.command}
-                      value={preset.label}
+                      value={`${preset.label} ${preset.command}`}
                       className={POPOVER.ITEM}
                       onSelect={() => pick(preset.command)}
                     >
-                      <span className={POPOVER.LABEL}>{preset.label}</span>
-                      <Tag variant="neutral" className={POPOVER.PREVIEW}>
-                        <span className={POPOVER.PREVIEW_TEXT}>
-                          {preset.command}
+                      <div className={POPOVER.HEADER_ROW}>
+                        <span className={POPOVER.LABEL}>{preset.label}</span>
+                        <span className={POPOVER.CATEGORY_BADGE}>
+                          {t(`${K}.groups.custom`)}
                         </span>
-                      </Tag>
+                      </div>
+                      <div className={POPOVER.COMMAND_ROW}>
+                        <div className={POPOVER.PREVIEW}>
+                          <span className={POPOVER.PREVIEW_TEXT}>
+                            {preset.command}
+                          </span>
+                        </div>
+                      </div>
                     </CommandItem>
                   ))}
                 </CommandGroup>
