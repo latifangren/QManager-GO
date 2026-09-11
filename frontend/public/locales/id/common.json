@@ -1537,23 +1537,27 @@
     },
     "qmanager": {
       "title": "Tentang QManager",
-      "note": "Halo! Rus di sini. QManager adalah iterasi terbaru dari QuecManager, dibangun dengan pendekatan yang lebih baru dan lebih andal dibandingkan pendahulunya — sambil tetap menggabungkan pengaturan teknis untuk pengguna tingkat lanjut dengan antarmuka sederhana bagi yang baru memulai. Terima kasih khusus kepada iamromulan, clndwhr, dan Wutang Clan!",
+      "note": "QManager-GO: Backend Golang single-binary oleh @latifangren, berbasis frontend asli oleh @dr-dolomite (QManager-RM520N). Terima kasih khusus kepada iamromulan, clndwhr, dan Wutang Clan!",
       "copyright": "© {{year}} QManager. Seluruh hak cipta dilindungi.",
       "repository": "Repositori GitHub",
       "release_notes": "Catatan rilis",
+      "upstream_frontend": "Repositori upstream",
       "support": "Dukung proyek ini"
     }
   },
   "support": {
     "page": {
       "title": "Dukungan",
-      "description": "Laporkan bug, tanya komunitas, atau hubungi pengelola."
+      "description": "Laporkan bug, tanya komunitas, atau lihat repositori proyek."
     },
     "help": {
       "title": "Dapatkan bantuan",
       "description": "Empat jalur, sesuai urutan yang paling sering dibutuhkan.",
       "bug": {
         "label": "Laporkan bug"
+      },
+      "upstream": {
+        "label": "Proyek upstream (dr-dolomite)"
       },
       "community": {
         "label": "Tanya komunitas"

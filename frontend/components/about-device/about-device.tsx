@@ -5,7 +5,6 @@ import { RefreshCwIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
-import DonateDialog from "@/components/donate-dialog";
 import { Button } from "@/components/ui/button";
 import { useAboutDevice } from "@/hooks/use-about-device";
 import { staggerContainer, staggerItem } from "@/lib/motion";
@@ -34,7 +33,6 @@ const K = "aboutDevice";
 const AboutDeviceComponent = () => {
   const { t } = useTranslation("common");
   const { data, isLoading, isRefreshing, error, refresh } = useAboutDevice();
-  const [donateOpen, setDonateOpen] = React.useState(false);
 
   const view = aboutView({ data, isLoading, error });
   const busy = isLoading || isRefreshing;
@@ -75,9 +73,7 @@ const AboutDeviceComponent = () => {
         <AddressesCard view={view} data={data} />
       </motion.div>
 
-      <QManagerBand onSupport={() => setDonateOpen(true)} />
-
-      <DonateDialog open={donateOpen} onOpenChange={setDonateOpen} />
+      <QManagerBand />
     </motion.div>
   );
 };

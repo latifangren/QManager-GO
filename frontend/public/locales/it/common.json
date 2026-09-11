@@ -1537,23 +1537,27 @@
     },
     "qmanager": {
       "title": "Informazioni su QManager",
-      "note": "Ciao! Sono Rus. QManager è l’ultima evoluzione di QuecManager, costruita con un approccio più moderno e affidabile rispetto al suo predecessore — pur continuando a unire impostazioni tecniche per utenti esperti a un’interfaccia semplice per chi inizia. Un ringraziamento speciale a iamromulan, clndwhr e Wutang Clan!",
+      "note": "QManager-GO: Backend Golang a binario singolo di @latifangren, basato sul frontend originale di @dr-dolomite (QManager-RM520N). Un ringraziamento speciale a iamromulan, clndwhr e Wutang Clan!",
       "copyright": "© {{year}} QManager. Tutti i diritti riservati.",
       "repository": "Repository GitHub",
       "release_notes": "Note di rilascio",
+      "upstream_frontend": "Repository upstream",
       "support": "Sostieni il progetto"
     }
   },
   "support": {
     "page": {
       "title": "Supporto",
-      "description": "Segnala un bug, chiedi alla community o contatta il manutentore."
+      "description": "Segnala un bug, chiedi alla community o visualizza i sorgenti del progetto."
     },
     "help": {
       "title": "Ottieni aiuto",
       "description": "Quattro percorsi, nell’ordine in cui servono più spesso.",
       "bug": {
         "label": "Segnala un bug"
+      },
+      "upstream": {
+        "label": "Progetto upstream (dr-dolomite)"
       },
       "community": {
         "label": "Chiedi alla community"

@@ -9,7 +9,6 @@ import QManagerMark from "@/public/qmanager-mark.svg";
 
 import { NavSection, type NavItem } from "@/components/nav-section";
 import { NavUser } from "@/components/nav-user";
-import DonateDialog from "@/components/donate-dialog";
 import { useWatchdogIndicator } from "@/hooks/use-watchdog-indicator";
 import {
   Sidebar,
@@ -151,7 +150,6 @@ const navSystem: NavItem[] = [
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { t } = useTranslation("sidebar");
-  const [donateOpen, setDonateOpen] = React.useState(false);
   const watchdog = useWatchdogIndicator();
 
   // The Watchdog row reports live state so a user on any page learns the modem
@@ -197,12 +195,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     () => [
       { t_key: "about_device", url: "/about-device", icon: "router" },
       { t_key: "support", url: "/support", icon: "support" },
-      {
-        t_key: "donate",
-        url: "#",
-        icon: "favorite",
-        onClick: () => setDonateOpen(true),
-      },
     ],
     [],
   );
@@ -253,8 +245,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarFooter>
         <NavUser />
       </SidebarFooter>
-
-      <DonateDialog open={donateOpen} onOpenChange={setDonateOpen} />
     </Sidebar>
   );
 }

@@ -2,7 +2,7 @@
 
 import type * as React from "react";
 import Image from "next/image";
-import { ExternalLinkIcon, FileTextIcon, HeartIcon } from "lucide-react";
+import { ExternalLinkIcon, FileTextIcon, GitForkIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -16,8 +16,9 @@ import { PILL_ACTION, PILL_GLYPH, WIDE } from "./shapes";
 
 const K = "aboutDevice";
 
-const REPO_URL = "https://github.com/dr-dolomite/QManager-RM520N";
+const REPO_URL = "https://github.com/latifangren/QManager-GO";
 const RELEASES_URL = `${REPO_URL}/releases`;
+const UPSTREAM_URL = "https://github.com/dr-dolomite/QManager-RM520N";
 
 /** Not a key: the licence name is a legal identifier, identical in every locale. */
 const LICENSE = "MIT + Commons Clause";
@@ -31,18 +32,14 @@ function GitHubIcon({ className }: { className?: string }): React.JSX.Element {
   );
 }
 
-export interface QManagerBandProps {
-  onSupport: () => void;
-}
+export interface QManagerBandProps {}
 
 /**
  * The page's closing statement: what this software is, who made it, and the
  * three things a reader might want next. Full width because it is prose rather
  * than a pair of readings.
  */
-export function QManagerBand({
-  onSupport,
-}: QManagerBandProps): React.JSX.Element {
+export function QManagerBand(_props: QManagerBandProps = {}): React.JSX.Element {
   const { t } = useTranslation("common");
 
   return (
@@ -93,18 +90,15 @@ export function QManagerBand({
               </a>
             </Button>
 
-            <Button
-              type="button"
-              variant="outline"
-              className={PILL_ACTION}
-              onClick={onSupport}
-            >
-              <HeartIcon
-                className={PILL_GLYPH}
-                fill="currentColor"
-                aria-hidden="true"
-              />
-              {t(`${K}.qmanager.support`)}
+            <Button asChild variant="outline" className={PILL_ACTION}>
+              <a href={UPSTREAM_URL} target="_blank" rel="noopener noreferrer">
+                <GitForkIcon className={PILL_GLYPH} aria-hidden="true" />
+                {t(`${K}.qmanager.upstream_frontend`)}
+                <ExternalLinkIcon
+                  className={WIDE.EXT_GLYPH}
+                  aria-hidden="true"
+                />
+              </a>
             </Button>
           </div>
         </div>

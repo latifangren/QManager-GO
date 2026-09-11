@@ -1537,23 +1537,27 @@
     },
     "qmanager": {
       "title": "關於 QManager",
-      "note": "你好！我是 Rus。QManager 是 QuecManager 的最新一代，採用比前代更新、更可靠的實作方式——同時仍將進階使用者的技術設定與新手適用的簡化介面結合在一起。特別感謝 iamromulan、clndwhr 與 Wutang Clan！",
+      "note": "QManager-GO：由 @latifangren 開發的單二進位 Golang 後端，基於 @dr-dolomite (QManager-RM520N) 的原始前端。特別感謝 iamromulan、clndwhr 與 Wutang Clan！",
       "copyright": "© {{year}} QManager。保留一切權利。",
       "repository": "GitHub 儲存庫",
       "release_notes": "版本資訊",
+      "upstream_frontend": "上游儲存庫",
       "support": "支持本專案"
     }
   },
   "support": {
     "page": {
       "title": "支援",
-      "description": "回報問題、向社群提問，或聯絡維護者。"
+      "description": "回報問題、向社群提問，或檢視專案原始碼。"
     },
     "help": {
       "title": "取得協助",
       "description": "四種途徑，依最常需要的順序排列。",
       "bug": {
         "label": "回報問題"
+      },
+      "upstream": {
+        "label": "上游專案 (dr-dolomite)"
       },
       "community": {
         "label": "向社群提問"
