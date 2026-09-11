@@ -459,6 +459,11 @@
       "provenance_corrupt": "{{used}} of {{max}} used · could not be read cleanly from",
       "blocked_unavailable": "dnsmasq is not in the path, so this would have no effect."
     },
+    "presets": {
+      "label": "Popular DNS presets",
+      "hint": "One-click switch to trusted public resolvers. You can still edit them manually.",
+      "applied": "Preset applied: {{name}}"
+    },
     "rows": {
       "enabled": {
         "label": "Use my own resolvers",

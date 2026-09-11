@@ -10,7 +10,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { PlusIcon, XIcon } from "lucide-react";
+import { PlusIcon, SparklesIcon, XIcon } from "lucide-react";
 
 import {
   Card,
@@ -29,6 +29,7 @@ import type {
   CustomDnsFieldError,
 } from "@/hooks/use-custom-dns";
 import type { CustomDnsSettingsResponse } from "@/types/custom-dns";
+import { DNS_PRESETS, type DnsPreset } from "./presets";
 
 import {
   CARD_FOOT,
@@ -242,6 +243,23 @@ export function CustomDnsCard({
         ? t(`${K}.errors.empty_when_enabled`)
         : null;
 
+  // Detect which preset matches current inputs
+  const activePresetId = useMemo(() => {
+    if (!localEnabled || nonEmptyServers.length === 0) return null;
+    const current = nonEmptyServers.join(",");
+    const match = DNS_PRESETS.find(
+      (p) => p.servers.join(",") === current,
+    );
+    return match ? match.id : null;
+  }, [localEnabled, nonEmptyServers]);
+
+  const applyPreset = (preset: DnsPreset) => {
+    setLocalEnabled(true);
+    setLocalServers([...preset.servers]);
+    setRowInvalid(preset.servers.map(() => false));
+    toast.info(t(`${K}.presets.applied`, { name: preset.name }));
+  };
+
   // ---------------------------------------------------------------------------
   // Row helpers
   // ---------------------------------------------------------------------------
@@ -397,6 +415,51 @@ export function CustomDnsCard({
                   onCheckedChange={setLocalEnabled}
                   disabled={formDisabled}
                 />
+              </div>
+            </div>
+
+            {/* Presets Row — Quick select popular dedicated DNS */}
+            <div className="flex flex-col gap-2.5 rounded-2xl bg-surface-container-low/60 p-3.5 border border-outline-variant/30">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-on-surface">
+                  <SparklesIcon className="size-3.5 text-primary" />
+                  <span>{t(`${K}.presets.label`)}</span>
+                </div>
+                <span className="text-[0.6875rem] text-on-surface-variant">
+                  {t(`${K}.presets.hint`)}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {DNS_PRESETS.map((preset) => {
+                  const isSelected = activePresetId === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      disabled={formDisabled}
+                      onClick={() => applyPreset(preset)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+                        isSelected
+                          ? "bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/40 font-semibold"
+                          : "bg-surface-container-high hover:bg-surface-container-highest text-on-surface hover:text-on-surface border border-outline-variant/40",
+                      )}
+                      title={`${preset.name}: ${preset.servers.join(", ")} (${preset.description})`}
+                    >
+                      <span>{preset.name}</span>
+                      <span
+                        className={cn(
+                          "rounded px-1 text-[0.625rem] font-mono",
+                          isSelected
+                            ? "bg-primary-foreground/20 text-primary-foreground"
+                            : "bg-surface-container text-on-surface-variant",
+                        )}
+                      >
+                        {preset.tag}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

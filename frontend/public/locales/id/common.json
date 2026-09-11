@@ -452,12 +452,17 @@
     },
     "card": {
       "title": "Resolver upstream",
-      "description": "Maksimal empat. dnsmasq dimuat ulang di tempat — tanpa reboot, tanpa tautan terputus.",
+      "description": "Hingga empat resolver. dnsmasq dimuat ulang langsung — tanpa reboot, tanpa koneksi putus.",
       "save": "Simpan dan terapkan",
       "add": "Tambah resolver",
-      "provenance": "{{used}} dari {{max}} terpakai · dibaca kembali dari",
-      "provenance_corrupt": "{{used}} dari {{max}} terpakai · tidak dapat dibaca dengan bersih dari",
-      "blocked_unavailable": "dnsmasq tidak berada di jalur, jadi ini tidak akan berpengaruh."
+      "provenance": "{{used}} dari {{max}} terpakai · dibaca dari",
+      "provenance_corrupt": "{{used}} dari {{max}} terpakai · tidak dapat dibaca bersih dari",
+      "blocked_unavailable": "dnsmasq tidak aktif, perubahan ini tidak akan berpengaruh."
+    },
+    "presets": {
+      "label": "Preset DNS Populer",
+      "hint": "Ganti cepat ke DNS publik terpercaya. Anda tetap bisa mengeditnya manual.",
+      "applied": "Preset diterapkan: {{name}}"
     },
     "rows": {
       "enabled": {

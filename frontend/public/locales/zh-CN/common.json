@@ -452,12 +452,17 @@
     },
     "card": {
       "title": "上游解析器",
-      "description": "最多四个。dnsmasq 会原地重新加载 — 无需重启，链路不中断。",
+      "description": "最多四个。dnsmasq 就地重载 — 无需重启，不断开连接。",
       "save": "保存并应用",
       "add": "添加解析器",
       "provenance": "已使用 {{used}} / {{max}} · 读取自",
       "provenance_corrupt": "已使用 {{used}} / {{max}} · 无法完整读取自",
-      "blocked_unavailable": "dnsmasq 不在转发路径上，这样做不会有任何效果。"
+      "blocked_unavailable": "dnsmasq 未启用，保存将不会生效。"
+    },
+    "presets": {
+      "label": "常用 DNS 预设",
+      "hint": "一键切换至受信任的公共解析器，仍可手动编辑。",
+      "applied": "已应用预设：{{name}}"
     },
     "rows": {
       "enabled": {

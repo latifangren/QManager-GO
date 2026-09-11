@@ -452,12 +452,17 @@
     },
     "card": {
       "title": "Resolver upstream",
-      "description": "Fino a quattro. dnsmasq viene ricaricato al volo: nessun riavvio, nessun collegamento interrotto.",
+      "description": "Fino a quattro. dnsmasq viene ricaricato sul posto — nessun riavvio, nessuna disconnessione.",
       "save": "Salva e applica",
       "add": "Aggiungi resolver",
-      "provenance": "{{used}} di {{max}} usati · riletti da",
-      "provenance_corrupt": "{{used}} di {{max}} usati · non è stato possibile rileggerli correttamente da",
-      "blocked_unavailable": "dnsmasq non è nel percorso, quindi non avrebbe alcun effetto."
+      "provenance": "{{used}} di {{max}} usati · letto da",
+      "provenance_corrupt": "{{used}} di {{max}} usati · non è stato possibile leggere chiaramente da",
+      "blocked_unavailable": "dnsmasq non è attivo, questa modifica non avrà effetto."
+    },
+    "presets": {
+      "label": "Preset DNS popolari",
+      "hint": "Passa rapidamente ai resolver pubblici affidabili. Puoi comunque modificarli manualmente.",
+      "applied": "Preset applicato: {{name}}"
     },
     "rows": {
       "enabled": {
