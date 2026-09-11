@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -378,5 +379,51 @@ func TestRouter_MountsAndEndpoints(t *testing.T) {
 	handler.ServeHTTP(wLangCancel, reqLangCancel)
 	if wLangCancel.Code != http.StatusOK {
 		t.Errorf("expected status 200 for CGI system/language-packs/install_cancel.sh, got %d", wLangCancel.Code)
+	}
+
+	// Test POST /network/ethernet.sh (CGI)
+	reqEthPostCGI := httptest.NewRequest("POST", "/cgi-bin/quecmanager/network/ethernet.sh", strings.NewReader(`{"speed_limit":"1000"}`))
+	wEthPostCGI := httptest.NewRecorder()
+	handler.ServeHTTP(wEthPostCGI, reqEthPostCGI)
+	if wEthPostCGI.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI network/ethernet.sh POST, got %d", wEthPostCGI.Code)
+	}
+
+	// Test POST /network/ethernet (REST)
+	reqEthPostREST := httptest.NewRequest("POST", "/api/v1/network/ethernet", strings.NewReader(`{"speed_limit":2500}`))
+	reqEthPostREST.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	wEthPostREST := httptest.NewRecorder()
+	handler.ServeHTTP(wEthPostREST, reqEthPostREST)
+	if wEthPostREST.Code != http.StatusOK {
+		t.Errorf("expected status 200 for REST /network/ethernet POST, got %d", wEthPostREST.Code)
+	}
+
+	// Test /cellular/profiles/deactivate (REST)
+	reqDeactREST := httptest.NewRequest("POST", "/api/v1/cellular/profiles/deactivate", nil)
+	reqDeactREST.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	wDeactREST := httptest.NewRecorder()
+	handler.ServeHTTP(wDeactREST, reqDeactREST)
+	if wDeactREST.Code != http.StatusOK {
+		t.Errorf("expected status 200 for REST /cellular/profiles/deactivate, got %d", wDeactREST.Code)
+	}
+
+	// Test /locales-packs/ static file server
+	testPackDir := filepath.Join(tempDir, "locales-packs", "zh")
+	_ = os.MkdirAll(testPackDir, 0755)
+	_ = os.WriteFile(filepath.Join(testPackDir, "common.json"), []byte(`{"hello":"world"}`), 0644)
+
+	usrDataPackDir := filepath.Join("/usrdata/qmanager/locales-packs", "zh")
+	if err := os.MkdirAll(usrDataPackDir, 0755); err == nil {
+		_ = os.WriteFile(filepath.Join(usrDataPackDir, "common.json"), []byte(`{"hello":"world"}`), 0644)
+		t.Cleanup(func() {
+			_ = os.RemoveAll("/usrdata/qmanager/locales-packs")
+		})
+	}
+
+	reqLocales := httptest.NewRequest("GET", "/locales-packs/zh/common.json", nil)
+	wLocales := httptest.NewRecorder()
+	handler.ServeHTTP(wLocales, reqLocales)
+	if wLocales.Code != http.StatusOK {
+		t.Errorf("expected status 200 for /locales-packs/zh/common.json, got %d", wLocales.Code)
 	}
 }

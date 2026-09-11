@@ -7,9 +7,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"qmanager/internal/atengine"
+	"qmanager/internal/config"
 )
 
 func newTestNetworkEngine(t *testing.T) (*atengine.MockTransport, *atengine.Engine) {
@@ -224,6 +226,64 @@ func TestEthernetHandler(t *testing.T) {
 	if resp["duplex"] != "full" {
 		t.Errorf("expected duplex='full', got %v", resp["duplex"])
 	}
+
+	// POST speed_limit as string
+	bodyStr := bytes.NewBufferString(`{"speed_limit":"2500"}`)
+	reqPostStr := httptest.NewRequest(http.MethodPost, "/api/network/ethernet", bodyStr)
+	wPostStr := httptest.NewRecorder()
+	h.HandleEthernet(wPostStr, reqPostStr)
+	if wPostStr.Code != http.StatusOK {
+		t.Fatalf("HandleEthernet POST string returned %d, want 200", wPostStr.Code)
+	}
+	var postRespStr map[string]interface{}
+	_ = json.NewDecoder(wPostStr.Body).Decode(&postRespStr)
+	if postRespStr["success"] != true || postRespStr["speed_limit"] != "2500" || postRespStr["disconnect_window_seconds"].(float64) != 8 {
+		t.Errorf("unexpected post response: %+v", postRespStr)
+	}
+
+	// POST speed_limit as int
+	bodyInt := bytes.NewBufferString(`{"speed_limit":100}`)
+	reqPostInt := httptest.NewRequest(http.MethodPost, "/api/network/ethernet", bodyInt)
+	wPostInt := httptest.NewRecorder()
+	h.HandleEthernet(wPostInt, reqPostInt)
+	if wPostInt.Code != http.StatusOK {
+		t.Fatalf("HandleEthernet POST int returned %d, want 200", wPostInt.Code)
+	}
+	var postRespInt map[string]interface{}
+	_ = json.NewDecoder(wPostInt.Body).Decode(&postRespInt)
+	if postRespInt["success"] != true || postRespInt["speed_limit"] != "100" {
+		t.Errorf("unexpected post response for int: %+v", postRespInt)
+	}
+
+	// POST speed_limit as 0 (auto)
+	bodyZero := bytes.NewBufferString(`{"speed_limit":0}`)
+	reqPostZero := httptest.NewRequest(http.MethodPost, "/api/network/ethernet", bodyZero)
+	wPostZero := httptest.NewRecorder()
+	h.HandleEthernet(wPostZero, reqPostZero)
+	if wPostZero.Code != http.StatusOK {
+		t.Fatalf("HandleEthernet POST zero returned %d, want 200", wPostZero.Code)
+	}
+	var postRespZero map[string]interface{}
+	_ = json.NewDecoder(wPostZero.Body).Decode(&postRespZero)
+	if postRespZero["speed_limit"] != "auto" {
+		t.Errorf("expected speed_limit='auto', got %v", postRespZero["speed_limit"])
+	}
+
+	// Invalid speed_limit POST
+	reqInvalid := httptest.NewRequest(http.MethodPost, "/api/network/ethernet", bytes.NewBufferString(`{"speed_limit":"5000"}`))
+	wInvalid := httptest.NewRecorder()
+	h.HandleEthernet(wInvalid, reqInvalid)
+	if wInvalid.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid speed_limit, got %d", wInvalid.Code)
+	}
+
+	// Bad JSON POST
+	reqBad := httptest.NewRequest(http.MethodPost, "/api/network/ethernet", bytes.NewBufferString(`{bad`))
+	wBad := httptest.NewRecorder()
+	h.HandleEthernet(wBad, reqBad)
+	if wBad.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for bad JSON, got %d", wBad.Code)
+	}
 }
 
 // 5. Custom DNS / Traffic Engine Handler Tests
@@ -295,5 +355,99 @@ func TestCustomDNSHandler(t *testing.T) {
 	h.HandlePost(wClear, reqClear)
 	if wClear.Code != http.StatusOK {
 		t.Errorf("expected 200 for clear action, got %d", wClear.Code)
+	}
+}
+
+func TestVideoOptimizer_RestoreHostlist(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHostlist := dpiHostlistFile
+	dpiHostlistFile = filepath.Join(tmpDir, "dpi_hostlist.txt")
+	t.Cleanup(func() {
+		dpiHostlistFile = origHostlist
+	})
+
+	h := NewVideoOptimizerHandler()
+
+	// Write custom hostlist first
+	_ = os.WriteFile(dpiHostlistFile, []byte("custom.example.com\n"), 0644)
+
+	// Call restore_hostlist
+	body, _ := json.Marshal(VideoOptimizerSavePayload{Action: "restore_hostlist"})
+	req := httptest.NewRequest(http.MethodPost, "/api/network/video-optimizer", bytes.NewBuffer(body))
+	w := httptest.NewRecorder()
+	h.HandlePost(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for restore_hostlist, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp["success"] != true || resp["message"] != "Hostlist restored to default" {
+		t.Errorf("unexpected restore_hostlist response: %+v", resp)
+	}
+
+	// Verify restored file contents
+	content, err := os.ReadFile(dpiHostlistFile)
+	if err != nil {
+		t.Fatalf("failed to read restored hostlist: %v", err)
+	}
+	strContent := string(content)
+	if !strings.Contains(strContent, "googlevideo.com") || !strings.Contains(strContent, "youtube.com") {
+		t.Errorf("hostlist did not contain default domains: %s", strContent)
+	}
+}
+
+func TestUpdateHandler_RebootAck(t *testing.T) {
+	tmpDir := t.TempDir()
+	confPath := filepath.Join(tmpDir, "qmanager.conf")
+	cfgMgr, err := config.NewManager(confPath)
+	if err != nil {
+		t.Fatalf("failed to init config manager: %v", err)
+	}
+
+	h := NewUpdateHandler(cfgMgr)
+
+	// Test 1: POST /system/update?action=reboot_ack with empty body
+	reqPostEmpty := httptest.NewRequest(http.MethodPost, "/api/system/update?action=reboot_ack", nil)
+	wPostEmpty := httptest.NewRecorder()
+	h.HandleUpdateAction(wPostEmpty, reqPostEmpty)
+	if wPostEmpty.Code != http.StatusOK {
+		t.Fatalf("expected 200 for POST empty body reboot_ack, got %d", wPostEmpty.Code)
+	}
+	var respPostEmpty map[string]interface{}
+	_ = json.NewDecoder(wPostEmpty.Body).Decode(&respPostEmpty)
+	dataEmpty, _ := respPostEmpty["data"].(map[string]interface{})
+	if respPostEmpty["success"] != true || dataEmpty["message"] != "Reboot acknowledged" {
+		t.Errorf("unexpected reboot_ack response: %+v", respPostEmpty)
+	}
+
+	// Test 2: POST /system/update with json {"action":"reboot_ack"}
+	bodyJSON := bytes.NewBufferString(`{"action":"reboot_ack"}`)
+	reqPostJSON := httptest.NewRequest(http.MethodPost, "/api/system/update", bodyJSON)
+	wPostJSON := httptest.NewRecorder()
+	h.HandleUpdateAction(wPostJSON, reqPostJSON)
+	if wPostJSON.Code != http.StatusOK {
+		t.Fatalf("expected 200 for POST JSON reboot_ack, got %d", wPostJSON.Code)
+	}
+	var respPostJSON map[string]interface{}
+	_ = json.NewDecoder(wPostJSON.Body).Decode(&respPostJSON)
+	dataJSON, _ := respPostJSON["data"].(map[string]interface{})
+	if respPostJSON["success"] != true || dataJSON["message"] != "Reboot acknowledged" {
+		t.Errorf("unexpected reboot_ack response: %+v", respPostJSON)
+	}
+
+	// Test 3: GET /system/update.sh?action=reboot_ack
+	reqGet := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/system/update.sh?action=reboot_ack", nil)
+	wGet := httptest.NewRecorder()
+	h.CheckUpdate(wGet, reqGet)
+	if wGet.Code != http.StatusOK {
+		t.Fatalf("expected 200 for GET reboot_ack, got %d", wGet.Code)
+	}
+	var respGet map[string]interface{}
+	_ = json.NewDecoder(wGet.Body).Decode(&respGet)
+	dataGet, _ := respGet["data"].(map[string]interface{})
+	if respGet["success"] != true || dataGet["message"] != "Reboot acknowledged" {
+		t.Errorf("unexpected GET reboot_ack response: %+v", respGet)
 	}
 }

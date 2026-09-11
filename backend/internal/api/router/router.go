@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -167,6 +168,7 @@ func NewRouter(s AppServices) http.Handler {
 			prot.Get("/cellular/profiles/current-settings", profileH.CurrentSettings)
 			prot.Get("/cellular/profiles/apply-status", profileH.ApplyStatus)
 			prot.Post("/cellular/profiles/apply", profileH.Apply)
+			prot.Post("/cellular/profiles/deactivate", profileH.Deactivate)
 			prot.Get("/cellular/profiles/{id}", profileH.Get)
 			prot.Delete("/cellular/profiles/{id}", profileH.Delete)
 
@@ -197,6 +199,7 @@ func NewRouter(s AppServices) http.Handler {
 			prot.Get("/network/dns", customDNSH.HandleGet)
 			prot.Post("/network/dns", customDNSH.HandlePost)
 			prot.Get("/network/ethernet", ethernetH.HandleEthernet)
+			prot.Post("/network/ethernet", ethernetH.HandleEthernet)
 			prot.Get("/network/data-usage", dataUsageH.GetDataUsed)
 			prot.Post("/network/data-usage/reset", dataUsageH.ResetDataUsed)
 			prot.Get("/network/passthrough", ipptH.Status)
@@ -346,6 +349,7 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Get("/network/mtu.sh", mtuH.GetMTU)
 		cgi.Post("/network/mtu.sh", mtuH.SetMTU)
 		cgi.Get("/network/ethernet.sh", ethernetH.HandleEthernet)
+		cgi.Post("/network/ethernet.sh", ethernetH.HandleEthernet)
 		cgi.Get("/network/data_used.sh", dataUsageH.GetDataUsed)
 		cgi.Post("/network/data_used_reset.sh", dataUsageH.ResetDataUsed)
 		cgi.Get("/network/video_optimizer.sh", videoOptH.HandleGet)
@@ -401,6 +405,16 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Post("/system/logs.sh", logsH.HandleLogsAction)
 		cgi.Get("/system/modem-subsys.sh", logsH.ModemSubsys)
 	})
+
+	// Static File Server (Locales Packs)
+	localesPath := "/usrdata/qmanager/locales-packs"
+	if err := os.MkdirAll(localesPath, 0755); err != nil {
+		localesPath = filepath.Join(configDir, "locales-packs")
+		_ = os.MkdirAll(localesPath, 0755)
+	}
+	localesServer := http.StripPrefix("/locales-packs/", http.FileServer(http.Dir(localesPath)))
+	r.Handle("/locales-packs/*", localesServer)
+	r.Handle("/locales-packs", localesServer)
 
 	// Embedded Static Frontend
 	staticContent, err := fs.Sub(s.DistFS, "dist")

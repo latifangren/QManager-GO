@@ -72,11 +72,78 @@ func (h *CellularHandler) SendCommand(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CurrentBands holds the parsed configured bands per RAT.
+// CurrentBands holds the parsed configured bands per RAT as colon-delimited strings.
 type CurrentBands struct {
 	LTEBands     string `json:"lte_bands"`
 	NSANR5GBands string `json:"nsa_nr5g_bands"`
 	SANR5GBands  string `json:"sa_nr5g_bands"`
+}
+
+// SupportedBands holds the supported bands per RAT as arrays of string band numbers.
+type SupportedBands struct {
+	LTEBands     []string `json:"lte_bands"`
+	NSANR5GBands []string `json:"nsa_nr5g_bands"`
+	SANR5GBands  []string `json:"sa_nr5g_bands"`
+}
+
+// BandLockingResponse represents the response envelope for GetBands.
+type BandLockingResponse struct {
+	Success   bool           `json:"success"`
+	Current   CurrentBands   `json:"current"`
+	Supported SupportedBands `json:"supported"`
+	Failover  FailoverState  `json:"failover"`
+	Raw       string         `json:"raw,omitempty"`
+	Data      interface{}    `json:"data,omitempty"`
+}
+
+var defaultSupportedLTEBands = []string{
+	"1", "2", "3", "4", "5", "7", "8", "12", "13", "14", "17", "18", "19", "20",
+	"25", "26", "28", "29", "30", "32", "34", "38", "39", "40", "41", "42", "43",
+	"46", "48", "66", "71",
+}
+
+var defaultSupportedNRBands = []string{
+	"1", "2", "3", "5", "7", "8", "12", "13", "14", "18", "20", "25", "26", "28",
+	"29", "30", "38", "40", "41", "48", "66", "70", "71", "75", "76", "77", "78", "79",
+}
+
+func cleanBandStr(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == ':' || r == ',' || r == ' ' || r == '\t' || r == ';'
+	})
+	var cleanParts []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			cleanParts = append(cleanParts, p)
+		}
+	}
+	return strings.Join(cleanParts, ":")
+}
+
+func splitBandString(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return []string{}
+	}
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == ':' || r == ',' || r == ' ' || r == '\t' || r == ';'
+	})
+	res := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			res = append(res, p)
+		}
+	}
+	if len(res) == 0 {
+		return []string{}
+	}
+	return res
 }
 
 // FailoverState holds the failover mechanism flags.
@@ -121,6 +188,24 @@ func (h *CellularHandler) GetBands(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	supported := SupportedBands{
+		LTEBands:     defaultSupportedLTEBands,
+		NSANR5GBands: defaultSupportedNRBands,
+		SANR5GBands:  defaultSupportedNRBands,
+	}
+	if h.poller != nil {
+		st := h.poller.GetStatus()
+		if s := splitBandString(st.Device.SupportedLTEBands); len(s) > 0 {
+			supported.LTEBands = s
+		}
+		if s := splitBandString(st.Device.SupportedNSABands); len(s) > 0 {
+			supported.NSANR5GBands = s
+		}
+		if s := splitBandString(st.Device.SupportedSABands); len(s) > 0 {
+			supported.SANR5GBands = s
+		}
+	}
+
 	failover := FailoverState{
 		Enabled:        false,
 		Activated:      false,
@@ -130,17 +215,21 @@ func (h *CellularHandler) GetBands(w http.ResponseWriter, r *http.Request) {
 		failover.Enabled, failover.Activated, failover.WatcherRunning = h.failover.GetState()
 	}
 
-	JSON(w, http.StatusOK, map[string]interface{}{
-		"success":  true,
-		"current":  bands,
-		"failover": failover,
-		"raw":      rawOutput,
-		"data": map[string]interface{}{
-			"current":  bands,
-			"failover": failover,
-			"raw":      rawOutput,
+	resp := BandLockingResponse{
+		Success:   true,
+		Current:   bands,
+		Supported: supported,
+		Failover:  failover,
+		Raw:       rawOutput,
+		Data: map[string]interface{}{
+			"current":   bands,
+			"supported": supported,
+			"failover":  failover,
+			"raw":       rawOutput,
 		},
-	})
+	}
+
+	JSON(w, http.StatusOK, resp)
 }
 
 func parseQNWPREFCFGBands(raw string) CurrentBands {
@@ -154,14 +243,13 @@ func parseQNWPREFCFGBands(raw string) CurrentBands {
 			if len(parts) == 2 {
 				key := strings.ToLower(strings.Trim(strings.TrimSpace(parts[0]), "\""))
 				val := strings.Trim(strings.TrimSpace(parts[1]), "\"")
-				val = strings.TrimSpace(val)
 				switch key {
 				case "lte_band":
-					bands.LTEBands = val
+					bands.LTEBands = cleanBandStr(val)
 				case "nsa_nr5g_band":
-					bands.NSANR5GBands = val
+					bands.NSANR5GBands = cleanBandStr(val)
 				case "nr5g_band", "sa_nr5g_band":
-					bands.SANR5GBands = val
+					bands.SANR5GBands = cleanBandStr(val)
 				}
 			}
 		}
@@ -179,19 +267,20 @@ func parseLegacyQCFGBands(raw string) CurrentBands {
 			if len(parts) > 2 {
 				lteMaskStr := strings.Trim(strings.TrimSpace(parts[2]), "\"")
 				if strings.Contains(lteMaskStr, ":") {
-					bands.LTEBands = lteMaskStr
+					bands.LTEBands = cleanBandStr(lteMaskStr)
 				} else {
-					bands.LTEBands = parseHexMaskToBands(lteMaskStr)
+					bands.LTEBands = cleanBandStr(parseHexMaskToBands(lteMaskStr))
 				}
 			}
 			if len(parts) > 3 {
 				nrMaskStr := strings.Trim(strings.TrimSpace(parts[3]), "\"")
 				if strings.Contains(nrMaskStr, ":") {
-					bands.SANR5GBands = nrMaskStr
-					bands.NSANR5GBands = nrMaskStr
+					bands.SANR5GBands = cleanBandStr(nrMaskStr)
+					bands.NSANR5GBands = cleanBandStr(nrMaskStr)
 				} else {
-					bands.SANR5GBands = parseHexMaskToBands(nrMaskStr)
-					bands.NSANR5GBands = bands.SANR5GBands
+					nrParsed := cleanBandStr(parseHexMaskToBands(nrMaskStr))
+					bands.SANR5GBands = nrParsed
+					bands.NSANR5GBands = nrParsed
 				}
 			}
 		}
@@ -218,29 +307,43 @@ func parseHexMaskToBands(hexStr string) string {
 	return strings.Join(bands, ":")
 }
 
-// FlexibleBands parses bands from string, string array, or int array.
-type FlexibleBands []string
+// FlexibleStringSlice parses bands from string, string array, int array, or mixed types.
+type FlexibleStringSlice []string
 
-// UnmarshalJSON unmarshals array of strings, array of ints, or colon/comma-separated strings.
-func (f *FlexibleBands) UnmarshalJSON(data []byte) error {
+// FlexibleBands is an alias for FlexibleStringSlice for backward compatibility.
+type FlexibleBands = FlexibleStringSlice
+
+// UnmarshalJSON unmarshals array of strings, array of ints, or colon/comma/space-separated strings.
+func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 	if len(data) == 0 || string(data) == "null" {
 		*f = nil
 		return nil
 	}
-	var strSlice []string
-	if err := json.Unmarshal(data, &strSlice); err == nil {
-		*f = strSlice
-		return nil
-	}
-	var intSlice []int
-	if err := json.Unmarshal(data, &intSlice); err == nil {
-		res := make([]string, len(intSlice))
-		for i, v := range intSlice {
-			res[i] = strconv.Itoa(v)
+	var anySlice []interface{}
+	if err := json.Unmarshal(data, &anySlice); err == nil {
+		res := make([]string, 0, len(anySlice))
+		for _, v := range anySlice {
+			switch val := v.(type) {
+			case string:
+				s := strings.TrimSpace(val)
+				if s != "" {
+					res = append(res, s)
+				}
+			case float64:
+				res = append(res, strconv.Itoa(int(val)))
+			case int:
+				res = append(res, strconv.Itoa(val))
+			default:
+				s := strings.TrimSpace(fmt.Sprintf("%v", val))
+				if s != "" {
+					res = append(res, s)
+				}
+			}
 		}
 		*f = res
 		return nil
 	}
+
 	var singleStr string
 	if err := json.Unmarshal(data, &singleStr); err == nil {
 		singleStr = strings.TrimSpace(singleStr)
@@ -248,12 +351,10 @@ func (f *FlexibleBands) UnmarshalJSON(data []byte) error {
 			*f = []string{}
 			return nil
 		}
-		sep := ":"
-		if !strings.Contains(singleStr, ":") && strings.Contains(singleStr, ",") {
-			sep = ","
-		}
-		parts := strings.Split(singleStr, sep)
-		var res []string
+		parts := strings.FieldsFunc(singleStr, func(r rune) bool {
+			return r == ':' || r == ',' || r == ' ' || r == '\t' || r == ';'
+		})
+		res := make([]string, 0, len(parts))
 		for _, p := range parts {
 			p = strings.TrimSpace(p)
 			if p != "" {
@@ -263,19 +364,26 @@ func (f *FlexibleBands) UnmarshalJSON(data []byte) error {
 		*f = res
 		return nil
 	}
+
+	var singleNum float64
+	if err := json.Unmarshal(data, &singleNum); err == nil {
+		*f = []string{strconv.Itoa(int(singleNum))}
+		return nil
+	}
+
 	return nil
 }
 
 // SetBandsRequest represents incoming band lock payloads.
 type SetBandsRequest struct {
-	BandType        string        `json:"band_type,omitempty"`
-	Bands           FlexibleBands `json:"bands,omitempty"`
-	LTEBands        FlexibleBands `json:"lte_bands,omitempty"`
-	NRBands         FlexibleBands `json:"nr_bands,omitempty"`
-	NSANR5GBands    FlexibleBands `json:"nsa_nr5g_bands,omitempty"`
-	SANR5GBands     FlexibleBands `json:"sa_nr5g_bands,omitempty"`
-	Failover        *bool         `json:"failover,omitempty"`
-	FailoverEnabled *bool         `json:"failover_enabled,omitempty"`
+	BandType        string              `json:"band_type,omitempty"`
+	Bands           FlexibleStringSlice `json:"bands,omitempty"`
+	LTEBands        FlexibleStringSlice `json:"lte_bands,omitempty"`
+	NRBands         FlexibleStringSlice `json:"nr_bands,omitempty"`
+	NSANR5GBands    FlexibleStringSlice `json:"nsa_nr5g_bands,omitempty"`
+	SANR5GBands     FlexibleStringSlice `json:"sa_nr5g_bands,omitempty"`
+	Failover        *bool               `json:"failover,omitempty"`
+	FailoverEnabled *bool               `json:"failover_enabled,omitempty"`
 }
 
 // LockBands applies band mask settings.

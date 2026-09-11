@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	DefaultLanguagePacksDir = "/usrdata/qmanager/language-packs"
+	DefaultLanguagePacksDir = "/usrdata/qmanager/locales-packs"
 )
 
 // InstalledPack represents a downloaded/installed language pack.

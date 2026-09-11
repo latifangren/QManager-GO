@@ -47,9 +47,10 @@ type ApnProfile struct {
 	PdpType  string `json:"pdp_type"`
 	AuthType string `json:"auth_type"`
 	Username string `json:"username"`
-	HasPw    int    `json:"has_password"`
-	Enabled  int    `json:"enabled"`
-	IsActive int    `json:"is_active"`
+	HasPw    bool   `json:"has_password"`
+	Enabled  bool   `json:"enabled"`
+	IsActive bool   `json:"is_active"`
+	Active   bool   `json:"active"`
 	ApnType  string `json:"apn_type"`
 }
 
@@ -101,8 +102,8 @@ func (h *CellularApnHandler) GetAPN(w http.ResponseWriter, r *http.Request) {
 	activeCid := parseActiveCidFromCGCONTRDP(contrdpResp.Raw)
 
 	// 4. Read sidecars
-	storedSetting := readApnSetting()
-	namesMap := readApnNames()
+	storedSetting := h.readApnSetting()
+	namesMap := h.readApnNames()
 
 	profiles := make([]ApnProfile, 0, maxApnProfiles)
 	cids := make([]CidContext, 0, maxApnProfiles)
@@ -133,9 +134,10 @@ func (h *CellularApnHandler) GetAPN(w http.ResponseWriter, r *http.Request) {
 			PdpType:  pdpType,
 			AuthType: "none",
 			Username: "",
-			HasPw:    0,
-			Enabled:  enabled,
-			IsActive: isActive,
+			HasPw:    false,
+			Enabled:  enabled == 1,
+			IsActive: isActive == 1,
+			Active:   isActive == 1,
 			ApnType:  apnType,
 		})
 	}
@@ -149,6 +151,8 @@ func (h *CellularApnHandler) GetAPN(w http.ResponseWriter, r *http.Request) {
 		"success":      true,
 		"profiles":     profiles,
 		"active":       storedSetting.Active,
+		"max_profiles": 6,
+		"data_source":  "at",
 		"active_cid":   internetCid,
 		"internet_cid": internetCid,
 		"apn": map[string]interface{}{
@@ -197,7 +201,7 @@ func (h *CellularApnHandler) SaveAPN(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CellularApnHandler) handleDeactivate(w http.ResponseWriter) {
-	setting := readApnSetting()
+	setting := h.readApnSetting()
 	if setting.Active != 1 {
 		JSON(w, http.StatusOK, map[string]interface{}{
 			"success": true,
@@ -224,7 +228,7 @@ func (h *CellularApnHandler) handleDeactivate(w http.ResponseWriter) {
 
 	setting.Active = 0
 	setting.Apn = ""
-	_ = writeApnSetting(setting)
+	_ = h.writeApnSetting(setting)
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
@@ -292,9 +296,9 @@ func (h *CellularApnHandler) handleSave(w http.ResponseWriter, p ApnSavePayload)
 	if !isSingleAPN {
 		// Legacy save also handles auth & name
 		if p.Name != nil && *p.Name != "" {
-			names := readApnNames()
+			names := h.readApnNames()
 			names[strconv.Itoa(cid)] = *p.Name
-			_ = writeApnNames(names)
+			_ = h.writeApnNames(names)
 		}
 		if p.AuthType != nil {
 			authVal := authToAT(*p.AuthType)
@@ -325,7 +329,7 @@ func (h *CellularApnHandler) handleSave(w http.ResponseWriter, p ApnSavePayload)
 		Cid:     cid,
 		Active:  1,
 	}
-	_ = writeApnSetting(setting)
+	_ = h.writeApnSetting(setting)
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
@@ -561,8 +565,12 @@ func parseNegotiatedApnForCid(raw string, targetCid int) string {
 	return ""
 }
 
-func readApnSetting() ApnSetting {
-	data, err := os.ReadFile(apnSettingPath)
+func (h *CellularApnHandler) readApnSetting() ApnSetting {
+	path := h.apnSettingPath
+	if path == "" {
+		path = apnSettingPath
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return ApnSetting{Active: 0, Cid: 1, PdpType: "ipv4v6"}
 	}
@@ -579,17 +587,57 @@ func readApnSetting() ApnSetting {
 	return s
 }
 
-func writeApnSetting(s ApnSetting) error {
-	_ = os.MkdirAll(filepath.Dir(apnSettingPath), 0755)
+func (h *CellularApnHandler) writeApnSetting(s ApnSetting) error {
+	path := h.apnSettingPath
+	if path == "" {
+		path = apnSettingPath
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(apnSettingPath, data, 0644)
+
+	tmpFile := filepath.Join(dir, fmt.Sprintf(".apn_setting.tmp.%d", time.Now().UnixNano()))
+	f, err := os.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return err
+	}
+
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return err
+	}
+
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpFile)
+		return err
+	}
+
+	if err := os.Rename(tmpFile, path); err != nil {
+		_ = os.Remove(tmpFile)
+		return err
+	}
+
+	return nil
 }
 
-func readApnNames() map[string]string {
-	data, err := os.ReadFile(apnNamesPath)
+func (h *CellularApnHandler) readApnNames() map[string]string {
+	path := h.apnNamesPath
+	if path == "" {
+		path = apnNamesPath
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return map[string]string{}
 	}
@@ -600,11 +648,47 @@ func readApnNames() map[string]string {
 	return m
 }
 
-func writeApnNames(m map[string]string) error {
-	_ = os.MkdirAll(filepath.Dir(apnNamesPath), 0755)
+func (h *CellularApnHandler) writeApnNames(m map[string]string) error {
+	path := h.apnNamesPath
+	if path == "" {
+		path = apnNamesPath
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(apnNamesPath, data, 0644)
+
+	tmpFile := filepath.Join(dir, fmt.Sprintf(".apn_names.tmp.%d", time.Now().UnixNano()))
+	f, err := os.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return err
+	}
+
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return err
+	}
+
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpFile)
+		return err
+	}
+
+	if err := os.Rename(tmpFile, path); err != nil {
+		_ = os.Remove(tmpFile)
+		return err
+	}
+
+	return nil
 }

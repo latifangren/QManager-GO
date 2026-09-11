@@ -295,6 +295,55 @@ func TestAlertsHandler(t *testing.T) {
 	if wSave.Code != http.StatusOK {
 		t.Fatalf("HandleAlerts POST returned %d, want 200", wSave.Code)
 	}
+
+	// POST action: test
+	reqTest := httptest.NewRequest(http.MethodPost, "/api/monitoring/alerts", bytes.NewBufferString(`{"action":"test","channel":"sms"}`))
+	wTest := httptest.NewRecorder()
+	h.HandleAlerts(wTest, reqTest)
+	if wTest.Code != http.StatusOK {
+		t.Fatalf("HandleAlerts test returned %d, want 200", wTest.Code)
+	}
+
+	// POST action: get_log
+	reqLog := httptest.NewRequest(http.MethodPost, "/api/monitoring/alerts", bytes.NewBufferString(`{"action":"get_log"}`))
+	wLog := httptest.NewRecorder()
+	h.HandleAlerts(wLog, reqLog)
+	if wLog.Code != http.StatusOK {
+		t.Fatalf("HandleAlerts get_log returned %d, want 200", wLog.Code)
+	}
+	var logResp map[string]interface{}
+	_ = json.NewDecoder(wLog.Body).Decode(&logResp)
+	if logResp["total_events"].(float64) < 1 || logResp["total"].(float64) < 1 {
+		t.Errorf("expected at least 1 log entry, got %+v", logResp)
+	}
+	entries, _ := logResp["entries"].([]interface{})
+	if len(entries) > 0 {
+		first := entries[0].(map[string]interface{})
+		if first["trigger"] != "test" || first["recipient"] != "admin" {
+			t.Errorf("unexpected entry format: %+v", first)
+		}
+	}
+
+	// Ring buffer cap test: add 550 entries and verify capped at 500
+	for i := 0; i < 550; i++ {
+		wCap := httptest.NewRecorder()
+		h.HandleAlerts(wCap, httptest.NewRequest(http.MethodPost, "/api/monitoring/alerts", bytes.NewBufferString(`{"action":"test"}`)))
+	}
+	wLogCap := httptest.NewRecorder()
+	h.HandleAlerts(wLogCap, httptest.NewRequest(http.MethodPost, "/api/monitoring/alerts", bytes.NewBufferString(`{"action":"get_log"}`)))
+	var logCapResp map[string]interface{}
+	_ = json.NewDecoder(wLogCap.Body).Decode(&logCapResp)
+	if logCapResp["total"].(float64) != 500 {
+		t.Errorf("expected ring buffer capped at 500 entries, got %v", logCapResp["total"])
+	}
+
+	// POST action: clear_log
+	reqClear := httptest.NewRequest(http.MethodPost, "/api/monitoring/alerts", bytes.NewBufferString(`{"action":"clear_log"}`))
+	wClear := httptest.NewRecorder()
+	h.HandleAlerts(wClear, reqClear)
+	if wClear.Code != http.StatusOK {
+		t.Fatalf("HandleAlerts clear_log returned %d, want 200", wClear.Code)
+	}
 }
 
 // 7. Language Packs Handler Tests

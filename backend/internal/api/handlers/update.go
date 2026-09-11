@@ -128,6 +128,11 @@ func (h *UpdateHandler) GetCurrentVersion() string {
 // CheckUpdate handles GET /api/v1/system/update and GET /cgi-bin/quecmanager/system/update.sh
 func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 	action := r.URL.Query().Get("action")
+	if action == "reboot_ack" {
+		Success(w, map[string]interface{}{"success": true, "message": "Reboot acknowledged"})
+		return
+	}
+
 	if action == "status" || action == "download_status" {
 		h.downloadMu.Lock()
 		state := *h.currentDown
@@ -238,8 +243,17 @@ func (h *UpdateHandler) HandleUpdateAction(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		action := r.URL.Query().Get("action")
+		if action == "reboot_ack" {
+			Success(w, map[string]interface{}{"success": true, "message": "Reboot acknowledged"})
+			return
+		}
 		Error(w, http.StatusBadRequest, "Invalid JSON payload")
 		return
+	}
+
+	if payload.Action == "" {
+		payload.Action = r.URL.Query().Get("action")
 	}
 
 	switch payload.Action {

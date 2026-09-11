@@ -2,8 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"os/exec"
+	"strconv"
+	"strings"
 	"time"
 
 	"qmanager/internal/config"
@@ -95,26 +98,176 @@ func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
 // GetConfig returns complete active config.
 func (h *SystemHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := h.cfgMgr.Get()
-	Success(w, cfg)
+
+	var days []int
+	if strings.TrimSpace(cfg.Settings.SchedRebootDays) != "" {
+		parts := strings.Split(cfg.Settings.SchedRebootDays, ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if d, err := strconv.Atoi(p); err == nil {
+				days = append(days, d)
+			}
+		}
+	}
+	if days == nil {
+		days = []int{}
+	}
+
+	settings := map[string]interface{}{
+		"hostname":        cfg.Settings.Hostname,
+		"temp_unit":       cfg.Settings.TempUnit,
+		"distance_unit":   cfg.Settings.DistanceUnit,
+		"timezone":        cfg.Settings.Timezone,
+		"zonename":        cfg.Settings.Zonename,
+		"sms_tool_device": cfg.Settings.SmsToolDevice,
+	}
+
+	scheduledReboot := map[string]interface{}{
+		"enabled": cfg.Settings.SchedRebootEnabled == 1,
+		"time":    cfg.Settings.SchedRebootTime,
+		"days":    days,
+	}
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success":          true,
+		"settings":         settings,
+		"scheduled_reboot": scheduledReboot,
+		"data":             cfg,
+	})
 }
 
 // SaveConfig updates and persists config.
 func (h *SystemHandler) SaveConfig(w http.ResponseWriter, r *http.Request) {
-	var newCfg config.Config
-	if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	var rawMap map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &rawMap); err != nil {
 		Error(w, http.StatusBadRequest, "Invalid configuration format")
 		return
 	}
 
-	err := h.cfgMgr.Update(func(c *config.Config) {
-		*c = newCfg
-	})
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "Failed to save configuration")
-		return
-	}
+	action, _ := rawMap["action"].(string)
 
-	Success(w, map[string]string{"message": "Configuration saved"})
+	switch action {
+	case "save_settings":
+		err := h.cfgMgr.Update(func(c *config.Config) {
+			if v, ok := rawMap["hostname"].(string); ok {
+				c.Settings.Hostname = v
+			}
+			if v, ok := rawMap["temp_unit"].(string); ok {
+				c.Settings.TempUnit = v
+			}
+			if v, ok := rawMap["distance_unit"].(string); ok {
+				c.Settings.DistanceUnit = v
+			}
+			if v, ok := rawMap["timezone"].(string); ok {
+				c.Settings.Timezone = v
+			}
+			if v, ok := rawMap["zonename"].(string); ok {
+				c.Settings.Zonename = v
+			}
+			if v, ok := rawMap["sms_tool_device"].(string); ok {
+				c.Settings.SmsToolDevice = v
+			}
+		})
+		if err != nil {
+			Error(w, http.StatusInternalServerError, "Failed to save settings")
+			return
+		}
+		JSON(w, http.StatusOK, map[string]interface{}{
+			"success":               true,
+			"message":               "Settings saved",
+			"timezone_apply_status": "applied",
+		})
+		return
+
+	case "save_scheduled_reboot":
+		var enabledInt int
+		var enabledBool bool
+		if b, ok := rawMap["enabled"].(bool); ok {
+			enabledBool = b
+			if b {
+				enabledInt = 1
+			}
+		} else if f, ok := rawMap["enabled"].(float64); ok {
+			enabledInt = int(f)
+			enabledBool = enabledInt == 1
+		}
+
+		timeStr, _ := rawMap["time"].(string)
+		if timeStr == "" {
+			timeStr = "04:00"
+		}
+
+		var daysList []int
+		var daysStrList []string
+		if daysRaw, ok := rawMap["days"].([]interface{}); ok {
+			for _, d := range daysRaw {
+				switch val := d.(type) {
+				case float64:
+					daysList = append(daysList, int(val))
+					daysStrList = append(daysStrList, strconv.Itoa(int(val)))
+				case int:
+					daysList = append(daysList, val)
+					daysStrList = append(daysStrList, strconv.Itoa(val))
+				case string:
+					if i, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
+						daysList = append(daysList, i)
+						daysStrList = append(daysStrList, strconv.Itoa(i))
+					}
+				}
+			}
+		}
+		if daysList == nil {
+			daysList = []int{}
+		}
+		daysStr := strings.Join(daysStrList, ",")
+
+		err := h.cfgMgr.Update(func(c *config.Config) {
+			c.Settings.SchedRebootEnabled = enabledInt
+			c.Settings.SchedRebootTime = timeStr
+			c.Settings.SchedRebootDays = daysStr
+		})
+		if err != nil {
+			Error(w, http.StatusInternalServerError, "Failed to save scheduled reboot")
+			return
+		}
+
+		scheduledReboot := map[string]interface{}{
+			"enabled": enabledBool,
+			"time":    timeStr,
+			"days":    daysList,
+		}
+
+		JSON(w, http.StatusOK, map[string]interface{}{
+			"success":          true,
+			"armed":            true,
+			"message":          "Scheduled reboot saved",
+			"scheduled_reboot": scheduledReboot,
+		})
+		return
+
+	default:
+		var newCfg config.Config
+		if err := json.Unmarshal(bodyBytes, &newCfg); err != nil {
+			Error(w, http.StatusBadRequest, "Invalid configuration format")
+			return
+		}
+
+		err := h.cfgMgr.Update(func(c *config.Config) {
+			*c = newCfg
+		})
+		if err != nil {
+			Error(w, http.StatusInternalServerError, "Failed to save configuration")
+			return
+		}
+
+		Success(w, map[string]string{"message": "Configuration saved"})
+	}
 }
 
 // Reboot safely reboots modem.

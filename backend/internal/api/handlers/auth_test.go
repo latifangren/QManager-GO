@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestAuthHandler_LifecycleAndPersistence(t *testing.T) {
@@ -106,6 +107,11 @@ func TestAuthHandler_LifecycleAndPersistence(t *testing.T) {
 	if wAuthCheck.Code != http.StatusOK {
 		t.Errorf("expected 200 with Bearer token, got %d", wAuthCheck.Code)
 	}
+	var checkAuthResp map[string]interface{}
+	_ = json.NewDecoder(wAuthCheck.Body).Decode(&checkAuthResp)
+	if checkAuthResp["session_expires_at"] == nil || checkAuthResp["session_expires_at"].(float64) <= 0 {
+		t.Errorf("expected valid session_expires_at in Check response, got %+v", checkAuthResp)
+	}
 
 	// 4. ChangePassword
 	// Bad current password
@@ -177,5 +183,66 @@ func TestAuthHandler_LifecycleAndPersistence(t *testing.T) {
 	h2.Logout(wLogout, reqLogout)
 	if wLogout.Code != http.StatusOK {
 		t.Errorf("expected 200 for logout, got %d", wLogout.Code)
+	}
+}
+
+func TestAuthHandler_Lockout(t *testing.T) {
+	tmpDir := t.TempDir()
+	authPath := filepath.Join(tmpDir, "auth.json")
+	h := NewAuthHandler("secret123", authPath)
+
+	// Send 5 wrong passwords
+	for i := 0; i < 5; i++ {
+		body, _ := json.Marshal(LoginRequest{Password: "wrong"})
+		w := httptest.NewRecorder()
+		h.Login(w, httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBuffer(body)))
+		if i < 4 {
+			if w.Code != http.StatusUnauthorized {
+				t.Errorf("attempt %d expected 401, got %d", i+1, w.Code)
+			}
+		} else {
+			// 5th attempt engages lockout and returns 429
+			if w.Code != http.StatusTooManyRequests {
+				t.Errorf("attempt 5 expected 429, got %d", w.Code)
+			}
+			var resp map[string]interface{}
+			_ = json.NewDecoder(w.Body).Decode(&resp)
+			lockout, ok := resp["lockout"].(map[string]interface{})
+			if !ok || lockout["active"] != true || lockout["remaining_seconds"].(float64) <= 0 {
+				t.Errorf("expected active lockout object, got %+v", resp)
+			}
+		}
+	}
+
+	// Next attempt is immediately rate limited
+	body, _ := json.Marshal(LoginRequest{Password: "secret123"})
+	wLocked := httptest.NewRecorder()
+	h.Login(wLocked, httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBuffer(body)))
+	if wLocked.Code != http.StatusTooManyRequests {
+		t.Errorf("expected 429 during active lockout, got %d", wLocked.Code)
+	}
+}
+
+func TestAuthHandler_1970ClockStepReanchor(t *testing.T) {
+	tmpDir := t.TempDir()
+	authPath := filepath.Join(tmpDir, "auth.json")
+	h := NewAuthHandler("secret123", authPath)
+
+	token := "epoch-token-1970"
+	// Set an expiration in 1970 epoch
+	h.mu.Lock()
+	h.tokens[token] = time.Date(1970, 1, 1, 12, 0, 0, 0, time.UTC)
+	h.mu.Unlock()
+
+	// validateToken should re-anchor expiration when system clock is >= 2024
+	if !h.ValidateToken(token) {
+		t.Fatalf("expected token to be re-anchored and validated")
+	}
+
+	h.mu.RLock()
+	newExp := h.tokens[token]
+	h.mu.RUnlock()
+	if newExp.Year() < 2024 {
+		t.Errorf("expected re-anchored token year >= 2024, got %v", newExp.Year())
 	}
 }

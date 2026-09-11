@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"sync"
 	"time"
 )
+
+const dpiSystemdService = "qmanager-dpi.service"
 
 var (
 	dpiConfigFile     = "/etc/qmanager/dpi_config.json"
@@ -109,10 +112,10 @@ func (h *VideoOptimizerHandler) HandleGet(w http.ResponseWriter, r *http.Request
 
 // VideoOptimizerSavePayload represents the POST request body.
 type VideoOptimizerSavePayload struct {
-	Action     string   `json:"action"` // "save", "save_masquerade", "install", "uninstall", "verify", "save_hostlist"
-	Enabled    *bool    `json:"enabled,omitempty"`
-	SNIDomain  string   `json:"sni_domain,omitempty"`
-	Domains    []string `json:"domains,omitempty"`
+	Action    string   `json:"action"` // "save", "save_masquerade", "install", "uninstall", "verify", "save_hostlist", "restore_hostlist"
+	Enabled   *bool    `json:"enabled,omitempty"`
+	SNIDomain string   `json:"sni_domain,omitempty"`
+	Domains   []string `json:"domains,omitempty"`
 }
 
 // HandlePost handles POST /api/v1/network/traffic-engine, /api/v1/network/video-optimizer, and /cgi-bin/quecmanager/network/video_optimizer.sh
@@ -130,6 +133,8 @@ func (h *VideoOptimizerHandler) HandlePost(w http.ResponseWriter, r *http.Reques
 		h.handleSaveMasquerade(w, payload)
 	case "save_hostlist":
 		h.handleSaveHostlist(w, payload)
+	case "restore_hostlist":
+		h.handleRestoreHostlist(w)
 	case "install":
 		h.handleInstall(w)
 	case "uninstall":
@@ -211,6 +216,66 @@ func (h *VideoOptimizerHandler) handleSaveHostlist(w http.ResponseWriter, p Vide
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"count":   len(p.Domains),
+	})
+}
+
+var defaultHostlistDomains = []string{
+	"googlevideo.com",
+	"youtube.com",
+	"netflix.com",
+	"nflxvideo.net",
+	"tiktokv.com",
+}
+
+func (h *VideoOptimizerHandler) handleRestoreHostlist(w http.ResponseWriter) {
+	if err := os.MkdirAll(filepath.Dir(dpiHostlistFile), 0755); err != nil {
+		Error(w, http.StatusInternalServerError, "Failed to create directory")
+		return
+	}
+
+	content := strings.Join(defaultHostlistDomains, "\n") + "\n"
+	tmpFile := fmt.Sprintf("%s.tmp.%d", dpiHostlistFile, time.Now().UnixNano())
+
+	f, err := os.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "Failed to create temporary file")
+		return
+	}
+
+	if _, err := f.WriteString(content); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		Error(w, http.StatusInternalServerError, "Failed to write hostlist")
+		return
+	}
+
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		Error(w, http.StatusInternalServerError, "Failed to sync hostlist")
+		return
+	}
+
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpFile)
+		Error(w, http.StatusInternalServerError, "Failed to close hostlist")
+		return
+	}
+
+	if err := os.Rename(tmpFile, dpiHostlistFile); err != nil {
+		_ = os.Remove(tmpFile)
+		Error(w, http.StatusInternalServerError, "Failed to rename hostlist")
+		return
+	}
+
+	// Hot reload tpws if running (HUP or restart)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = exec.CommandContext(ctx, "systemctl", "reload-or-restart", dpiSystemdService).Run()
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Hostlist restored to default",
 	})
 }
 
@@ -306,18 +371,11 @@ func (h *VideoOptimizerHandler) getHostlist(w http.ResponseWriter) {
 
 func (h *VideoOptimizerHandler) getHostlistSection(w http.ResponseWriter) {
 	domains := readHostlistDomains()
-	defaultDomains := []string{
-		"googlevideo.com",
-		"youtube.com",
-		"netflix.com",
-		"nflxvideo.net",
-		"tiktokv.com",
-	}
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success":         true,
 		"domains":         domains,
-		"default_domains": defaultDomains,
+		"default_domains": defaultHostlistDomains,
 		"count":           len(domains),
 	})
 }
@@ -368,10 +426,33 @@ func readDpiConfig() TrafficEngineConfig {
 }
 
 func writeDpiConfig(c TrafficEngineConfig) error {
-	_ = os.MkdirAll(filepath.Dir(dpiConfigFile), 0755)
+	dir := filepath.Dir(dpiConfigFile)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dpiConfigFile, data, 0644)
+
+	tmpFile := fmt.Sprintf("%s.tmp.%d", dpiConfigFile, time.Now().UnixNano())
+	f, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	return os.Rename(tmpFile, dpiConfigFile)
 }

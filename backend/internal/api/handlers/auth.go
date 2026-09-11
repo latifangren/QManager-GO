@@ -41,14 +41,16 @@ func defaultSSHUpdater(password string) error {
 
 // AuthHandler manages session tokens, password verification, and credentials persistence.
 type AuthHandler struct {
-	mu            sync.RWMutex
-	authPath      string
-	hash          string
-	salt          string
-	setupRequired bool
-	tokens        map[string]time.Time
-	timeout       time.Duration
-	sshUpdater    SSHPasswordUpdater
+	mu             sync.RWMutex
+	authPath       string
+	hash           string
+	salt           string
+	setupRequired  bool
+	tokens         map[string]time.Time
+	timeout        time.Duration
+	sshUpdater     SSHPasswordUpdater
+	failedAttempts int
+	lockoutUntil   time.Time
 }
 
 // NewAuthHandler creates a new AuthHandler.
@@ -260,12 +262,61 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		h.hash = hash
 		h.salt = salt
 		h.setupRequired = false
+		h.failedAttempts = 0
+		h.lockoutUntil = time.Time{}
 	} else {
-		if !h.verifyPassword(req.Password) {
+		if time.Now().Before(h.lockoutUntil) {
+			remainingSecs := int(time.Until(h.lockoutUntil).Seconds())
+			if remainingSecs <= 0 {
+				remainingSecs = 1
+			}
 			h.mu.Unlock()
-			Error(w, http.StatusUnauthorized, "Invalid password")
+			JSON(w, http.StatusTooManyRequests, map[string]interface{}{
+				"success": false,
+				"error":   "rate_limited",
+				"detail":  fmt.Sprintf("Too many failed attempts. Try again in %d seconds.", remainingSecs),
+				"lockout": map[string]interface{}{
+					"active":            true,
+					"remaining_seconds": remainingSecs,
+				},
+				"retry_after":        remainingSecs,
+				"attempts_remaining": 0,
+			})
 			return
 		}
+
+		if !h.verifyPassword(req.Password) {
+			h.failedAttempts++
+			if h.failedAttempts >= 5 {
+				h.lockoutUntil = time.Now().Add(60 * time.Second)
+				remainingSecs := 60
+				h.mu.Unlock()
+				JSON(w, http.StatusTooManyRequests, map[string]interface{}{
+					"success": false,
+					"error":   "rate_limited",
+					"detail":  fmt.Sprintf("Too many failed attempts. Try again in %d seconds.", remainingSecs),
+					"lockout": map[string]interface{}{
+						"active":            true,
+						"remaining_seconds": remainingSecs,
+					},
+					"retry_after":        remainingSecs,
+					"attempts_remaining": 0,
+				})
+				return
+			}
+			attemptsRemaining := 5 - h.failedAttempts
+			h.mu.Unlock()
+			JSON(w, http.StatusUnauthorized, map[string]interface{}{
+				"success":            false,
+				"error":              "invalid_password",
+				"detail":             "Invalid password",
+				"attempts_remaining": attemptsRemaining,
+			})
+			return
+		}
+
+		h.failedAttempts = 0
+		h.lockoutUntil = time.Time{}
 	}
 
 	tokenBytes := make([]byte, 16)
@@ -340,24 +391,63 @@ func (h *AuthHandler) Check(w http.ResponseWriter, r *http.Request) {
 
 	token := h.extractToken(r)
 	if token == "" || !h.validateToken(token) {
-		JSON(w, http.StatusUnauthorized, map[string]interface{}{
-			"success":        false,
-			"authenticated":  false,
-			"setup_required": false,
-			"error":          "Not authenticated",
-		})
+		h.mu.RLock()
+		locked := time.Now().Before(h.lockoutUntil)
+		remainingSecs := 0
+		if locked {
+			remainingSecs = int(time.Until(h.lockoutUntil).Seconds())
+			if remainingSecs <= 0 {
+				remainingSecs = 1
+			}
+		}
+		attemptsRemaining := 5 - h.failedAttempts
+		if attemptsRemaining < 0 {
+			attemptsRemaining = 0
+		}
+		h.mu.RUnlock()
+
+		resp := map[string]interface{}{
+			"success":            false,
+			"authenticated":      false,
+			"setup_required":     false,
+			"error":              "Not authenticated",
+			"attempts_remaining": attemptsRemaining,
+		}
+		if locked {
+			resp["rate_limited"] = true
+			resp["retry_after"] = remainingSecs
+			resp["lockout"] = map[string]interface{}{
+				"active":            true,
+				"remaining_seconds": remainingSecs,
+			}
+		}
+		JSON(w, http.StatusUnauthorized, resp)
 		return
 	}
 
+	h.mu.RLock()
+	var expiresAt int64
+	if exp, exists := h.tokens[token]; exists {
+		expiresAt = exp.Unix()
+	}
+	h.mu.RUnlock()
+
+	now := time.Now()
+	if now.Year() < 2024 {
+		expiresAt = now.Unix() + 86400*30
+	}
+
 	JSON(w, http.StatusOK, map[string]interface{}{
-		"success":        true,
-		"authenticated":  true,
-		"role":           "admin",
-		"setup_required": false,
+		"success":            true,
+		"authenticated":      true,
+		"role":               "admin",
+		"setup_required":     false,
+		"session_expires_at": expiresAt,
 		"data": map[string]interface{}{
-			"authenticated":  true,
-			"role":           "admin",
-			"setup_required": false,
+			"authenticated":      true,
+			"role":               "admin",
+			"setup_required":     false,
+			"session_expires_at": expiresAt,
 		},
 	})
 }
@@ -499,14 +589,20 @@ func (h *AuthHandler) ValidateToken(token string) bool {
 }
 
 func (h *AuthHandler) validateToken(token string) bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
 	exp, ok := h.tokens[token]
 	if !ok {
 		return false
 	}
-	return time.Now().Before(exp)
+	now := time.Now()
+	// Re-anchor token if system clock stepped forward from 1970 boot epoch
+	if exp.Year() < 2024 && now.Year() >= 2024 {
+		exp = now.Add(h.timeout)
+		h.tokens[token] = exp
+	}
+	return now.Before(exp)
 }
 
 func (h *AuthHandler) extractToken(r *http.Request) string {
