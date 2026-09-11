@@ -6,10 +6,12 @@ export type TestStatus = "pending" | "running" | "pass" | "fail" | "warn" | "ski
 export type JobStatus = "running" | "complete" | "complete_no_bundle" | "error";
 
 export type TestCategory =
+  | "binaries"
+  | "permissions"
   | "at_transport"
-  | "cellular"
+  | "sms"
+  | "sudoers"
   | "services"
-  | "filesystem"
   | "network"
   | "configuration";
 

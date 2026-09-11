@@ -143,29 +143,37 @@
     "download_failed": "Couldn't download the bundle"
   },
   "category": {
-    "at_transport": {
-      "label": "AT Transport & Hardware",
-      "description": "Qualcomm SMD11 serial interface and modem identity"
+    "binaries": {
+      "label": "Binaries & Versions",
+      "description": "QManager Go executable version, runtime, and OS release"
     },
-    "cellular": {
-      "label": "Cellular & SIM Subsystem",
-      "description": "SIM presence, registration, signal metrics, and CA status"
+    "permissions": {
+      "label": "Filesystem & Permissions",
+      "description": "Qualcomm SMD11 character device, flash UBIFS, and RAM tmpfs"
+    },
+    "at_transport": {
+      "label": "AT Transport",
+      "description": "Baseband SMD11 serial interface and modem identity"
+    },
+    "sms": {
+      "label": "SMS Subsystem",
+      "description": "Native Go SMS engine, SIM storage, and SMS Center"
+    },
+    "sudoers": {
+      "label": "Process Privileges",
+      "description": "Daemon root capabilities, raw socket permissions, and security"
     },
     "services": {
-      "label": "Services & Runtime",
-      "description": "QManager Go daemon process, memory RSS, and thermal engine"
-    },
-    "filesystem": {
-      "label": "Storage & Flash Wear",
-      "description": "UBIFS persistent storage, RAM /tmp writeability, and zero-wear policy"
+      "label": "Systemd Services",
+      "description": "QManager daemon process, memory RSS budget, and thermal sensors"
     },
     "network": {
-      "label": "Network & Routing",
-      "description": "Cellular data interface, IPv4 reachability, DNS, and firewall"
+      "label": "Network",
+      "description": "Cellular data path, IPv4 reachability, DNS, and firewall"
     },
     "configuration": {
-      "label": "Configuration & Database",
-      "description": "Atomic JSON configs, SIM registry, and in-memory telemetry freshness"
+      "label": "Configuration",
+      "description": "Atomic JSON configs, SIM registry, and in-memory telemetry"
     }
   }
 }

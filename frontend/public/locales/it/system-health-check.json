@@ -143,29 +143,37 @@
     "download_failed": "Impossibile scaricare il pacchetto diagnostico"
   },
   "category": {
-    "at_transport": {
-      "label": "Trasporto AT e Hardware",
-      "description": "Interfaccia seriale Qualcomm SMD11 e identità del modem"
+    "binaries": {
+      "label": "Binari e versioni",
+      "description": "Versione eseguibile QManager Go, runtime e versione OS"
     },
-    "cellular": {
-      "label": "Sottosistema Cellulare e SIM",
-      "description": "Presenza SIM, registrazione, metriche segnale e stato CA"
+    "permissions": {
+      "label": "Filesystem e permessi",
+      "description": "Dispositivo a caratteri Qualcomm SMD11, flash UBIFS e RAM tmpfs"
+    },
+    "at_transport": {
+      "label": "Trasporto AT",
+      "description": "Interfaccia seriale SMD11 baseband e identità del modem"
+    },
+    "sms": {
+      "label": "Sottosistema SMS",
+      "description": "Engine SMS nativo Go, memoria SIM e Centro SMS"
+    },
+    "sudoers": {
+      "label": "Privilegi di processo",
+      "description": "Capacità root del demone, permessi raw socket e sicurezza"
     },
     "services": {
-      "label": "Servizi e Runtime",
-      "description": "Processo demone QManager Go, memoria RSS e sensore termico"
-    },
-    "filesystem": {
-      "label": "Archiviazione e Flash Wear",
-      "description": "Archiviazione persistente UBIFS, scrittura RAM /tmp e protezione usura flash"
+      "label": "Servizi Systemd",
+      "description": "Processo demone QManager, budget memoria RSS e sensori termici"
     },
     "network": {
-      "label": "Rete e Routing",
-      "description": "Interfaccia dati cellulare, raggiungibilità IPv4, DNS e firewall"
+      "label": "Rete",
+      "description": "Percorso dati cellulare, raggiungibilità IPv4, DNS e firewall"
     },
     "configuration": {
-      "label": "Configurazione e Database",
-      "description": "Configurazioni atomiche JSON, registro SIM e aggiornamento telemetria in memoria"
+      "label": "Configurazione",
+      "description": "Configurazioni atomiche JSON, registro SIM e telemetria in memoria"
     }
   }
 }

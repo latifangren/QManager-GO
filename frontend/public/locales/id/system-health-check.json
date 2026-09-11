@@ -143,29 +143,37 @@
     "download_failed": "Tidak dapat mengunduh paket diagnostik"
   },
   "category": {
-    "at_transport": {
-      "label": "Transport AT & Perangkat Keras",
-      "description": "Antarmuka serial Qualcomm SMD11 dan identitas modem"
+    "binaries": {
+      "label": "Biner & Versi",
+      "description": "Versi executable QManager Go, runtime, dan rilis OS"
     },
-    "cellular": {
-      "label": "Subsistem Seluler & SIM",
-      "description": "Keberadaan SIM, registrasi jaringan, metrik sinyal, dan status CA"
+    "permissions": {
+      "label": "Filesystem & Izin",
+      "description": "Perangkat karakter Qualcomm SMD11, flash UBIFS, dan RAM tmpfs"
+    },
+    "at_transport": {
+      "label": "Transport AT",
+      "description": "Antarmuka serial SMD11 baseband dan identitas modem"
+    },
+    "sms": {
+      "label": "Subsistem SMS",
+      "description": "Engine SMS native Go, penyimpanan SIM, dan SMS Center"
+    },
+    "sudoers": {
+      "label": "Hak Akses Proses",
+      "description": "Kapabilitas root daemon, izin raw socket, dan keamanan"
     },
     "services": {
-      "label": "Layanan & Runtime",
-      "description": "Proses daemon QManager Go, memori RSS, dan thermal engine"
-    },
-    "filesystem": {
-      "label": "Penyimpanan & Flash Wear",
-      "description": "Penyimpanan persisten UBIFS, penulisan RAM /tmp, dan zero-wear policy"
+      "label": "Layanan Systemd",
+      "description": "Proses daemon QManager, anggaran RAM, dan sensor suhu"
     },
     "network": {
-      "label": "Jaringan & Perutean",
-      "description": "Antarmuka data seluler, keterjangkauan IPv4, DNS, dan firewall"
+      "label": "Jaringan",
+      "description": "Jalur data seluler, keterjangkauan IPv4, DNS, dan firewall"
     },
     "configuration": {
-      "label": "Konfigurasi & Database",
-      "description": "Konfigurasi atomik JSON, registry SIM, dan kesegaran telemetri memori"
+      "label": "Konfigurasi",
+      "description": "Konfigurasi atomik JSON, registry SIM, dan telemetri memori"
     }
   }
 }

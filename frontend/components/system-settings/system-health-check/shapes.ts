@@ -388,10 +388,12 @@ export const TALLY_GLYPH = {
  * Static per-category cardinality for the QManager-GO single-binary appliance.
  */
 export const CATEGORY_TEST_COUNT: Record<TestCategory, number> = {
-  at_transport: 5,
-  cellular: 4,
+  binaries: 3,
+  permissions: 3,
+  at_transport: 4,
+  sms: 3,
+  sudoers: 2,
   services: 4,
-  filesystem: 3,
   network: 4,
   configuration: 3,
 };
@@ -404,10 +406,12 @@ export const TOTAL_TESTS = Object.values(CATEGORY_TEST_COUNT).reduce(
 
 /** The runner's own order. Stable — never re-sorted while a run is in flight. */
 export const CATEGORY_ORDER: TestCategory[] = [
+  "binaries",
+  "permissions",
   "at_transport",
-  "cellular",
+  "sms",
+  "sudoers",
   "services",
-  "filesystem",
   "network",
   "configuration",
 ];
