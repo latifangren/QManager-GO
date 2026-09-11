@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"qmanager/internal/atengine"
 )
@@ -60,7 +62,7 @@ func (h *CellScannerHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 	h.err = ""
 	h.mu.Unlock()
 
-	// Launch async scan
+	// Launch async scan with 120s timeout and PriorityHigh
 	go func() {
 		defer func() {
 			h.mu.Lock()
@@ -68,8 +70,16 @@ func (h *CellScannerHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 			h.mu.Unlock()
 		}()
 
-		// Execute AT+QSCAN="all"
-		res, err := h.engine.Exec(`AT+QSCAN="all"`)
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+
+		// Execute AT+QSCAN=3,1 (Full sweep mode)
+		res, err := h.engine.ExecContextWithPriority(ctx, `AT+QSCAN=3,1`, atengine.PriorityHigh)
+		if err != nil || !strings.Contains(res.Raw, "+QSCAN:") {
+			// Fallback to AT+QSCAN=1 if 3,1 is unsupported on this firmware
+			res, err = h.engine.ExecContextWithPriority(ctx, `AT+QSCAN=1`, atengine.PriorityHigh)
+		}
+
 		h.mu.Lock()
 		defer h.mu.Unlock()
 
@@ -129,10 +139,69 @@ func (h *CellScannerHandler) ScanStatus(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func parseHexOrDec(val string) int {
+	val = strings.TrimSpace(val)
+	if val == "" || val == "-" {
+		return 0
+	}
+	// Try parsing hex first if it has letters or looks like hex
+	if strings.HasPrefix(val, "0x") || strings.HasPrefix(val, "0X") {
+		if n, err := strconv.ParseInt(val[2:], 16, 64); err == nil {
+			return int(n)
+		}
+	}
+	// If it contains A-F hex chars
+	hasHexChar := false
+	for _, c := range val {
+		if (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') {
+			hasHexChar = true
+			break
+		}
+	}
+	if hasHexChar {
+		if n, err := strconv.ParseInt(val, 16, 64); err == nil {
+			return int(n)
+		}
+	}
+	if n, err := strconv.Atoi(val); err == nil {
+		return n
+	}
+	if n, err := strconv.ParseInt(val, 16, 64); err == nil {
+		return int(n)
+	}
+	return 0
+}
+
+func parseBandwidth(val string) int {
+	val = strings.TrimSpace(val)
+	if val == "" || val == "-" {
+		return 0
+	}
+	bw, _ := strconv.Atoi(val)
+	// Normalise LTE resource blocks to MHz: 100->20, 75->15, 50->10, 25->5, 15->3, 6->1
+	switch bw {
+	case 100:
+		return 20
+	case 75:
+		return 15
+	case 50:
+		return 10
+	case 25:
+		return 5
+	case 15:
+		return 3
+	case 6:
+		return 1
+	default:
+		return bw
+	}
+}
+
 // ParseQScanOutput parses AT+QSCAN response into CellScanItem slice.
 // Hardware response format:
+// +QSCAN: "LTE",<mcc>,<mnc>,<earfcn>,<pci>,<rsrp>,<rsrq>,<srxlev>,<s_qual>,<cellid_hex>,<tac_hex>,<bandwidth>,<band>
 // +QSCAN: "LTE",<mcc>,<mnc>,<earfcn>,<pci>,<rsrp>,<rsrq>,<cellid>,<tac>,<bandwidth>,<band>
-// +QSCAN: "NR5G",<mcc>,<mnc>,<arfcn>,<pci>,<rsrp>,<rsrq>,<cellid>,<tac>,<bandwidth>,<band>,<scs>
+// +QSCAN: "NR5G",<mcc>,<mnc>,<arfcn>,<pci>,<rsrp>,<rsrq>,<sinr>,<s_qual>,<cellid_hex>,<tac_hex>,<bandwidth>,<band>,<scs>
 func ParseQScanOutput(raw string) []CellScanItem {
 	var items []CellScanItem
 	lines := strings.Split(raw, "\n")
@@ -146,7 +215,7 @@ func ParseQScanOutput(raw string) []CellScanItem {
 
 		trimmed := strings.TrimPrefix(l, "+QSCAN:")
 		parts := strings.Split(trimmed, ",")
-		if len(parts) < 11 {
+		if len(parts) < 7 {
 			continue
 		}
 
@@ -162,15 +231,47 @@ func ParseQScanOutput(raw string) []CellScanItem {
 			rsrqPtr = &r
 		}
 
-		cellID, _ := strconv.Atoi(strings.TrimSpace(parts[7]))
-		tac, _ := strconv.Atoi(strings.TrimSpace(parts[8]))
-		bw, _ := strconv.Atoi(strings.TrimSpace(parts[9]))
-		band, _ := strconv.Atoi(strings.TrimSpace(parts[10]))
-
+		var cellID, tac, bw, band int
 		var scsPtr *int
-		if len(parts) >= 12 {
-			if scs, err := strconv.Atoi(strings.TrimSpace(parts[11])); err == nil {
-				scsPtr = &scs
+
+		if len(parts) >= 13 {
+			// Format: "LTE",mcc,mnc,earfcn,pci,rsrp,rsrq,srxlev,s_qual,cellid,tac,bw,band,[scs]
+			cellID = parseHexOrDec(parts[9])
+			tac = parseHexOrDec(parts[10])
+			bw = parseBandwidth(parts[11])
+			band, _ = strconv.Atoi(strings.TrimSpace(parts[12]))
+			if len(parts) >= 14 {
+				if scs, err := strconv.Atoi(strings.TrimSpace(parts[13])); err == nil {
+					scsPtr = &scs
+				}
+			}
+		} else if len(parts) >= 11 {
+			// Format: "LTE",mcc,mnc,earfcn,pci,rsrp,rsrq,cellid,tac,bw,band
+			cellID = parseHexOrDec(parts[7])
+			tac = parseHexOrDec(parts[8])
+			bw = parseBandwidth(parts[9])
+			band, _ = strconv.Atoi(strings.TrimSpace(parts[10]))
+			if len(parts) >= 12 {
+				if scs, err := strconv.Atoi(strings.TrimSpace(parts[11])); err == nil {
+					scsPtr = &scs
+				}
+			}
+		}
+
+		// Fallback band calculation if band not reported
+		if band <= 0 {
+			if strings.EqualFold(netType, "LTE") {
+				calc := CalculateLTEFrequency(earfcn)
+				if len(calc.MatchingBands) > 0 {
+					bStr := strings.TrimPrefix(calc.MatchingBands[0].Band, "B")
+					band, _ = strconv.Atoi(bStr)
+				}
+			} else {
+				calc := CalculateNRFrequency(earfcn)
+				if len(calc.MatchingBands) > 0 {
+					bStr := strings.TrimPrefix(calc.MatchingBands[0].Band, "n")
+					band, _ = strconv.Atoi(bStr)
+				}
 			}
 		}
 

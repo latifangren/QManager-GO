@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"strconv"
@@ -192,12 +193,20 @@ type DeviceObject struct {
 
 // ConnectivityObject represents live ping reachability and latency metrics.
 type ConnectivityObject struct {
-	InternetAvailable *bool    `json:"internet_available"`
-	Status            string   `json:"status"`
-	LatencyMs         *float64 `json:"latency_ms"`
-	AvgLatencyMs      *float64 `json:"avg_latency_ms"`
-	JitterMs          *float64 `json:"jitter_ms"`
-	PacketLossPct     *float64 `json:"packet_loss_pct"`
+	InternetAvailable  *bool      `json:"internet_available"`
+	Status             string     `json:"status"`
+	LatencyMs          *float64   `json:"latency_ms"`
+	AvgLatencyMs       *float64   `json:"avg_latency_ms"`
+	MinLatencyMs       *float64   `json:"min_latency_ms"`
+	MaxLatencyMs       *float64   `json:"max_latency_ms"`
+	JitterMs           *float64   `json:"jitter_ms"`
+	PacketLossPct      *float64   `json:"packet_loss_pct"`
+	PingTarget         string     `json:"ping_target"`
+	LatencyHistory     []*float64 `json:"latency_history"`
+	HistoryIntervalSec int        `json:"history_interval_sec"`
+	HistorySize        int        `json:"history_size"`
+	LastFamily         string     `json:"last_family,omitempty"`
+	Profile            string     `json:"profile,omitempty"`
 }
 
 // ModemStatus provides both flat legacy fields and structured nested blocks for complete frontend compatibility.
@@ -257,6 +266,15 @@ type Poller struct {
 	stopCh        chan struct{}
 	running       bool
 	connStartTime time.Time
+	prober        *PingProber
+
+	// State latches for change detection & event feed
+	lastBand      string
+	lastPCID      int
+	lastMode      string
+	lastCACount   int
+	lastOnline    bool
+	initEventSent bool
 
 	// Cached identities
 	imei              string
@@ -299,6 +317,12 @@ func NewPoller(eng *atengine.Engine, id platform.Identity, interval time.Duratio
 	}
 }
 
+func (p *Poller) SetProber(pr *PingProber) {
+	p.mu.Lock()
+	p.prober = pr
+	p.mu.Unlock()
+}
+
 func newDefaultStatus(id platform.Identity) *ModemStatus {
 	return &ModemStatus{
 		Timestamp:          time.Now().Unix(),
@@ -338,7 +362,12 @@ func newDefaultStatus(id platform.Identity) *ModemStatus {
 			Slot:     1,
 		},
 		Connectivity: ConnectivityObject{
-			Status: "unknown",
+			Status:             "connected",
+			PingTarget:         "1.1.1.1:53",
+			LatencyHistory:     make([]*float64, 0),
+			HistoryIntervalSec: 2,
+			HistorySize:        30,
+			LastFamily:         "ipv4",
 		},
 		SignalPerAntenna: SignalPerAntenna{
 			LteRSRP: make([]*int, 4),
@@ -868,7 +897,162 @@ func (p *Poller) poll() {
 		}
 	}
 
+	// 5. Populate live Ping / Connectivity metrics
+	p.mu.RLock()
+	prober := p.prober
+	p.mu.RUnlock()
+
+	if prober != nil {
+		stats := prober.GetStats()
+		avail := stats.LossPct < 100.0 && len(stats.RecentPoints) > 0
+		status.Connectivity.InternetAvailable = &avail
+		if avail {
+			status.Connectivity.Status = "connected"
+		} else if len(stats.RecentPoints) > 0 {
+			status.Connectivity.Status = "disconnected"
+		} else {
+			status.Connectivity.Status = "unknown"
+		}
+		status.Connectivity.PingTarget = stats.Target
+		status.Connectivity.HistoryIntervalSec = int(prober.interval.Seconds())
+		if status.Connectivity.HistoryIntervalSec <= 0 {
+			status.Connectivity.HistoryIntervalSec = 2
+		}
+		status.Connectivity.HistorySize = 30
+		status.Connectivity.LastFamily = "ipv4"
+		if stats.CurrentMs > 0 {
+			status.Connectivity.LatencyMs = &stats.CurrentMs
+		}
+		if stats.AvgMs > 0 {
+			status.Connectivity.AvgLatencyMs = &stats.AvgMs
+		}
+		if stats.MinMs > 0 {
+			status.Connectivity.MinLatencyMs = &stats.MinMs
+		}
+		if stats.MaxMs > 0 {
+			status.Connectivity.MaxLatencyMs = &stats.MaxMs
+		}
+		if stats.JitterMs > 0 {
+			status.Connectivity.JitterMs = &stats.JitterMs
+		}
+		status.Connectivity.PacketLossPct = &stats.LossPct
+
+		historySlice := make([]*float64, 0, len(stats.RecentPoints))
+		for _, pt := range stats.RecentPoints {
+			if pt.Success {
+				lat := pt.LatencyMs
+				historySlice = append(historySlice, &lat)
+			} else {
+				historySlice = append(historySlice, nil)
+			}
+		}
+		status.Connectivity.LatencyHistory = historySlice
+	}
+
+	// 6. Change-detection latch for Network Events feed
 	p.mu.Lock()
+	if !p.initEventSent {
+		p.initEventSent = true
+		p.lastBand = status.Band
+		p.lastPCID = status.PCID
+		p.lastMode = status.Mode
+		p.lastCACount = status.Network.CACount
+		p.lastOnline = status.Online
+
+		carrierName := status.Carrier
+		if carrierName == "" {
+			carrierName = status.Operator
+		}
+		if carrierName == "" {
+			carrierName = "Cellular"
+		}
+		GetGlobalHistory().RecordEvent(NetworkEventItem{
+			Timestamp: status.Timestamp,
+			Type:      "link_up",
+			Message:   fmt.Sprintf("QManager Telemetry online — %s (%s)", carrierName, status.Mode),
+			Severity:  "info",
+		})
+	} else {
+		// Band Change
+		if status.Band != "" && p.lastBand != "" && status.Band != p.lastBand {
+			GetGlobalHistory().RecordEvent(NetworkEventItem{
+				Timestamp: status.Timestamp,
+				Type:      "band_change",
+				Message:   fmt.Sprintf("Band switched: %s → %s", p.lastBand, status.Band),
+				Severity:  "info",
+			})
+			p.lastBand = status.Band
+		} else if status.Band != "" && p.lastBand == "" {
+			p.lastBand = status.Band
+		}
+
+		// PCI / Tower Handoff
+		if status.PCID > 0 && p.lastPCID > 0 && status.PCID != p.lastPCID {
+			GetGlobalHistory().RecordEvent(NetworkEventItem{
+				Timestamp: status.Timestamp,
+				Type:      "pci_change",
+				Message:   fmt.Sprintf("Tower handoff: PCI %d → %d", p.lastPCID, status.PCID),
+				Severity:  "info",
+			})
+			p.lastPCID = status.PCID
+		} else if status.PCID > 0 && p.lastPCID == 0 {
+			p.lastPCID = status.PCID
+		}
+
+		// Network Mode Change (e.g. LTE -> 5G-NSA / 5G-SA)
+		if status.Mode != "" && p.lastMode != "" && status.Mode != p.lastMode {
+			GetGlobalHistory().RecordEvent(NetworkEventItem{
+				Timestamp: status.Timestamp,
+				Type:      "network_mode",
+				Message:   fmt.Sprintf("Network mode changed: %s → %s", p.lastMode, status.Mode),
+				Severity:  "info",
+			})
+			p.lastMode = status.Mode
+		} else if status.Mode != "" && p.lastMode == "" {
+			p.lastMode = status.Mode
+		}
+
+		// Carrier Aggregation Change
+		if status.Network.CACount != p.lastCACount {
+			if status.Network.CACount > 1 && p.lastCACount <= 1 {
+				GetGlobalHistory().RecordEvent(NetworkEventItem{
+					Timestamp: status.Timestamp,
+					Type:      "ca_change",
+					Message:   fmt.Sprintf("Carrier Aggregation activated (%d carriers: %s)", status.Network.CACount, status.Network.BandwidthDetails),
+					Severity:  "info",
+				})
+			} else if status.Network.CACount <= 1 && p.lastCACount > 1 {
+				GetGlobalHistory().RecordEvent(NetworkEventItem{
+					Timestamp: status.Timestamp,
+					Type:      "ca_change",
+					Message:   "Carrier Aggregation deactivated",
+					Severity:  "warning",
+				})
+			}
+			p.lastCACount = status.Network.CACount
+		}
+
+		// Signal Lost / Restored
+		if p.lastOnline != status.Online {
+			if !status.Online {
+				GetGlobalHistory().RecordEvent(NetworkEventItem{
+					Timestamp: status.Timestamp,
+					Type:      "signal_lost",
+					Message:   "Modem cellular connection lost",
+					Severity:  "error",
+				})
+			} else {
+				GetGlobalHistory().RecordEvent(NetworkEventItem{
+					Timestamp: status.Timestamp,
+					Type:      "signal_restored",
+					Message:   "Modem cellular connection restored",
+					Severity:  "info",
+				})
+			}
+			p.lastOnline = status.Online
+		}
+	}
+
 	p.current = status
 	p.mu.Unlock()
 

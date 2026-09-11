@@ -83,7 +83,9 @@ const pad = (value: number) => String(value).padStart(2, "0");
 
 /** Realtime ticks count seconds; aggregate ticks name the bucket they open. */
 function formatTick(value: number, mode: ViewMode): string {
+  if (!value || isNaN(value)) return "";
   const at = new Date(value);
+  if (isNaN(at.getTime())) return "";
   if (mode === "realtime")
     return `${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
   if (mode === "daily")
@@ -93,7 +95,9 @@ function formatTick(value: number, mode: ViewMode): string {
 
 /** The window edges the description names, and the tooltip's own label. */
 function formatBoundary(value: number, mode: ViewMode): string {
+  if (!value || isNaN(value)) return "";
   const at = new Date(value);
+  if (isNaN(at.getTime())) return "";
   const day = at.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",

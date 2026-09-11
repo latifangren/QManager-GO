@@ -47,8 +47,8 @@ const LatencyMonitoringComponent = () => {
   const ms = t("latencyMonitor.unit_ms");
 
   const showMs = React.useCallback(
-    (value: number | null) =>
-      value === null ? dash : `${value.toLocaleString()} ${ms}`,
+    (value: number | null | undefined) =>
+      value === null || value === undefined ? dash : `${value.toLocaleString()} ${ms}`,
     [dash, ms],
   );
 
@@ -61,14 +61,18 @@ const LatencyMonitoringComponent = () => {
 
     const avg = connectivity.avg_latency_ms;
     // The "fair" cut is the last one that still reads as a usable link.
-    const avgAlert = avg !== null && avg > LATENCY_THRESHOLDS.fair;
+    const avgAlert = avg != null && avg > LATENCY_THRESHOLDS.fair;
 
     const loss = connectivity.packet_loss_pct;
-    const lossAlert = loss !== null && loss > 0;
+    const lossAlert = loss != null && loss > 0;
 
     const hasSpread =
-      connectivity.min_latency_ms !== null &&
-      connectivity.max_latency_ms !== null;
+      connectivity.min_latency_ms != null &&
+      connectivity.max_latency_ms != null;
+
+    const metaParts = [connectivity.last_family, connectivity.profile].filter(
+      (p): p is string => Boolean(p) && typeof p === "string",
+    );
 
     return [
       {
@@ -96,7 +100,7 @@ const LatencyMonitoringComponent = () => {
         eyebrow: t("latencyMonitor.band.jitter_eyebrow"),
         value: showMs(connectivity.jitter_ms),
         caption:
-          connectivity.jitter_ms === null
+          connectivity.jitter_ms == null
             ? t("latencyMonitor.band.jitter_unmeasured")
             : t("latencyMonitor.band.jitter_samples", { count: windowCount }),
       },
@@ -104,11 +108,11 @@ const LatencyMonitoringComponent = () => {
         icon: lossAlert ? PackageXIcon : PackageCheckIcon,
         eyebrow: t("latencyMonitor.band.loss_eyebrow"),
         value:
-          loss === null
+          loss == null
             ? dash
             : `${loss.toLocaleString()}${t("latencyMonitor.unit_pct")}`,
         caption:
-          loss === null
+          loss == null
             ? t("latencyMonitor.band.loss_unmeasured")
             : t("latencyMonitor.band.loss_counted", {
                 lost: lostCount,
@@ -120,10 +124,10 @@ const LatencyMonitoringComponent = () => {
         icon: CrosshairIcon,
         eyebrow: t("latencyMonitor.band.target_eyebrow"),
         value: connectivity.ping_target || dash,
-        caption: connectivity.last_family ? (
+        caption: metaParts.length > 0 ? (
           <TileMeta
             mono
-            parts={[connectivity.last_family, connectivity.profile]}
+            parts={metaParts}
           />
         ) : (
           t("latencyMonitor.band.target_unknown")

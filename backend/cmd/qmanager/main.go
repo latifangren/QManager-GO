@@ -108,12 +108,14 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 
 	// 4. Background Telemetry & Probers
 	poller := telemetry.NewPoller(engine, identity, 1*time.Second)
-	poller.Start()
-	defer poller.Stop()
 
 	prober := telemetry.NewPingProber("1.1.1.1:53", 2*time.Second)
 	prober.Start()
 	defer prober.Stop()
+
+	poller.SetProber(prober)
+	poller.Start()
+	defer poller.Stop()
 
 	watchdog := telemetry.NewWatchdog(engine, cfgMgr, prober)
 	watchdog.Start()

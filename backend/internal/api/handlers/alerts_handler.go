@@ -77,6 +77,7 @@ func (h *AlertsHandler) HandleAlerts(w http.ResponseWriter, r *http.Request) {
 		}
 
 		JSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
 			"channels": map[string]interface{}{
 				"sms":     h.sms,
 				"email":   h.email,
