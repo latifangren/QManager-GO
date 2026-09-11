@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	CurrentQManagerVersion = "v0.1.14"
-	DefaultGitHubRepo      = "iamromulan/quecmanager-core"
+	CurrentQManagerVersion = "1.0.0-beta"
+	DefaultGitHubRepo      = "latifangren/QManager-GO"
 	DefaultUpdateLockFile  = "/tmp/qmanager_update.lock"
 	DefaultUpdateDir       = "/tmp/qmanager_update"
 	DefaultBinaryPath      = "/usr/bin/qmanager"

@@ -67,7 +67,7 @@ func TestUpdateHandler_CheckAndSaveSettings(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	t.Setenv("QMANAGER_VERSION", "v0.1.14")
+	t.Setenv("QMANAGER_VERSION", "1.0.0-beta")
 	handler := NewUpdateHandler(cfgMgr)
 	handler.httpClient = mockServer.Client()
 
@@ -87,8 +87,8 @@ func TestUpdateHandler_CheckAndSaveSettings(t *testing.T) {
 	if !resp.Success {
 		t.Errorf("expected resp.Success=true")
 	}
-	if resp.CurrentVersion != "v0.1.14" {
-		t.Errorf("expected current_version=v0.1.14, got %s", resp.CurrentVersion)
+	if resp.CurrentVersion != "1.0.0-beta" {
+		t.Errorf("expected current_version=1.0.0-beta, got %s", resp.CurrentVersion)
 	}
 
 	// Test POST save_settings

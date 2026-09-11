@@ -159,6 +159,7 @@ const HomeComponent = () => {
             isLoading={isLoading}
             modemReachable={data?.modem_reachable ?? false}
             lanGateway={aboutDevice?.network.lan_gateway}
+            publicIp={aboutDevice?.network.public_ipv4}
           />
         </motion.div>
       </motion.div>

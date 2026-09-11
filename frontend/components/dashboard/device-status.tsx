@@ -51,6 +51,7 @@ interface DeviceStatusComponentProps {
    */
   modemReachable: boolean;
   lanGateway?: string;
+  publicIp?: string;
 }
 
 /**
@@ -139,6 +140,7 @@ const DeviceStatusComponent = ({
   isLoading,
   modemReachable,
   lanGateway,
+  publicIp,
 }: DeviceStatusComponentProps) => {
   const { t } = useTranslation("dashboard");
   const [hidePrivate, setHidePrivate] = useState(false);
@@ -189,6 +191,7 @@ const DeviceStatusComponent = ({
       private: true,
     },
     { label: t("device_status.lan_gateway"), value: lanGateway || ABSENT, mono: true },
+    { label: t("device_status.public_ip", "Public IP"), value: publicIp || ABSENT, mono: true },
     {
       label: t("device_status.qmanager_version"),
       value: packageJson.version,
@@ -200,6 +203,7 @@ const DeviceStatusComponent = ({
   // running while we cannot see it, so the number we hold goes wrong at one
   // second per second the moment the poll fails. Those go to the sentinel.
   const connUptime = data?.conn_uptime_seconds ?? 0;
+  const lastConnUptime = (data as any)?.last_conn_uptime_seconds ?? 0;
   const deviceUptime = data?.uptime_seconds ?? 0;
   const connUp = !unreachable && connUptime > 0;
 
@@ -388,8 +392,12 @@ const DeviceStatusComponent = ({
                   unreachable
                     ? t("device_status.uptime_unknown")
                     : connUp
-                      ? t("device_status.conn_uptime_caption_up")
-                      : t("device_status.conn_uptime_caption_down")
+                      ? lastConnUptime > 0
+                        ? `${t("device_status.conn_uptime_caption_up")} · Last: ${formatUptime(lastConnUptime)}`
+                        : t("device_status.conn_uptime_caption_up")
+                      : lastConnUptime > 0
+                        ? `Last: ${formatUptime(lastConnUptime)}`
+                        : t("device_status.conn_uptime_caption_down")
                 }
               />
               <UptimeTile

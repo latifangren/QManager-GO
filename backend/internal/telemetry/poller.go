@@ -170,25 +170,26 @@ type SystemObject struct {
 
 // DeviceObject represents device hardware, firmware, and supported band identities.
 type DeviceObject struct {
-	Temperature        *float64 `json:"temperature"`
-	CPUUsage           float64  `json:"cpu_usage"`
-	MemoryUsedMB       float64  `json:"memory_used_mb"`
-	MemoryTotalMB      float64  `json:"memory_total_mb"`
-	UptimeSeconds      float64  `json:"uptime_seconds"`
-	ConnUptimeSeconds  float64  `json:"conn_uptime_seconds"`
-	Firmware           string   `json:"firmware"`
-	BuildDate          string   `json:"build_date"`
-	Manufacturer       string   `json:"manufacturer"`
-	Model              string   `json:"model"`
-	IMEI               string   `json:"imei"`
-	IMSI               string   `json:"imsi"`
-	ICCID              string   `json:"iccid"`
-	PhoneNumber        string   `json:"phone_number"`
-	LTECategory        string   `json:"lte_category"`
-	MIMO               string   `json:"mimo"`
-	SupportedLTEBands  string   `json:"supported_lte_bands"`
-	SupportedNSABands  string   `json:"supported_nsa_nr5g_bands"`
-	SupportedSABands   string   `json:"supported_sa_nr5g_bands"`
+	Temperature           *float64 `json:"temperature"`
+	CPUUsage              float64  `json:"cpu_usage"`
+	MemoryUsedMB          float64  `json:"memory_used_mb"`
+	MemoryTotalMB         float64  `json:"memory_total_mb"`
+	UptimeSeconds         float64  `json:"uptime_seconds"`
+	ConnUptimeSeconds     float64  `json:"conn_uptime_seconds"`
+	LastConnUptimeSeconds float64  `json:"last_conn_uptime_seconds"`
+	Firmware              string   `json:"firmware"`
+	BuildDate             string   `json:"build_date"`
+	Manufacturer          string   `json:"manufacturer"`
+	Model                 string   `json:"model"`
+	IMEI                  string   `json:"imei"`
+	IMSI                  string   `json:"imsi"`
+	ICCID                 string   `json:"iccid"`
+	PhoneNumber           string   `json:"phone_number"`
+	LTECategory           string   `json:"lte_category"`
+	MIMO                  string   `json:"mimo"`
+	SupportedLTEBands     string   `json:"supported_lte_bands"`
+	SupportedNSABands     string   `json:"supported_nsa_nr5g_bands"`
+	SupportedSABands      string   `json:"supported_sa_nr5g_bands"`
 }
 
 // ConnectivityObject represents live ping reachability and latency metrics.
@@ -289,6 +290,7 @@ type Poller struct {
 	supportedLTEBands string
 	supportedNSABands string
 	supportedSABands  string
+	lastConnUptime    float64
 
 	pollCount uint64
 }
@@ -561,21 +563,23 @@ func (p *Poller) poll() {
 		Carrier:            p.carrier,
 		Operator:           p.carrier,
 		Device: DeviceObject{
-			Model:         p.identity.Model,
-			Firmware:      p.identity.Revision,
-			Manufacturer:  "Quectel",
-			IMEI:          p.imei,
-			IMSI:          p.imsi,
-			ICCID:         p.iccid,
-			PhoneNumber:   p.phoneNumber,
-			CPUUsage:      cpuUsage,
-			MemoryTotalMB: totalMB,
-			MemoryUsedMB:  usedMB,
-			UptimeSeconds: metrics.UptimeSeconds,
-			Temperature:   &metrics.CpuTempC,
-			SupportedLTEBands: p.supportedLTEBands,
-			SupportedNSABands: p.supportedNSABands,
-			SupportedSABands:  p.supportedSABands,
+			Model:                 p.identity.Model,
+			Firmware:              p.identity.Revision,
+			BuildDate:             p.identity.PackageTime,
+			Manufacturer:          "Quectel",
+			IMEI:                  p.imei,
+			IMSI:                  p.imsi,
+			ICCID:                 p.iccid,
+			PhoneNumber:           p.phoneNumber,
+			CPUUsage:              cpuUsage,
+			MemoryTotalMB:         totalMB,
+			MemoryUsedMB:          usedMB,
+			UptimeSeconds:         metrics.UptimeSeconds,
+			LastConnUptimeSeconds: p.lastConnUptime,
+			Temperature:           &metrics.CpuTempC,
+			SupportedLTEBands:     p.supportedLTEBands,
+			SupportedNSABands:     p.supportedNSABands,
+			SupportedSABands:      p.supportedSABands,
 		},
 		System: SystemObject{
 			CPUUsagePct:   cpuUsage,
@@ -678,9 +682,13 @@ func (p *Poller) poll() {
 				}
 				status.Device.ConnUptimeSeconds = time.Since(p.connStartTime).Seconds()
 			} else {
+				if !p.connStartTime.IsZero() {
+					p.lastConnUptime = time.Since(p.connStartTime).Seconds()
+				}
 				p.connStartTime = time.Time{}
 				status.Device.ConnUptimeSeconds = 0
 			}
+			status.Device.LastConnUptimeSeconds = p.lastConnUptime
 
 			// Populate nested cell
 			cid64, err := strconv.ParseInt(cell.CellID, 16, 64)
