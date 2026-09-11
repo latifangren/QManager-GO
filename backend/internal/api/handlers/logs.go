@@ -259,16 +259,7 @@ func (h *LogsHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Fallback to dmesg if no file sources found and ring buffer empty
-	if len(allEntries) == 0 {
-		dmesgEntries := h.fallbackJournalctl(maxLines, levelParam, searchParam)
-		allEntries = append(allEntries, dmesgEntries...)
-		for _, e := range dmesgEntries {
-			compMap[e.Component] = true
-		}
-	}
-
-	// 4. Sort all entries by timestamp descending (newest first)
+	// 3. Sort all entries by timestamp descending (newest first)
 	sort.SliceStable(allEntries, func(i, j int) bool {
 		return allEntries[i].Timestamp > allEntries[j].Timestamp
 	})
@@ -336,13 +327,29 @@ func (h *LogsHandler) HandleLogsAction(w http.ResponseWriter, r *http.Request) {
 			h.ringLogger.Clear()
 		}
 		_ = os.Truncate(h.logFilePath, 0)
+		_ = os.Truncate("/var/log/messages", 0)
+		_ = os.Remove("/var/log/messages.0")
+		_ = os.Truncate("/tmp/messages", 0)
+		for i := 1; i <= MaxRotatedLogFiles; i++ {
+			_ = os.Remove(fmt.Sprintf("%s.%d", h.logFilePath, i))
+			_ = os.Remove(fmt.Sprintf("/var/log/messages.%d", i))
+		}
 		Success(w, map[string]interface{}{"success": true, "message": "Logs cleared"})
 		return
 
 	case "rotate", "rotate_logs":
+		// Rotate /var/log/messages
+		if _, err := os.Stat("/var/log/messages"); err == nil {
+			_ = os.Rename("/var/log/messages", "/var/log/messages.0")
+			_ = os.WriteFile("/var/log/messages", []byte{}, 0644)
+		}
+		if _, err := os.Stat(h.logFilePath); err == nil {
+			_ = os.Rename(h.logFilePath, fmt.Sprintf("%s.1", h.logFilePath))
+			_ = os.WriteFile(h.logFilePath, []byte{}, 0644)
+		}
 		stats := h.getStats()
 		if h.ringLogger != nil {
-			stats.CurrentLines = h.ringLogger.Count()
+			stats.CurrentLines += h.ringLogger.Count()
 		}
 		JSON(w, http.StatusOK, map[string]interface{}{"success": true, "stats": stats})
 		return
