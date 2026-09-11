@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os/exec"
@@ -126,6 +127,50 @@ var (
 	lastPublicIPTime time.Time
 )
 
+func parsePosixTZ(tz string) (string, string) {
+	if tz == "" {
+		return "UTC", "+0000"
+	}
+	tz = strings.TrimSpace(tz)
+	// Example: EST5EDT, WIB-7, UTC0
+	var name []rune
+	i := 0
+	runes := []rune(tz)
+	for i < len(runes) && (runes[i] < '0' || runes[i] > '9') && runes[i] != '+' && runes[i] != '-' {
+		name = append(name, runes[i])
+		i++
+	}
+	if len(name) == 0 {
+		return "UTC", "+0000"
+	}
+	abbr := string(name)
+
+	// parse sign and offset
+	offsetSign := 1 // POSIX is inverted: EST5 is UTC-5, WIB-7 is UTC+7
+	if i < len(runes) && runes[i] == '-' {
+		offsetSign = -1
+		i++
+	} else if i < len(runes) && runes[i] == '+' {
+		offsetSign = 1
+		i++
+	}
+
+	numStr := ""
+	for i < len(runes) && runes[i] >= '0' && runes[i] <= '9' {
+		numStr += string(runes[i])
+		i++
+	}
+	hours, _ := strconv.Atoi(numStr)
+	// POSIX TZ invert: -7 means UTC+7
+	realOffset := -offsetSign * hours
+	sign := "+"
+	if realOffset < 0 {
+		sign = "-"
+		realOffset = -realOffset
+	}
+	return abbr, fmt.Sprintf("%s%02d00", sign, realOffset)
+}
+
 func fetchPublicIPs() (string, string) {
 	if time.Since(lastPublicIPTime) < 30*time.Second && (cachedPublicIPv4 != "" || cachedPublicIPv6 != "") {
 		return cachedPublicIPv4, cachedPublicIPv6
@@ -177,13 +222,48 @@ func (h *SystemHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		days = []int{}
 	}
 
+	// Calculate live timezone offset & abbreviation
+	zoneAbbr := "UTC"
+	effectiveOffset := "+0000"
+
+	tz := cfg.Settings.Timezone
+	if tz == "" && cfg.Settings.Zonename == "Asia/Jakarta" {
+		tz = "WIB-7"
+	}
+
+	if loc, err := time.LoadLocation(cfg.Settings.Zonename); err == nil {
+		tNow := time.Now().In(loc)
+		abbr, off := tNow.Zone()
+		zoneAbbr = abbr
+		sign := "+"
+		if off < 0 {
+			sign = "-"
+			off = -off
+		}
+		effectiveOffset = fmt.Sprintf("%s%02d%02d", sign, off/3600, (off%3600)/60)
+	} else if strings.HasPrefix(tz, "WIB-7") {
+		zoneAbbr = "WIB"
+		effectiveOffset = "+0700"
+	} else if strings.HasPrefix(tz, "WITA-8") {
+		zoneAbbr = "WITA"
+		effectiveOffset = "+0800"
+	} else if strings.HasPrefix(tz, "WIT-9") {
+		zoneAbbr = "WIT"
+		effectiveOffset = "+0900"
+	} else {
+		zoneAbbr, effectiveOffset = parsePosixTZ(tz)
+	}
+
 	settings := map[string]interface{}{
-		"hostname":        cfg.Settings.Hostname,
-		"temp_unit":       cfg.Settings.TempUnit,
-		"distance_unit":   cfg.Settings.DistanceUnit,
-		"timezone":        cfg.Settings.Timezone,
-		"zonename":        cfg.Settings.Zonename,
-		"sms_tool_device": cfg.Settings.SmsToolDevice,
+		"hostname":            cfg.Settings.Hostname,
+		"temp_unit":           cfg.Settings.TempUnit,
+		"distance_unit":       cfg.Settings.DistanceUnit,
+		"timezone":            cfg.Settings.Timezone,
+		"zonename":            cfg.Settings.Zonename,
+		"sms_tool_device":     cfg.Settings.SmsToolDevice,
+		"effective_offset":    effectiveOffset,
+		"effective_zone_abbr": zoneAbbr,
+		"timezone_applied":    true,
 	}
 
 	scheduledReboot := map[string]interface{}{

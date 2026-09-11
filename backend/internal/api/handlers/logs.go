@@ -73,14 +73,20 @@ type MemoryStats struct {
 
 // ModemSubsysData holds diagnostic status for modem hardware subsystem.
 type ModemSubsysData struct {
-	State              string      `json:"state"`
-	CrashCount         *int        `json:"crash_count"`
-	LastCrashTimestamp *int64      `json:"last_crash_timestamp"`
-	UptimeSecs         int64       `json:"uptime_secs"`
-	CPU                CPUStats    `json:"cpu"`
-	Memory             MemoryStats `json:"memory"`
-	SubsysName         string      `json:"subsys_name"`
-	FirmwareVersion    string      `json:"firmware_version"`
+	State              string                 `json:"state"`
+	StateRaw           *string                `json:"state_raw"`
+	CrashCount         *int                   `json:"crash_count"`
+	CoredumpPresent    bool                   `json:"coredump_present"`
+	LastCrashTimestamp *int64                 `json:"last_crash_timestamp"`
+	LastCrashAt        *int64                 `json:"last_crash_at"`
+	TotalLoggedCrashes int                    `json:"total_logged_crashes"`
+	UptimeSecs         int64                  `json:"uptime_secs"`
+	UptimeSeconds      float64                `json:"uptime_seconds"`
+	CPU                CPUStats               `json:"cpu"`
+	Memory             MemoryStats            `json:"memory"`
+	Storage            *platform.StorageStats `json:"storage"`
+	SubsysName         string                 `json:"subsys_name"`
+	FirmwareVersion    string                 `json:"firmware_version"`
 }
 
 // LogsHandler implements /system/logs and /system/modem-subsys.
@@ -484,11 +490,22 @@ func (h *LogsHandler) readCachedSubsys() (*ModemSubsysData, bool) {
 	availMB := float64(cached.System.MemAvailKB) / 1024.0
 	crashes := cached.Crashes
 
+	storage := platform.GetStorageStats("/usrdata")
+	if storage == nil {
+		storage = platform.GetStorageStats("/")
+	}
+
+	stateRaw := "ONLINE"
 	return &ModemSubsysData{
 		State:              "online",
+		StateRaw:           &stateRaw,
 		CrashCount:         &crashes,
+		CoredumpPresent:    false,
 		LastCrashTimestamp: nil,
+		LastCrashAt:        nil,
+		TotalLoggedCrashes: crashes,
 		UptimeSecs:         int64(cached.System.UptimeSeconds),
+		UptimeSeconds:      cached.System.UptimeSeconds,
 		CPU: CPUStats{
 			UsagePercent: cached.System.CPUUsage,
 			Cores:        runtime.NumCPU(),
@@ -501,6 +518,7 @@ func (h *LogsHandler) readCachedSubsys() (*ModemSubsysData, bool) {
 			FreeMB:      freeMB,
 			AvailableMB: availMB,
 		},
+		Storage:         storage,
 		SubsysName:      "modem",
 		FirmwareVersion: cached.Rev,
 	}, true
@@ -515,11 +533,22 @@ func (h *LogsHandler) queryLiveSubsys() *ModemSubsysData {
 
 	crashes := h.countCrashes()
 
+	storage := platform.GetStorageStats("/usrdata")
+	if storage == nil {
+		storage = platform.GetStorageStats("/")
+	}
+
+	stateRaw := "ONLINE"
 	return &ModemSubsysData{
 		State:              "online",
+		StateRaw:           &stateRaw,
 		CrashCount:         &crashes,
+		CoredumpPresent:    false,
 		LastCrashTimestamp: nil,
+		LastCrashAt:        nil,
+		TotalLoggedCrashes: crashes,
 		UptimeSecs:         int64(metrics.UptimeSeconds),
+		UptimeSeconds:      metrics.UptimeSeconds,
 		CPU: CPUStats{
 			UsagePercent: metrics.CPUUsage,
 			Cores:        runtime.NumCPU(),
@@ -532,6 +561,7 @@ func (h *LogsHandler) queryLiveSubsys() *ModemSubsysData {
 			FreeMB:      freeMB,
 			AvailableMB: availMB,
 		},
+		Storage:         storage,
 		SubsysName:      "modem",
 		FirmwareVersion: "SDX55",
 	}

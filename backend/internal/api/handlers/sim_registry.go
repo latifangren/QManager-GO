@@ -6,35 +6,49 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
+
+	"qmanager/internal/telemetry"
 )
 
 var (
 	SimRegistryPath = "/etc/qmanager/known_sims.json"
 )
 
-// KnownSIMEntry represents an entry in known_sims.json.
+// KnownSIMEntry represents an entry in known_sims.json and sim_registry.sh spec.
 type KnownSIMEntry struct {
 	ICCID       string `json:"iccid"`
 	Carrier     string `json:"carrier"`
-	Label       string `json:"label"`
+	Label       string `json:"label,omitempty"`
 	ProfileID   string `json:"profile_id,omitempty"`
-	LastSeenTs  int64  `json:"last_seen_ts"`
+	PhoneNumber string `json:"phone_number"`
+	FirstSeen   string `json:"first_seen"`
+	Dismissed   bool   `json:"dismissed"`
+	Active      bool   `json:"active"`
+	LastSeenTs  int64  `json:"last_seen_ts,omitempty"`
 }
 
 // SimRegistryHandler handles SIM registry queries and updates.
 type SimRegistryHandler struct {
-	mu   sync.Mutex
-	path string
+	mu     sync.Mutex
+	path   string
+	poller *telemetry.Poller
 }
 
 // NewSimRegistryHandler creates a new SimRegistryHandler.
-func NewSimRegistryHandler(optionalPath ...string) *SimRegistryHandler {
+func NewSimRegistryHandler(params ...interface{}) *SimRegistryHandler {
 	path := SimRegistryPath
-	if len(optionalPath) > 0 && optionalPath[0] != "" {
-		path = optionalPath[0]
+	var p *telemetry.Poller
+	for _, arg := range params {
+		if s, ok := arg.(string); ok && s != "" {
+			path = s
+		} else if pol, ok := arg.(*telemetry.Poller); ok {
+			p = pol
+		}
 	}
 	return &SimRegistryHandler{
-		path: path,
+		path:   path,
+		poller: p,
 	}
 }
 
@@ -52,6 +66,43 @@ func (h *SimRegistryHandler) HandleRegistry(w http.ResponseWriter, r *http.Reque
 
 	if r.Method == http.MethodGet {
 		sims := h.loadLocked()
+
+		// Auto-populate active SIM from poller if registry is empty
+		if h.poller != nil {
+			status := h.poller.GetStatus()
+			if status != nil && status.ICCID != "" {
+				activeICCID := status.ICCID
+				carrier := status.Carrier
+				phone := status.PhoneNumber
+
+				found := false
+				for i, s := range sims {
+					if s.ICCID == activeICCID {
+						sims[i].Active = true
+						if sims[i].Carrier == "" {
+							sims[i].Carrier = carrier
+						}
+						found = true
+					} else {
+						sims[i].Active = false
+					}
+				}
+				if !found {
+					newEntry := KnownSIMEntry{
+						ICCID:       activeICCID,
+						Carrier:     carrier,
+						PhoneNumber: phone,
+						FirstSeen:   time.Now().UTC().Format(time.RFC3339),
+						Dismissed:   false,
+						Active:      true,
+						LastSeenTs:  time.Now().Unix(),
+					}
+					sims = append([]KnownSIMEntry{newEntry}, sims...)
+					_ = h.saveLocked(sims)
+				}
+			}
+		}
+
 		JSON(w, http.StatusOK, map[string]interface{}{
 			"success": true,
 			"sims":    sims,
@@ -61,9 +112,9 @@ func (h *SimRegistryHandler) HandleRegistry(w http.ResponseWriter, r *http.Reque
 
 	if r.Method == http.MethodPost {
 		var payload struct {
-			Action string          `json:"action"`
-			SIM    KnownSIMEntry   `json:"sim"`
-			ICCID  string          `json:"iccid"`
+			Action string        `json:"action"`
+			SIM    KnownSIMEntry `json:"sim"`
+			ICCID  string        `json:"iccid"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -73,6 +124,27 @@ func (h *SimRegistryHandler) HandleRegistry(w http.ResponseWriter, r *http.Reque
 
 		sims := h.loadLocked()
 		switch payload.Action {
+		case "dismiss":
+			for i, s := range sims {
+				if s.ICCID == payload.ICCID {
+					sims[i].Dismissed = true
+					break
+				}
+			}
+			_ = h.saveLocked(sims)
+			Success(w, map[string]interface{}{"success": true, "message": "SIM dismissed"})
+		case "undismiss":
+			for i, s := range sims {
+				if s.ICCID == payload.ICCID {
+					sims[i].Dismissed = false
+					break
+				}
+			}
+			_ = h.saveLocked(sims)
+			Success(w, map[string]interface{}{"success": true, "message": "SIM restored"})
+		case "clear", "clear_registry":
+			_ = h.saveLocked([]KnownSIMEntry{})
+			Success(w, map[string]interface{}{"success": true, "message": "SIM registry cleared", "registry_cleared": true})
 		case "save", "update":
 			found := false
 			for i, s := range sims {
