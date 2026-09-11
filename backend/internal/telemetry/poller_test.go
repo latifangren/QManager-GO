@@ -107,8 +107,8 @@ func TestPoller_TransitionStates(t *testing.T) {
 	if sLimsrv.Online {
 		t.Errorf("expected Online=false for LIMSRV state")
 	}
-	if sLimsrv.Network.ServiceStatus != "limited_service" {
-		t.Errorf("expected ServiceStatus='limited_service', got %q", sLimsrv.Network.ServiceStatus)
+	if sLimsrv.Network.ServiceStatus != "limited" {
+		t.Errorf("expected ServiceStatus='limited', got %q", sLimsrv.Network.ServiceStatus)
 	}
 
 	// 3. Empty / Malformed servingcell
@@ -136,8 +136,8 @@ func TestPoller_TransitionStates(t *testing.T) {
 	if sNR.Cell.ENodeBID != 0x68 || sNR.Cell.SectorID != 0x2B3C {
 		t.Errorf("expected 5G cell id 1A2B3C -> gnodeb=0x68, sector=0x2B3C, got enodeb=%X, sector=%X", sNR.Cell.ENodeBID, sNR.Cell.SectorID)
 	}
-	if sNR.Network.ServiceStatus != "excellent" {
-		t.Errorf("expected ServiceStatus='excellent', got %q", sNR.Network.ServiceStatus)
+	if sNR.Network.ServiceStatus != "connected" {
+		t.Errorf("expected ServiceStatus='connected', got %q", sNR.Network.ServiceStatus)
 	}
 }
 

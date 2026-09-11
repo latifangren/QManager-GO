@@ -360,3 +360,87 @@ func TestParseCSVLine(t *testing.T) {
 		}
 	}
 }
+
+func TestParseQENGServingCell_MultilineRG501Q(t *testing.T) {
+	raw := `+QENG: "servingcell","NOCONN"
++QENG: "LTE","FDD",510,09,B767015,418,9285,28,4,4,CD85,-104,-13,-74,10,8,200,-
++QENG: "NR5G-NSA",510,09,357,-110,-4,-17,504990,41,7,1
+
+OK`
+	info := ParseQENGServingCell(raw)
+	if info == nil {
+		t.Fatalf("expected non-nil CellInfo")
+	}
+	if info.State != "NOCONN" {
+		t.Errorf("expected State=NOCONN, got %s", info.State)
+	}
+	if info.Mode != "NR5G-NSA" {
+		t.Errorf("expected Mode=NR5G-NSA, got %s", info.Mode)
+	}
+	if info.Band != "B28" {
+		t.Errorf("expected Band=B28, got %s", info.Band)
+	}
+	if info.PCID != 418 {
+		t.Errorf("expected PCID=418, got %d", info.PCID)
+	}
+	if info.EARFCN != 9285 {
+		t.Errorf("expected EARFCN=9285, got %d", info.EARFCN)
+	}
+	if info.RSRP != -104 || info.RSRQ != -13 || info.SINR != 10 {
+		t.Errorf("LTE signal mismatch: RSRP=%d, RSRQ=%d, SINR=%d", info.RSRP, info.RSRQ, info.SINR)
+	}
+	if !info.HasNR5GNSA {
+		t.Errorf("expected HasNR5GNSA=true")
+	}
+	if info.NR5GBand != "n41" {
+		t.Errorf("expected NR5GBand=n41, got %s", info.NR5GBand)
+	}
+	if info.NR5GARFCN != 504990 {
+		t.Errorf("expected NR5GARFCN=504990, got %d", info.NR5GARFCN)
+	}
+	if info.NR5GPCI != 357 {
+		t.Errorf("expected NR5GPCI=357, got %d", info.NR5GPCI)
+	}
+	if info.NR5GRSRP != -110 || info.NR5GSINR != -4 || info.NR5GRSRQ != -17 {
+		t.Errorf("NR signal mismatch: RSRP=%d, SINR=%d, RSRQ=%d", info.NR5GRSRP, info.NR5GSINR, info.NR5GRSRQ)
+	}
+	if info.NR5GSCS != "30kHz" {
+		t.Errorf("expected NR5GSCS=30kHz, got %s", info.NR5GSCS)
+	}
+}
+
+func TestParseHelperFunctions(t *testing.T) {
+	copsRaw := `+COPS: 0,0,"Smartfren Jagoan Sinyal  Smartfren",13`
+	if got := ParseCOPS(copsRaw); got != "Smartfren Jagoan Sinyal  Smartfren" {
+		t.Errorf("ParseCOPS got %q, want %q", got, "Smartfren Jagoan Sinyal  Smartfren")
+	}
+
+	cpinRaw := `+CPIN: READY`
+	if got := ParseCPIN(cpinRaw); got != "READY" {
+		t.Errorf("ParseCPIN got %q, want %q", got, "READY")
+	}
+
+	cgsnRaw := "\r\n869710030002905\r\n\r\nOK\r\n"
+	if got := ParseCGSN(cgsnRaw); got != "869710030002905" {
+		t.Errorf("ParseCGSN got %q, want %q", got, "869710030002905")
+	}
+
+	cimiRaw := "\r\n510283064616102\r\n\r\nOK\r\n"
+	if got := ParseCIMI(cimiRaw); got != "510283064616102" {
+		t.Errorf("ParseCIMI got %q, want %q", got, "510283064616102")
+	}
+
+	qccidRaw := `+QCCID: 89622868003820695237`
+	if got := ParseQCCID(qccidRaw); got != "89622868003820695237" {
+		t.Errorf("ParseQCCID got %q, want %q", got, "89622868003820695237")
+	}
+
+	qrsrpRaw := "+QRSRP: -104,-112,-32768,-32768,LTE\r\n+QRSRP: -98,-108,-115,-95,NR5G\r\n"
+	lte, nr := ParseAntennaSignals(qrsrpRaw, "QRSRP")
+	if len(lte) != 4 || *lte[0] != -104 || *lte[1] != -112 || lte[2] != nil || lte[3] != nil {
+		t.Errorf("ParseAntennaSignals LTE failed: %+v", lte)
+	}
+	if len(nr) != 4 || *nr[0] != -98 || *nr[1] != -108 || *nr[2] != -115 || *nr[3] != -95 {
+		t.Errorf("ParseAntennaSignals NR failed: %+v", nr)
+	}
+}

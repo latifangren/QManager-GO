@@ -3,12 +3,14 @@ package platform
 import (
 	"bufio"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var (
@@ -30,6 +32,7 @@ type NetworkStats struct {
 // SystemMetrics holds memory, CPU temperature, and uptime metrics.
 type SystemMetrics struct {
 	UptimeSeconds float64                 `json:"uptime_seconds"`
+	CPUUsage      float64                 `json:"cpu_usage"`
 	MemTotalKB    uint64                  `json:"mem_total_kb"`
 	MemFreeKB     uint64                  `json:"mem_free_kb"`
 	MemAvailKB    uint64                  `json:"mem_available_kb"`
@@ -186,6 +189,81 @@ func ReadNetworkStats(path string) (map[string]NetworkStats, error) {
 	return stats, nil
 }
 
+var (
+	prevCPUTotal uint64
+	prevCPUIdle  uint64
+	cpuMu        sync.Mutex
+)
+
+// ReadCPUUsage calculates CPU usage percentage from /proc/stat.
+func ReadCPUUsage(path string) float64 {
+	if path == "" {
+		path = "/proc/stat"
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	if !scanner.Scan() {
+		return 0
+	}
+	fields := strings.Fields(scanner.Text())
+	if len(fields) < 5 || fields[0] != "cpu" {
+		return 0
+	}
+
+	var user, nice, system, idle, iowait, irq, softirq, steal uint64
+	user, _ = strconv.ParseUint(fields[1], 10, 64)
+	nice, _ = strconv.ParseUint(fields[2], 10, 64)
+	system, _ = strconv.ParseUint(fields[3], 10, 64)
+	idle, _ = strconv.ParseUint(fields[4], 10, 64)
+	if len(fields) > 5 {
+		iowait, _ = strconv.ParseUint(fields[5], 10, 64)
+	}
+	if len(fields) > 6 {
+		irq, _ = strconv.ParseUint(fields[6], 10, 64)
+	}
+	if len(fields) > 7 {
+		softirq, _ = strconv.ParseUint(fields[7], 10, 64)
+	}
+	if len(fields) > 8 {
+		steal, _ = strconv.ParseUint(fields[8], 10, 64)
+	}
+
+	total := user + nice + system + idle + iowait + irq + softirq + steal
+	idleAll := idle + iowait
+
+	cpuMu.Lock()
+	defer cpuMu.Unlock()
+
+	if prevCPUTotal == 0 {
+		prevCPUTotal = total
+		prevCPUIdle = idleAll
+		return 0
+	}
+
+	diffTotal := total - prevCPUTotal
+	diffIdle := idleAll - prevCPUIdle
+
+	prevCPUTotal = total
+	prevCPUIdle = idleAll
+
+	if diffTotal == 0 {
+		return 0
+	}
+
+	usage := float64(diffTotal-diffIdle) * 100.0 / float64(diffTotal)
+	if usage < 0 {
+		usage = 0
+	} else if usage > 100 {
+		usage = 100
+	}
+	return math.Round(usage)
+}
+
 // GetSystemMetrics compiles all system status counters into one object.
 func GetSystemMetrics() SystemMetrics {
 	m := SystemMetrics{
@@ -193,10 +271,11 @@ func GetSystemMetrics() SystemMetrics {
 	}
 
 	m.UptimeSeconds, _ = ReadUptime("")
+	m.CPUUsage = ReadCPUUsage("")
 	m.MemTotalKB, m.MemFreeKB, m.MemAvailKB, _ = ReadMemInfo("")
 	if m.MemTotalKB > 0 {
 		used := m.MemTotalKB - m.MemAvailKB
-		m.MemUsagePct = (float64(used) / float64(m.MemTotalKB)) * 100.0
+		m.MemUsagePct = math.Round((float64(used)/float64(m.MemTotalKB))*1000.0) / 10.0
 	}
 	m.CpuTempC = ReadCpuTemp()
 	if net, err := ReadNetworkStats(""); err == nil {

@@ -25,6 +25,17 @@ type CellInfo struct {
 	SINR         int    `json:"sinr"`         // Signal to Interference plus Noise Ratio (dB)
 	CQI          int    `json:"cqi"`          // Channel Quality Indicator
 	TAC          string `json:"tac"`          // Tracking Area Code (Hex)
+
+	// 5G NSA Secondary Carrier Info (when in EN-DC / NR5G-NSA)
+	HasNR5GNSA bool   `json:"has_nr5g_nsa"`
+	NR5GState  string `json:"nr5g_state,omitempty"`
+	NR5GBand   string `json:"nr5g_band,omitempty"`
+	NR5GARFCN  int    `json:"nr5g_arfcn,omitempty"`
+	NR5GPCI    int    `json:"nr5g_pci,omitempty"`
+	NR5GRSRP   int    `json:"nr5g_rsrp,omitempty"`
+	NR5GRSRQ   int    `json:"nr5g_rsrq,omitempty"`
+	NR5GSINR   int    `json:"nr5g_sinr,omitempty"`
+	NR5GSCS    string `json:"nr5g_scs,omitempty"`
 }
 
 // CarrierComponent represents a component carrier in CA matching both frontend and backend contracts.
@@ -51,117 +62,202 @@ type SignalQuality struct {
 	RSRPDbm int `json:"rssi_dbm"`
 }
 
-// ParseQENGServingCell parses `+QENG: "servingcell",...` lines.
+// ParseQENGServingCell parses `+QENG: "servingcell",...` lines (both single-line and multi-line NSA).
 func ParseQENGServingCell(raw string) *CellInfo {
-	idx := strings.Index(raw, "+QENG: \"servingcell\",")
-	if idx == -1 {
-		idx = strings.Index(raw, "+QENG: \"servingcell\"")
-		if idx == -1 {
-			return nil
-		}
-	}
-	line := raw[idx:]
-	if end := strings.IndexByte(line, '\r'); end != -1 {
-		line = line[:end]
-	} else if end := strings.IndexByte(line, '\n'); end != -1 {
-		line = line[:end]
-	}
-	line = strings.TrimSpace(line)
-
-	prefix := "+QENG: \"servingcell\","
-	var content string
-	if strings.HasPrefix(line, prefix) {
-		content = line[len(prefix):]
-	} else {
-		content = strings.TrimPrefix(line, "+QENG: \"servingcell\"")
-		content = strings.TrimPrefix(content, ",")
-	}
-
-	parts := parseCSVLine(content)
-	if len(parts) == 0 {
+	if strings.TrimSpace(raw) == "" || strings.Contains(raw, "ERROR") {
 		return nil
 	}
 
-	info := &CellInfo{
-		State: parts[0],
-	}
-	if len(parts) > 1 {
-		info.Mode = parts[1]
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	var scLine, lteLine, nrNsaLine string
+
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, `+QENG: "servingcell"`) || strings.HasPrefix(l, `+QENG: servingcell`) {
+			scLine = l
+		} else if strings.HasPrefix(l, `+QENG: "LTE"`) || strings.HasPrefix(l, `+QENG: LTE`) {
+			lteLine = l
+		} else if strings.HasPrefix(l, `+QENG: "NR5G-NSA"`) || strings.HasPrefix(l, `+QENG: NR5G-NSA`) {
+			nrNsaLine = l
+		}
 	}
 
-	if info.State == "SEARCH" || info.State == "LIMSRV" {
-		return info
+	// If no line matched with prefixes, try fallback finding "+QENG: \"servingcell\""
+	if scLine == "" && lteLine == "" && nrNsaLine == "" {
+		idx := strings.Index(raw, `+QENG: "servingcell"`)
+		if idx == -1 {
+			return nil
+		}
+		scLine = raw[idx:]
+		if end := strings.IndexAny(scLine, "\r\n"); end != -1 {
+			scLine = scLine[:end]
+		}
 	}
 
-	if len(parts) < 3 {
-		return info
-	}
+	info := &CellInfo{}
 
-	switch info.Mode {
-	case "LTE", "eMMT", "NB-IoT":
-		// LTE: "CONNECT"/"NOCONN", "LTE", is_tdd, mcc, mnc, cellid, pcid, earfcn, freq_band_ind, ul_bandwidth, dl_bandwidth, tac, rsrp, rsrq, rssi, sinr, cqi, tx_power, srxlev
-		if len(parts) >= 16 {
-			info.Duplex = parts[2]
-			info.MCC = parts[3]
-			info.MNC = parts[4]
-			info.CellID = parts[5]
-			info.PCID, _ = strconv.Atoi(parts[6])
-			info.EARFCN, _ = strconv.Atoi(parts[7])
-			info.Band = "B" + parts[8]
-			info.ULBandwidth = parts[9]
-			info.DLBandwidth = parts[10]
-			info.Bandwidth = parts[10]
-			info.TAC = parts[11]
-			info.RSRP, _ = strconv.Atoi(parts[12])
-			info.RSRQ, _ = strconv.Atoi(parts[13])
-			info.RSSI, _ = strconv.Atoi(parts[14])
-			info.SINR, _ = strconv.Atoi(parts[15])
-			if len(parts) >= 17 {
-				info.CQI, _ = strconv.Atoi(parts[16])
+	// 1. Process servingcell line
+	if scLine != "" {
+		prefix := `+QENG: "servingcell",`
+		var content string
+		if strings.HasPrefix(scLine, prefix) {
+			content = scLine[len(prefix):]
+		} else {
+			content = strings.TrimPrefix(scLine, `+QENG: "servingcell"`)
+			content = strings.TrimPrefix(content, ",")
+		}
+
+		parts := parseCSVLine(content)
+		if len(parts) > 0 && parts[0] != "" {
+			info.State = parts[0]
+		} else if lteLine == "" && nrNsaLine == "" {
+			return nil
+		}
+		if len(parts) > 1 {
+			info.Mode = parts[1]
+		}
+
+		if info.State == "SEARCH" || info.State == "LIMSRV" {
+			return info
+		}
+
+		// Single-line format (e.g. +QENG: "servingcell","NOCONN","LTE","FDD",...)
+		if len(parts) >= 3 {
+			switch info.Mode {
+			case "LTE", "eMMT", "NB-IoT":
+				if len(parts) >= 16 {
+					info.Duplex = parts[2]
+					info.MCC = parts[3]
+					info.MNC = parts[4]
+					info.CellID = parts[5]
+					info.PCID, _ = strconv.Atoi(parts[6])
+					info.EARFCN, _ = strconv.Atoi(parts[7])
+					info.Band = "B" + parts[8]
+					info.ULBandwidth = parts[9]
+					info.DLBandwidth = parts[10]
+					info.Bandwidth = parts[10]
+					info.TAC = parts[11]
+					info.RSRP, _ = strconv.Atoi(parts[12])
+					info.RSRQ, _ = strconv.Atoi(parts[13])
+					info.RSSI, _ = strconv.Atoi(parts[14])
+					info.SINR, _ = strconv.Atoi(parts[15])
+					if len(parts) >= 17 {
+						info.CQI, _ = strconv.Atoi(parts[16])
+					}
+				}
+			case "NR5G-SA":
+				if len(parts) >= 14 {
+					info.Duplex = parts[2]
+					info.MCC = parts[3]
+					info.MNC = parts[4]
+					info.CellID = parts[5]
+					info.PCID, _ = strconv.Atoi(parts[6])
+					info.TAC = parts[7]
+					info.EARFCN, _ = strconv.Atoi(parts[8])
+					info.Band = "n" + parts[9]
+					info.DLBandwidth = parts[10]
+					info.Bandwidth = parts[10]
+					info.RSRP, _ = strconv.Atoi(parts[11])
+					info.RSRQ, _ = strconv.Atoi(parts[12])
+					info.SINR, _ = strconv.Atoi(parts[13])
+				}
+			case "NR5G-NSA":
+				if len(parts) >= 10 {
+					info.MCC = parts[2]
+					info.MNC = parts[3]
+					info.PCID, _ = strconv.Atoi(parts[4])
+					info.RSRP, _ = strconv.Atoi(parts[5])
+					info.SINR, _ = strconv.Atoi(parts[6])
+					info.RSRQ, _ = strconv.Atoi(parts[7])
+					info.EARFCN, _ = strconv.Atoi(parts[8])
+					info.Band = "n" + parts[9]
+					if len(parts) >= 11 {
+						info.DLBandwidth = parts[10]
+						info.Bandwidth = parts[10]
+					}
+				}
+			case "WCDMA":
+				if len(parts) >= 10 {
+					info.MCC = parts[2]
+					info.MNC = parts[3]
+					info.TAC = parts[4]
+					info.CellID = parts[5]
+					info.EARFCN, _ = strconv.Atoi(parts[6])
+					info.PCID, _ = strconv.Atoi(parts[7])
+					info.RSRP, _ = strconv.Atoi(parts[9])
+				}
 			}
 		}
-	case "NR5G-SA":
-		// NR5G-SA: "CONNECT"/"NOCONN", "NR5G-SA", is_tdd, mcc, mnc, cellid, pcid, tac, arfcn, band, nr_dl_bandwidth, rsrp, rsrq, sinr, tx_power, srxlev
-		if len(parts) >= 14 {
-			info.Duplex = parts[2]
-			info.MCC = parts[3]
-			info.MNC = parts[4]
-			info.CellID = parts[5]
-			info.PCID, _ = strconv.Atoi(parts[6])
-			info.TAC = parts[7]
-			info.EARFCN, _ = strconv.Atoi(parts[8])
-			info.Band = "n" + parts[9]
-			info.DLBandwidth = parts[10]
-			info.Bandwidth = parts[10]
+	}
+
+	// 2. Parse multi-line LTE line: +QENG: "LTE","FDD",510,09,B767015,418,9285,28,4,4,CD85,-104,-13,-74,10,8,200,-
+	if lteLine != "" {
+		content := strings.TrimPrefix(lteLine, `+QENG: `)
+		parts := parseCSVLine(content)
+		if len(parts) >= 15 && parts[0] == "LTE" {
+			info.Mode = "LTE"
+			info.Duplex = parts[1]
+			info.MCC = parts[2]
+			info.MNC = parts[3]
+			info.CellID = parts[4]
+			info.PCID, _ = strconv.Atoi(parts[5])
+			info.EARFCN, _ = strconv.Atoi(parts[6])
+			info.Band = "B" + parts[7]
+			info.ULBandwidth = parts[8]
+			info.DLBandwidth = parts[9]
+			info.Bandwidth = parts[9]
+			info.TAC = parts[10]
 			info.RSRP, _ = strconv.Atoi(parts[11])
 			info.RSRQ, _ = strconv.Atoi(parts[12])
-			info.SINR, _ = strconv.Atoi(parts[13])
-		}
-	case "NR5G-NSA":
-		// NR5G-NSA: "CONNECT"/"NOCONN", "NR5G-NSA", mcc, mnc, pcid, rsrp, sinr, rsrq, arfcn, band, nr_dl_bandwidth
-		if len(parts) >= 10 {
-			info.MCC = parts[2]
-			info.MNC = parts[3]
-			info.PCID, _ = strconv.Atoi(parts[4])
-			info.RSRP, _ = strconv.Atoi(parts[5])
-			info.SINR, _ = strconv.Atoi(parts[6])
-			info.RSRQ, _ = strconv.Atoi(parts[7])
-			info.EARFCN, _ = strconv.Atoi(parts[8])
-			info.Band = "n" + parts[9]
-			if len(parts) >= 11 {
-				info.DLBandwidth = parts[10]
-				info.Bandwidth = parts[10]
+			info.RSSI, _ = strconv.Atoi(parts[13])
+			info.SINR, _ = strconv.Atoi(parts[14])
+			if len(parts) >= 16 {
+				info.CQI, _ = strconv.Atoi(parts[15])
 			}
 		}
-	case "WCDMA":
-		if len(parts) >= 10 {
-			info.MCC = parts[2]
-			info.MNC = parts[3]
-			info.TAC = parts[4]
-			info.CellID = parts[5]
-			info.EARFCN, _ = strconv.Atoi(parts[6])
-			info.PCID, _ = strconv.Atoi(parts[7])
-			info.RSRP, _ = strconv.Atoi(parts[9])
+	}
+
+	// 3. Parse multi-line NR5G-NSA line: +QENG: "NR5G-NSA",510,09,357,-110,-4,-17,504990,41,7,1
+	if nrNsaLine != "" {
+		content := strings.TrimPrefix(nrNsaLine, `+QENG: `)
+		parts := parseCSVLine(content)
+		if len(parts) >= 9 && parts[0] == "NR5G-NSA" {
+			info.HasNR5GNSA = true
+			info.NR5GState = "connected"
+			if info.State == "NOCONN" {
+				info.NR5GState = "idle"
+			}
+			info.NR5GPCI, _ = strconv.Atoi(parts[3])
+			info.NR5GRSRP, _ = strconv.Atoi(parts[4])
+			info.NR5GSINR, _ = strconv.Atoi(parts[5])
+			info.NR5GRSRQ, _ = strconv.Atoi(parts[6])
+			info.NR5GARFCN, _ = strconv.Atoi(parts[7])
+			info.NR5GBand = "n" + parts[8]
+			if len(parts) >= 11 {
+				switch parts[10] {
+				case "0":
+					info.NR5GSCS = "15kHz"
+				case "1":
+					info.NR5GSCS = "30kHz"
+				case "2":
+					info.NR5GSCS = "60kHz"
+				case "3":
+					info.NR5GSCS = "120kHz"
+				case "4":
+					info.NR5GSCS = "240kHz"
+				default:
+					info.NR5GSCS = parts[10]
+				}
+			}
+			info.Mode = "NR5G-NSA"
+		}
+	}
+
+	if info.State == "" {
+		if lteLine != "" || nrNsaLine != "" {
+			info.State = "NOCONN"
+		} else if info.Mode == "" {
+			return nil
 		}
 	}
 
@@ -564,4 +660,170 @@ func parseCSVLine(line string) []string {
 	}
 
 	return parts
+}
+
+// ParseCOPS extracts operator/carrier name from `+COPS: ...` response.
+// Example: `+COPS: 0,0,"Smartfren Jagoan Sinyal  Smartfren",13` -> "Smartfren Jagoan Sinyal  Smartfren"
+func ParseCOPS(raw string) string {
+	idx := strings.Index(raw, `+COPS:`)
+	if idx == -1 {
+		return ""
+	}
+	line := raw[idx:]
+	if end := strings.IndexAny(line, "\r\n"); end != -1 {
+		line = line[:end]
+	}
+	firstQuote := strings.IndexByte(line, '"')
+	if firstQuote == -1 {
+		return ""
+	}
+	secondQuote := strings.IndexByte(line[firstQuote+1:], '"')
+	if secondQuote == -1 {
+		return ""
+	}
+	return strings.TrimSpace(line[firstQuote+1 : firstQuote+1+secondQuote])
+}
+
+// ParseCPIN extracts SIM PIN status from `+CPIN: ...` response.
+// Example: `+CPIN: READY` -> "READY"
+func ParseCPIN(raw string) string {
+	idx := strings.Index(raw, `+CPIN:`)
+	if idx == -1 {
+		return ""
+	}
+	line := raw[idx:]
+	if end := strings.IndexAny(line, "\r\n"); end != -1 {
+		line = line[:end]
+	}
+	val := strings.TrimPrefix(line, `+CPIN:`)
+	return strings.TrimSpace(val)
+}
+
+// ParseCGSN extracts 15-digit IMEI from `AT+CGSN` or `AT+GSN` response.
+func ParseCGSN(raw string) string {
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if len(l) >= 14 && len(l) <= 17 && !strings.Contains(l, "OK") && !strings.Contains(l, "AT") {
+			return l
+		}
+	}
+	return ""
+}
+
+// ParseCIMI extracts IMSI from `AT+CIMI` response.
+func ParseCIMI(raw string) string {
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if len(l) >= 14 && len(l) <= 16 && !strings.Contains(l, "OK") && !strings.Contains(l, "AT") {
+			return l
+		}
+	}
+	return ""
+}
+
+// ParseQCCID extracts ICCID from `+QCCID: ...` response.
+func ParseQCCID(raw string) string {
+	idx := strings.Index(raw, `+QCCID:`)
+	if idx != -1 {
+		line := raw[idx:]
+		if end := strings.IndexAny(line, "\r\n"); end != -1 {
+			line = line[:end]
+		}
+		val := strings.TrimPrefix(line, `+QCCID:`)
+		return strings.TrimSpace(val)
+	}
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if len(l) >= 18 && len(l) <= 22 && !strings.Contains(l, "OK") && !strings.Contains(l, "AT") {
+			return l
+		}
+	}
+	return ""
+}
+
+// ParseAntennaSignals parses `+QRSRP: ...`, `+QRSRQ: ...`, `+QSINR: ...` lines into 4-element integer pointers.
+// Sentinel -32768 is mapped to nil.
+// Example: `+QRSRP: -104,-112,-32768,-32768,LTE` -> lte = [-104, -112, nil, nil]
+func ParseAntennaSignals(raw string, prefix string) (lte []*int, nr []*int) {
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	targetPrefix := "+" + prefix + ":"
+
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if !strings.HasPrefix(l, targetPrefix) {
+			continue
+		}
+		content := strings.TrimSpace(strings.TrimPrefix(l, targetPrefix))
+		parts := strings.Split(content, ",")
+		if len(parts) < 4 {
+			continue
+		}
+
+		vals := make([]*int, 4)
+		for i := 0; i < 4; i++ {
+			if i < len(parts) {
+				s := strings.TrimSpace(parts[i])
+				if n, err := strconv.Atoi(s); err == nil {
+					if n != -32768 {
+						val := n
+						vals[i] = &val
+					}
+				}
+			}
+		}
+
+		rat := "LTE"
+		if len(parts) >= 5 {
+			rat = strings.ToUpper(strings.TrimSpace(parts[4]))
+		}
+
+		if strings.Contains(rat, "NR") {
+			nr = vals
+		} else {
+			lte = vals
+		}
+	}
+	return lte, nr
+}
+
+// ParseCFUN parses `+CFUN: <n>` response. Returns 1 by default.
+func ParseCFUN(raw string) int {
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "+CFUN:") {
+			valStr := strings.TrimSpace(strings.TrimPrefix(l, "+CFUN:"))
+			if v, err := strconv.Atoi(valStr); err == nil {
+				return v
+			}
+		}
+	}
+	return 1
+}
+
+// ParseTimeAdvance parses `+QNWCFG: "lte_time_advance",1,<ta>` or `+QNWCFG: "nr5g_time_advance",1,<nta>,...`
+func ParseTimeAdvance(raw string, isNR bool) *int {
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if !strings.Contains(l, "time_advance") {
+			continue
+		}
+		parts := parseCSVLine(l)
+		// Example: "+QNWCFG: "lte_time_advance", 1, 1344" -> len 3
+		if len(parts) >= 3 {
+			valStr := strings.TrimSpace(parts[2])
+			if val, err := strconv.Atoi(valStr); err == nil && val > 0 {
+				if !isNR && val > 1282 {
+					// 3GPP 36.213: If modem returns NTA (multiple of 16), convert to TA index (0..1282)
+					val = val / 16
+				}
+				return &val
+			}
+		}
+	}
+	return nil
 }

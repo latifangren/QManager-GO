@@ -230,8 +230,11 @@ const DeviceMetricsComponent = ({
     unreachable || temp === null
       ? ABSENT
       : formatTemperature(temp, unitPrefs?.tempUnit);
-  const cpuValue = cpu !== null ? `${cpu}%` : ABSENT;
-  const memValue = memTotal > 0 ? `${memUsed} MB / ${memTotal} MB` : ABSENT;
+  const cpuValue = cpu !== null ? `${Math.round(cpu)}%` : ABSENT;
+  const memValue =
+    memTotal > 0
+      ? `${Math.round(memUsed)} MB / ${Math.round(memTotal)} MB`
+      : ABSENT;
   const storageValue =
     storageTotalKb > 0
       ? `${formatBytes(storageUsedKb * 1024)} / ${formatBytes(storageTotalKb * 1024)}`
@@ -429,6 +432,7 @@ const DeviceMetricsComponent = ({
               {formatBytes(dataUsed?.accumulated_rx_bytes ?? 0)}
             </TickingValue>
           </span>
+          <span className="text-on-surface-variant/40 select-none">/</span>
           <span className={cn(VALUE_CLASS, "flex items-center gap-1")}>
             <MaterialSymbol
               name="arrow_circle_up"

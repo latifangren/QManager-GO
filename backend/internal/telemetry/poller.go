@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -22,9 +23,12 @@ type SignalAntenna struct {
 
 // SignalPerAntenna holds per-antenna arrays.
 type SignalPerAntenna struct {
-	RSRP []int `json:"rsrp"`
-	RSRQ []int `json:"rsrq"`
-	SINR []int `json:"sinr"`
+	LteRSRP []*int `json:"lte_rsrp"`
+	LteRSRQ []*int `json:"lte_rsrq"`
+	LteSINR []*int `json:"lte_sinr"`
+	NrRSRP  []*int `json:"nr_rsrp"`
+	NrRSRQ  []*int `json:"nr_rsrq"`
+	NrSINR  []*int `json:"nr_sinr"`
 }
 
 // SignalObject represents the nested signal metrics.
@@ -51,6 +55,8 @@ type NetworkObject struct {
 	APN                string                      `json:"apn"`
 	IPAddress          string                      `json:"ip_address"`
 	IPv6Address        string                      `json:"ipv6_address"`
+	WanIPv4            string                      `json:"wan_ipv4"`
+	WanIPv6            string                      `json:"wan_ipv6"`
 	DNSServers         []string                    `json:"dns_servers"`
 	PrimaryDNS         string                      `json:"primary_dns"`
 	SecondaryDNS       string                      `json:"secondary_dns"`
@@ -198,12 +204,16 @@ type ConnectivityObject struct {
 type ModemStatus struct {
 	// Root flat fields
 	Timestamp          int64                       `json:"timestamp"`
+	ModemReachable     bool                        `json:"modem_reachable"`
+	LastSuccessfulPoll int64                       `json:"last_successful_poll"`
+	Errors             []string                    `json:"errors"`
 	Online             bool                        `json:"online"`
 	SystemState        string                      `json:"system_state"`
 	Mode               string                      `json:"mode"`
 	MCC                string                      `json:"mcc"`
 	MNC                string                      `json:"mnc"`
 	Operator           string                      `json:"operator"`
+	Carrier            string                      `json:"carrier"`
 	CellID             string                      `json:"cell_id"`
 	PCID               int                         `json:"pcid"`
 	EARFCN             int                         `json:"earfcn"`
@@ -239,13 +249,27 @@ type ModemStatus struct {
 
 // Poller runs periodic telemetry updates.
 type Poller struct {
-	engine   *atengine.Engine
-	identity platform.Identity
-	interval time.Duration
-	mu       sync.RWMutex
-	current  *ModemStatus
-	stopCh   chan struct{}
-	running  bool
+	engine        *atengine.Engine
+	identity      platform.Identity
+	interval      time.Duration
+	mu            sync.RWMutex
+	current       *ModemStatus
+	stopCh        chan struct{}
+	running       bool
+	connStartTime time.Time
+
+	// Cached identities
+	imei        string
+	imsi        string
+	iccid       string
+	phoneNumber string
+	carrier     string
+	simStatus   string
+	cfun        int
+	lteTA       *int
+	nrTA        *int
+
+	pollCount uint64
 }
 
 // NewPoller initializes a new telemetry poller.
@@ -254,34 +278,42 @@ func NewPoller(eng *atengine.Engine, id platform.Identity, interval time.Duratio
 		interval = 1 * time.Second
 	}
 	return &Poller{
-		engine:   eng,
-		identity: id,
-		interval: interval,
-		stopCh:   make(chan struct{}),
-		current:  newDefaultStatus(id),
+		engine:    eng,
+		identity:  id,
+		interval:  interval,
+		stopCh:    make(chan struct{}),
+		current:   newDefaultStatus(id),
+		simStatus: "ready",
+		cfun:      1,
 	}
 }
 
 func newDefaultStatus(id platform.Identity) *ModemStatus {
 	return &ModemStatus{
-		Timestamp:   time.Now().Unix(),
-		Online:      false,
-		SystemState: "normal",
-		DeviceModel: id.Model,
-		Revision:    id.Revision,
-		Serial:      id.Serial,
+		Timestamp:          time.Now().Unix(),
+		ModemReachable:     true,
+		LastSuccessfulPoll: time.Now().Unix(),
+		Errors:             []string{},
+		Online:             false,
+		SystemState:        "normal",
+		DeviceModel:        id.Model,
+		Revision:           id.Revision,
+		Serial:             id.Serial,
 		Device: DeviceObject{
 			Model:        id.Model,
 			Firmware:     id.Revision,
 			Manufacturer: "Quectel",
 		},
 		Network: NetworkObject{
-			Type:          "LTE",
-			ServiceStatus: "no_service",
+			Type:              "LTE",
+			Tech:              "LTE",
+			ServiceStatus:     "searching",
+			CFUN:              1,
+			SimSlot:           1,
 			CarrierComponents: []atengine.CarrierComponent{},
 		},
 		LTE: LteStatusObject{
-			State: "disconnected",
+			State: "searching",
 		},
 		NR: NrStatusObject{
 			State: "disconnected",
@@ -295,9 +327,12 @@ func newDefaultStatus(id platform.Identity) *ModemStatus {
 			Status: "unknown",
 		},
 		SignalPerAntenna: SignalPerAntenna{
-			RSRP: []int{},
-			RSRQ: []int{},
-			SINR: []int{},
+			LteRSRP: make([]*int, 4),
+			LteRSRQ: make([]*int, 4),
+			LteSINR: make([]*int, 4),
+			NrRSRP:  make([]*int, 4),
+			NrRSRQ:  make([]*int, 4),
+			NrSINR:  make([]*int, 4),
 		},
 	}
 }
@@ -313,6 +348,64 @@ func (p *Poller) Start() {
 	p.mu.Unlock()
 
 	go p.loop()
+}
+
+func (p *Poller) queryIdentities(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+
+	_, _ = p.engine.ExecContext(ctx, `AT+QNWCFG="lte_time_advance",1`)
+	_, _ = p.engine.ExecContext(ctx, `AT+QNWCFG="nr5g_time_advance",1`)
+
+	if res, err := p.engine.ExecContext(ctx, "AT+CFUN?"); err == nil {
+		p.cfun = atengine.ParseCFUN(res.Raw)
+	}
+
+	if res, err := p.engine.ExecContext(ctx, `AT+QNWCFG="lte_time_advance"`); err == nil {
+		if ta := atengine.ParseTimeAdvance(res.Raw, false); ta != nil {
+			p.lteTA = ta
+		}
+	}
+	if res, err := p.engine.ExecContext(ctx, `AT+QNWCFG="nr5g_time_advance"`); err == nil {
+		if nta := atengine.ParseTimeAdvance(res.Raw, true); nta != nil {
+			p.nrTA = nta
+		}
+	}
+
+	if p.imei == "" {
+		if res, err := p.engine.ExecContext(ctx, "AT+CGSN"); err == nil {
+			if imei := atengine.ParseCGSN(res.Raw); imei != "" {
+				p.imei = imei
+			}
+		}
+	}
+	if p.imsi == "" {
+		if res, err := p.engine.ExecContext(ctx, "AT+CIMI"); err == nil {
+			if imsi := atengine.ParseCIMI(res.Raw); imsi != "" {
+				p.imsi = imsi
+			}
+		}
+	}
+	if p.iccid == "" {
+		if res, err := p.engine.ExecContext(ctx, "AT+QCCID"); err == nil {
+			if iccid := atengine.ParseQCCID(res.Raw); iccid != "" {
+				p.iccid = iccid
+			}
+		}
+	}
+	if res, err := p.engine.ExecContext(ctx, "AT+CPIN?"); err == nil {
+		pin := atengine.ParseCPIN(res.Raw)
+		if strings.EqualFold(pin, "READY") {
+			p.simStatus = "ready"
+		} else if pin != "" {
+			p.simStatus = strings.ToLower(pin)
+		}
+	}
+	if res, err := p.engine.ExecContext(ctx, "AT+COPS?"); err == nil {
+		if cops := atengine.ParseCOPS(res.Raw); cops != "" {
+			p.carrier = cops
+		}
+	}
 }
 
 // Stop terminates the polling loop.
@@ -353,10 +446,28 @@ func (p *Poller) poll() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
+	p.pollCount++
+	if p.pollCount%15 == 0 {
+		go p.queryIdentities(context.Background())
+	}
+	if p.pollCount%5 == 0 {
+		if res, err := p.engine.ExecLow(ctx, `AT+QNWCFG="lte_time_advance"`); err == nil {
+			if ta := atengine.ParseTimeAdvance(res.Raw, false); ta != nil {
+				p.lteTA = ta
+			}
+		}
+		if res, err := p.engine.ExecLow(ctx, `AT+QNWCFG="nr5g_time_advance"`); err == nil {
+			if nta := atengine.ParseTimeAdvance(res.Raw, true); nta != nil {
+				p.nrTA = nta
+			}
+		}
+	}
+
 	metrics := platform.GetSystemMetrics()
-	totalMB := float64(metrics.MemTotalKB) / 1024.0
-	usedMB := float64(metrics.MemTotalKB-metrics.MemAvailKB) / 1024.0
-	freeMB := float64(metrics.MemFreeKB) / 1024.0
+	totalMB := math.Round(float64(metrics.MemTotalKB) / 1024.0)
+	usedMB := math.Round(float64(metrics.MemTotalKB-metrics.MemAvailKB) / 1024.0)
+	freeMB := math.Round(float64(metrics.MemFreeKB) / 1024.0)
+	cpuUsage := math.Round(metrics.CPUUsage)
 
 	// Aggregate interface traffic
 	var totalRx, totalTx uint64
@@ -365,26 +476,47 @@ func (p *Poller) poll() {
 		totalTx += iface.TxBytes
 	}
 
+	wanIPv4, wanIPv6 := platform.GetInterfaceIP("rmnet_data0")
+	if wanIPv4 == "" {
+		wanIPv4, wanIPv6 = platform.GetInterfaceIP("rmnet_mhi0")
+	}
+	if wanIPv4 == "" {
+		wanIPv4, wanIPv6 = platform.GetInterfaceIP("rmnet_ipa0")
+	}
+
 	status := &ModemStatus{
-		Timestamp:   time.Now().Unix(),
-		Online:      false,
-		SystemState: "normal",
-		DeviceModel: p.identity.Model,
-		Revision:    p.identity.Revision,
-		Serial:      p.identity.Serial,
+		Timestamp:          time.Now().Unix(),
+		ModemReachable:     true,
+		LastSuccessfulPoll: time.Now().Unix(),
+		Errors:             []string{},
+		Online:             false,
+		SystemState:        "normal",
+		DeviceModel:        p.identity.Model,
+		Revision:           p.identity.Revision,
+		Serial:             p.identity.Serial,
+		IMEI:               p.imei,
+		IMSI:               p.imsi,
+		ICCID:              p.iccid,
+		PhoneNumber:        p.phoneNumber,
+		Carrier:            p.carrier,
+		Operator:           p.carrier,
 		Device: DeviceObject{
 			Model:         p.identity.Model,
 			Firmware:      p.identity.Revision,
 			Manufacturer:  "Quectel",
-			CPUUsage:      metrics.MemUsagePct, // approximation
+			IMEI:          p.imei,
+			IMSI:          p.imsi,
+			ICCID:         p.iccid,
+			PhoneNumber:   p.phoneNumber,
+			CPUUsage:      cpuUsage,
 			MemoryTotalMB: totalMB,
 			MemoryUsedMB:  usedMB,
 			UptimeSeconds: metrics.UptimeSeconds,
 			Temperature:   &metrics.CpuTempC,
 		},
 		System: SystemObject{
-			CPUUsagePct:   0.0,
-			CPUUsage:      0.0,
+			CPUUsagePct:   cpuUsage,
+			CPUUsage:      cpuUsage,
 			RAMTotalMB:    totalMB,
 			RAMUsedMB:     usedMB,
 			RAMFreeMB:     freeMB,
@@ -398,27 +530,43 @@ func (p *Poller) poll() {
 			TXBytes: totalTx,
 		},
 		SIM: SimObject{
-			Status:   "ready",
-			Inserted: true,
+			Status:   p.simStatus,
+			Inserted: p.simStatus == "ready",
 			Slot:     1,
+			ICCID:    p.iccid,
+			IMSI:     p.imsi,
 		},
 		Connectivity: ConnectivityObject{
 			Status: "connected",
 		},
 		SignalPerAntenna: SignalPerAntenna{
-			RSRP: []int{},
-			RSRQ: []int{},
-			SINR: []int{},
+			LteRSRP: make([]*int, 4),
+			LteRSRQ: make([]*int, 4),
+			LteSINR: make([]*int, 4),
+			NrRSRP:  make([]*int, 4),
+			NrRSRQ:  make([]*int, 4),
+			NrSINR:  make([]*int, 4),
 		},
 		LTE: LteStatusObject{
 			State: "disconnected",
+			TA:    p.lteTA,
 		},
 		NR: NrStatusObject{
 			State: "disconnected",
+			TA:    p.nrTA,
 		},
 		Network: NetworkObject{
 			Type:              "LTE",
+			Tech:              "LTE",
 			ServiceStatus:     "no_service",
+			Carrier:           p.carrier,
+			Operator:          p.carrier,
+			SimSlot:           1,
+			CFUN:              p.cfun,
+			WanIPv4:           wanIPv4,
+			WanIPv6:           wanIPv6,
+			IPAddress:         wanIPv4,
+			IPv6Address:       wanIPv6,
 			CarrierComponents: []atengine.CarrierComponent{},
 		},
 	}
@@ -450,6 +598,27 @@ func (p *Poller) poll() {
 				RXLev: cell.RSRP,
 			}
 
+			// Connection state string according to TypeScript ConnectionState
+			connState := "disconnected"
+			if status.Online {
+				connState = "connected"
+			} else if cell.State == "SEARCH" {
+				connState = "searching"
+			} else if cell.State == "LIMSRV" {
+				connState = "limited"
+			}
+
+			// Track connection uptime
+			if status.Online {
+				if p.connStartTime.IsZero() {
+					p.connStartTime = time.Now()
+				}
+				status.Device.ConnUptimeSeconds = time.Since(p.connStartTime).Seconds()
+			} else {
+				p.connStartTime = time.Time{}
+				status.Device.ConnUptimeSeconds = 0
+			}
+
 			// Populate nested cell
 			cid64, err := strconv.ParseInt(cell.CellID, 16, 64)
 			if err != nil {
@@ -457,11 +626,11 @@ func (p *Poller) poll() {
 			}
 			var nodeb64, sector64 int64
 			if strings.HasPrefix(cell.Mode, "NR5G") {
-				nodeb64 = cid64 >> 14     // 5G gNodeB: top 22-32 bits
-				sector64 = cid64 & 0x3FFF // 5G Sector: bottom 14 bits
+				nodeb64 = cid64 >> 14     // 5G gNodeB
+				sector64 = cid64 & 0x3FFF // 5G Sector
 			} else {
-				nodeb64 = cid64 >> 8      // LTE eNodeB: top 20-28 bits
-				sector64 = cid64 & 0xFF   // LTE Sector: bottom 8 bits
+				nodeb64 = cid64 >> 8      // LTE eNodeB
+				sector64 = cid64 & 0xFF   // LTE Sector
 			}
 
 			status.Cell = CellObject{
@@ -485,24 +654,43 @@ func (p *Poller) poll() {
 			sinrVal := cell.SINR
 			rssiVal := cell.RSSI
 
-			status.LTE = LteStatusObject{
-				State:    cell.State,
-				Band:     cell.Band,
-				EARFCN:   &earfcnVal,
-				PCI:      &pciVal,
-				CellID:   &cellIdInt,
-				ENodeBID: &enodebInt,
-				SectorID: &sectorInt,
-				RSRP:     &rsrpVal,
-				RSRQ:     &rsrqVal,
-				SINR:     &sinrVal,
-				RSSI:     &rssiVal,
+			var tacInt *int
+			if cell.TAC != "" {
+				if t64, err := strconv.ParseInt(cell.TAC, 16, 64); err == nil {
+					tVal := int(t64)
+					tacInt = &tVal
+				}
 			}
 
-			// If NR mode, also populate NR status object
-			if strings.HasPrefix(cell.Mode, "NR5G") {
+			var bwInt *int
+			if cell.Bandwidth != "" {
+				bwStr := strings.TrimSuffix(cell.Bandwidth, "M")
+				if b, err := strconv.Atoi(bwStr); err == nil {
+					bwInt = &b
+				}
+			}
+
+			status.LTE = LteStatusObject{
+				State:     connState,
+				Band:      cell.Band,
+				EARFCN:    &earfcnVal,
+				Bandwidth: bwInt,
+				PCI:       &pciVal,
+				CellID:    &cellIdInt,
+				ENodeBID:  &enodebInt,
+				SectorID:  &sectorInt,
+				TAC:       tacInt,
+				RSRP:      &rsrpVal,
+				RSRQ:      &rsrqVal,
+				SINR:      &sinrVal,
+				RSSI:      &rssiVal,
+				TA:        p.lteTA,
+			}
+
+			// Populate NR status object
+			if strings.HasPrefix(cell.Mode, "NR5G-SA") {
 				status.NR = NrStatusObject{
-					State:    cell.State,
+					State:    connState,
 					Band:     cell.Band,
 					ARFCN:    &earfcnVal,
 					PCI:      &pciVal,
@@ -513,24 +701,66 @@ func (p *Poller) poll() {
 					RSRP:     &rsrpVal,
 					RSRQ:     &rsrqVal,
 					SINR:     &sinrVal,
+					TA:       p.nrTA,
+				}
+			} else if cell.HasNR5GNSA {
+				nrPci := cell.NR5GPCI
+				nrArfcn := cell.NR5GARFCN
+				nrRsrp := cell.NR5GRSRP
+				nrRsrq := cell.NR5GRSRQ
+				nrSinr := cell.NR5GSINR
+				var scsInt int
+				if cell.NR5GSCS == "30kHz" {
+					scsInt = 30
+				} else if cell.NR5GSCS == "15kHz" {
+					scsInt = 15
+				} else if cell.NR5GSCS == "60kHz" {
+					scsInt = 60
+				} else if cell.NR5GSCS == "120kHz" {
+					scsInt = 120
+				}
+				var scsPtr *int
+				if scsInt > 0 {
+					scsPtr = &scsInt
+				}
+
+				status.NR = NrStatusObject{
+					State: connState,
+					Band:  cell.NR5GBand,
+					ARFCN: &nrArfcn,
+					PCI:   &nrPci,
+					RSRP:  &nrRsrp,
+					RSRQ:  &nrRsrq,
+					SINR:  &nrSinr,
+					SCS:   scsPtr,
+					TA:    p.nrTA,
 				}
 			}
 
-			// Populate Network object
-			status.Network.Type = cell.Mode
-			status.Network.Tech = cell.Mode
+			// Determine frontend NetworkType ("LTE", "5G-NSA", "5G-SA")
+			netType := "LTE"
+			if cell.Mode == "NR5G-NSA" || cell.HasNR5GNSA {
+				netType = "5G-NSA"
+			} else if cell.Mode == "NR5G-SA" {
+				netType = "5G-SA"
+			}
+
+			// Service status
+			serviceStatus := "no_service"
+			if status.Online {
+				serviceStatus = "connected"
+			} else if cell.State == "SEARCH" {
+				serviceStatus = "searching"
+			} else if cell.State == "LIMSRV" {
+				serviceStatus = "limited"
+			}
+
+			status.Network.Type = netType
+			status.Network.Tech = netType
 			status.Network.MCC = cell.MCC
 			status.Network.MNC = cell.MNC
 			status.Network.Registered = status.Online
-			if status.Online {
-				status.Network.ServiceStatus = "excellent"
-			} else if cell.State == "SEARCH" {
-				status.Network.ServiceStatus = "searching"
-			} else if cell.State == "LIMSRV" {
-				status.Network.ServiceStatus = "limited_service"
-			} else {
-				status.Network.ServiceStatus = "no_service"
-			}
+			status.Network.ServiceStatus = serviceStatus
 		}
 	}
 
@@ -545,22 +775,56 @@ func (p *Poller) poll() {
 		status.Network.CACount = len(caList)
 		status.Network.CAActive = len(caList) > 1
 
+		nrCaCount := 0
 		totalBW := 0
 		var bwDetails []string
 		for _, comp := range caList {
 			totalBW += comp.BandwidthMHz
+			if comp.Technology == "NR" || strings.HasPrefix(strings.ToUpper(comp.Band), "N") {
+				nrCaCount++
+			}
 			if comp.Band != "" && comp.BandwidthMHz > 0 {
 				bwDetails = append(bwDetails, comp.Band+": "+strconv.Itoa(comp.BandwidthMHz)+" MHz")
 			}
 		}
 		status.Network.TotalBandwidthMHz = totalBW
 		status.Network.BandwidthDetails = strings.Join(bwDetails, " + ")
+		status.Network.NRCAActive = nrCaCount > 0
+		status.Network.NRCACount = nrCaCount
 	}
 
-	// Micro-sleep before CSQ query
 	time.Sleep(15 * time.Millisecond)
 
-	// 3. Signal CSQ fallback if RSRP not parsed
+	// 3. Per-antenna signal metrics (AT+QRSRP, AT+QRSRQ, AT+QSINR)
+	if res, err := p.engine.ExecLow(ctx, `AT+QRSRP`); err == nil {
+		lte, nr := atengine.ParseAntennaSignals(res.Raw, "QRSRP")
+		if len(lte) > 0 {
+			status.SignalPerAntenna.LteRSRP = lte
+		}
+		if len(nr) > 0 {
+			status.SignalPerAntenna.NrRSRP = nr
+		}
+	}
+	if res, err := p.engine.ExecLow(ctx, `AT+QRSRQ`); err == nil {
+		lte, nr := atengine.ParseAntennaSignals(res.Raw, "QRSRQ")
+		if len(lte) > 0 {
+			status.SignalPerAntenna.LteRSRQ = lte
+		}
+		if len(nr) > 0 {
+			status.SignalPerAntenna.NrRSRQ = nr
+		}
+	}
+	if res, err := p.engine.ExecLow(ctx, `AT+QSINR`); err == nil {
+		lte, nr := atengine.ParseAntennaSignals(res.Raw, "QSINR")
+		if len(lte) > 0 {
+			status.SignalPerAntenna.LteSINR = lte
+		}
+		if len(nr) > 0 {
+			status.SignalPerAntenna.NrSINR = nr
+		}
+	}
+
+	// 4. Signal CSQ fallback if RSSI not parsed
 	if status.RSSI == 0 {
 		if res, err := p.engine.ExecLow(ctx, `AT+CSQ`); err == nil {
 			if csq := atengine.ParseCSQ(res.Raw); csq != nil {

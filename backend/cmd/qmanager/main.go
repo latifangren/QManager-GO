@@ -156,13 +156,42 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 		}
 	}()
 
+	// Optional HTTPS server if TLS certificates exist
+	tlsCert := filepath.Join(configDir, "certs/server.crt")
+	tlsKey := filepath.Join(configDir, "certs/server.key")
+	if _, err := os.Stat(tlsCert); err != nil {
+		tlsCert = "/usrdata/qmanager/certs/server.crt"
+		tlsKey = "/usrdata/qmanager/certs/server.key"
+	}
+
+	var httpsServer *http.Server
+	if _, err := os.Stat(tlsCert); err == nil {
+		if _, err := os.Stat(tlsKey); err == nil {
+			httpsServer = &http.Server{
+				Addr:         ":443",
+				Handler:      r,
+				ReadTimeout:  30 * time.Second,
+				WriteTimeout: 60 * time.Second,
+			}
+			go func() {
+				log.Println("🔒 QManager Backend listening on :443 (HTTPS)")
+				if err := httpsServer.ListenAndServeTLS(tlsCert, tlsKey); err != nil && err != http.ErrServerClosed {
+					log.Printf("⚠️ HTTPS server error: %v\n", err)
+				}
+			}()
+		}
+	}
+
 	select {
 	case err := <-serverErrors:
 		return fmt.Errorf("server error: %w", err)
 	case <-ctx.Done():
-		log.Println("🛑 Shutting down HTTP server gracefully...")
+		log.Println("🛑 Shutting down server gracefully...")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		if httpsServer != nil {
+			_ = httpsServer.Shutdown(shutdownCtx)
+		}
 		return server.Shutdown(shutdownCtx)
 	}
 }

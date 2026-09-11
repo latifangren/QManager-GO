@@ -931,8 +931,10 @@ export function formatBytes(bytes: number): string {
  * @returns distance in km, or null if TA is unavailable/invalid/zero
  */
 export function calculateLteDistance(ta: number | null): number | null {
-  if (ta === null || ta === undefined || ta <= 0 || ta > 1282) return null;
-  const NTA = 16 * ta;
+  if (ta === null || ta === undefined || ta <= 0) return null;
+  const taIndex = ta > 1282 ? ta / 16 : ta;
+  if (taIndex > 1282) return null;
+  const NTA = 16 * taIndex;
   const TS = 1 / 30720000; // 1/(2048×15000)
   const SPEED_OF_LIGHT = 3e8;
   return (SPEED_OF_LIGHT * NTA * TS) / 2 / 1000;

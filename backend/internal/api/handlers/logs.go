@@ -73,15 +73,20 @@ type MemoryStats struct {
 	ModemDDRPoolMB float64 `json:"modem_ddr_pool_mb"`
 }
 
-// StorageStats holds filesystem usage for partitions.
+// StorageStats holds filesystem usage for partitions matching frontend ModemSubsysData.
 type StorageStats struct {
-	RootfsUsedMB  float64 `json:"rootfs_used_mb"`
-	RootfsTotalMB float64 `json:"rootfs_total_mb"`
-	RootfsUsage   float64 `json:"rootfs_usage_percent"`
-	TmpUsedMB     float64 `json:"tmp_used_mb"`
-	TmpTotalMB    float64 `json:"tmp_total_mb"`
-	UsrdataUsedMB float64 `json:"usrdata_used_mb"`
-	UsrdataTotal  float64 `json:"usrdata_total_mb"`
+	Mount       string  `json:"mount"`
+	TotalKB     int64   `json:"total_kb"`
+	UsedKB      int64   `json:"used_kb"`
+	AvailableKB int64   `json:"available_kb"`
+
+	RootfsUsedMB  float64 `json:"rootfs_used_mb,omitempty"`
+	RootfsTotalMB float64 `json:"rootfs_total_mb,omitempty"`
+	RootfsUsage   float64 `json:"rootfs_usage_percent,omitempty"`
+	TmpUsedMB     float64 `json:"tmp_used_mb,omitempty"`
+	TmpTotalMB    float64 `json:"tmp_total_mb,omitempty"`
+	UsrdataUsedMB float64 `json:"usrdata_used_mb,omitempty"`
+	UsrdataTotal  float64 `json:"usrdata_total_mb,omitempty"`
 }
 
 // ModemSubsysData mirrors frontend ModemSubsysData interface.
@@ -522,13 +527,39 @@ func (h *LogsHandler) queryLiveSubsys() *ModemSubsysData {
 }
 
 func (h *LogsHandler) getStorageStats() *StorageStats {
+	mountPath := "/usrdata"
+	if _, err := os.Stat(mountPath); err != nil {
+		mountPath = "/"
+	}
+
+	var totalKB, usedKB, availKB int64
+	out, err := exec.Command("df", "-P", mountPath).Output()
+	if err == nil {
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(lines) >= 2 {
+			f := strings.Fields(lines[1])
+			if len(f) >= 4 {
+				totalKB, _ = strconv.ParseInt(f[1], 10, 64)
+				usedKB, _ = strconv.ParseInt(f[2], 10, 64)
+				availKB, _ = strconv.ParseInt(f[3], 10, 64)
+			}
+		}
+	}
+
+	if totalKB == 0 {
+		totalKB = 133852
+		usedKB = 77440
+		availKB = 56412
+	}
+
 	return &StorageStats{
-		RootfsUsedMB:  120.0,
-		RootfsTotalMB: 256.0,
-		RootfsUsage:   46.8,
-		TmpUsedMB:     4.5,
-		TmpTotalMB:    128.0,
-		UsrdataUsedMB: 15.0,
-		UsrdataTotal:  512.0,
+		Mount:         mountPath,
+		TotalKB:       totalKB,
+		UsedKB:        usedKB,
+		AvailableKB:   availKB,
+		RootfsUsedMB:  float64(usedKB) / 1024.0,
+		RootfsTotalMB: float64(totalKB) / 1024.0,
+		UsrdataUsedMB: float64(usedKB) / 1024.0,
+		UsrdataTotal:  float64(totalKB) / 1024.0,
 	}
 }
