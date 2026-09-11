@@ -4,6 +4,8 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -19,17 +21,38 @@ import (
 
 // AppServices bundles all backend dependencies.
 type AppServices struct {
-	Engine    *atengine.Engine
-	Poller    *telemetry.Poller
-	Prober    *telemetry.PingProber
-	Watchdog  *telemetry.Watchdog
-	ConfigMgr *config.Manager
-	Identity  platform.Identity
-	DistFS    embed.FS
+	Engine        *atengine.Engine
+	Poller        *telemetry.Poller
+	Prober        *telemetry.PingProber
+	Watchdog      *telemetry.Watchdog
+	ConfigMgr     *config.Manager
+	Identity      platform.Identity
+	DistFS        embed.FS
+	ConfigDir     string
+	LocalesDir    string
+	CommandRunner handlers.CommandRunner
 }
 
 // NewRouter constructs and mounts all API and static endpoints.
 func NewRouter(s AppServices) http.Handler {
+	configDir := s.ConfigDir
+	if configDir == "" {
+		configDir = "/etc/qmanager"
+	}
+
+	localesPath := s.LocalesDir
+	if localesPath == "" {
+		if configDir != "" && configDir != "/etc/qmanager" {
+			localesPath = filepath.Join(configDir, "locales-packs")
+		} else {
+			localesPath = "/usrdata/qmanager/locales-packs"
+			if _, err := os.Stat(localesPath); os.IsNotExist(err) {
+				localesPath = filepath.Join(configDir, "locales-packs")
+			}
+		}
+	}
+	_ = os.MkdirAll(localesPath, 0755)
+
 	r := chi.NewRouter()
 
 	// Middlewares
@@ -48,23 +71,29 @@ func NewRouter(s AppServices) http.Handler {
 		MaxAge:           300,
 	}))
 
-	authH := handlers.NewAuthHandler("admin")
-	cellH := handlers.NewCellularHandler(s.Engine, s.Poller)
+	authH := handlers.NewAuthHandler("admin", filepath.Join(configDir, "auth.json"))
 	bandFailoverH := handlers.NewBandFailoverHandler()
-	apnH := handlers.NewCellularApnHandler(s.Engine, s.ConfigMgr)
-	imeiH := handlers.NewCellularImeiHandler(s.Engine, s.Poller, s.ConfigMgr)
+	cellH := handlers.NewCellularHandler(s.Engine, s.Poller, bandFailoverH)
+	cellSettingsH := handlers.NewCellularSettingsHandler(s.Engine)
+	apnH := handlers.NewCellularApnHandler(s.Engine, s.ConfigMgr, configDir)
+	imeiH := handlers.NewCellularImeiHandler(s.Engine, s.Poller, s.ConfigMgr, configDir)
 	fplmnH := handlers.NewCellularFplmnHandler(s.Engine)
 	priorityH := handlers.NewNetworkPriorityHandler(s.Engine)
 	mbnH := handlers.NewCellularMbnHandler(s.Engine)
 	freqH := handlers.NewFrequencyLockHandler(s.Engine)
 	freqCalcH := handlers.NewFrequencyCalculatorHandler()
-	towerH := handlers.NewTowerScheduleHandler(s.Engine)
-	profileH := handlers.NewSIMProfileHandler(s.Engine)
-	scenarioH := handlers.NewScenarioHandler(s.Engine)
+	towerH := handlers.NewTowerScheduleHandler(s.Engine, filepath.Join(configDir, "tower_lock.json"))
+	profileH := handlers.NewSIMProfileHandler(s.Engine, configDir)
+	scenarioH := handlers.NewScenarioHandler(s.Engine, configDir)
 	cellScanH := handlers.NewCellScannerHandler(s.Engine)
 	neighbourH := handlers.NewNeighbourScannerHandler(s.Engine)
 	speedtestH := handlers.NewSpeedtestHandler()
-	netH := handlers.NewNetworkHandler(s.Prober)
+	var netH *handlers.NetworkHandler
+	if s.CommandRunner != nil {
+		netH = handlers.NewNetworkHandler(s.Prober, s.CommandRunner)
+	} else {
+		netH = handlers.NewNetworkHandler(s.Prober)
+	}
 	ethernetH := handlers.NewEthernetHandler()
 	dataUsageH := handlers.NewDataUsageHandler()
 	ipptH := handlers.NewIPPassthroughHandler(s.Engine)
@@ -75,20 +104,27 @@ func NewRouter(s AppServices) http.Handler {
 	publicH := handlers.NewPublicHandler(s.Poller, s.ConfigMgr, s.Identity)
 	watchdogH := handlers.NewWatchdogHandler(s.ConfigMgr, s.Watchdog)
 	alertsH := handlers.NewAlertsHandler()
-	simRegH := handlers.NewSimRegistryHandler()
-	sysH := handlers.NewSystemHandler(s.Identity, s.ConfigMgr)
+	simRegH := handlers.NewSimRegistryHandler(filepath.Join(configDir, "known_sims.json"), s.Poller)
+	sysH := handlers.NewSystemHandler(s.Identity, s.ConfigMgr, s.Poller)
 	smsH := handlers.NewSMSHandler(s.Engine)
 	smsForwardH := handlers.NewSMSForwardingHandler(s.Engine, s.ConfigMgr)
 	updateH := handlers.NewUpdateHandler(s.ConfigMgr)
-	logsH := handlers.NewLogsHandler()
-	langPacksH := handlers.NewLanguagePacksHandler()
+	logsH := handlers.NewLogsHandler(s.ConfigMgr)
+	langPacksH := handlers.NewLanguagePacksHandler(localesPath)
 	healthCheckH := handlers.NewHealthCheckHandler(s.Engine, s.Poller, s.Identity)
 	historyH := handlers.NewHistoryHandler()
+	qualityH := handlers.NewQualityThresholdsHandler(filepath.Join(configDir, "quality_thresholds.json"))
+	pingProfH := handlers.NewPingProfileHandler(s.Prober, filepath.Join(configDir, "ping_profile.json"))
+	webConsoleH := handlers.NewWebConsoleHandler()
+
+	// Web Console WebSocket bridge
+	r.Get("/console/ws", webConsoleH.HandleWS)
 
 	// API Routes (v1)
 	r.Route("/api/v1", func(api chi.Router) {
 		// Public Auth & Overview
 		api.Post("/auth/login", authH.Login)
+		api.Post("/auth/setup", authH.Login)
 		api.Get("/auth/check", authH.Check)
 		api.Post("/auth/logout", authH.Logout)
 		api.Get("/public/overview", publicH.Overview)
@@ -107,11 +143,11 @@ func NewRouter(s AppServices) http.Handler {
 
 		// Protected Routes
 		api.Group(func(prot chi.Router) {
-			prot.Use(func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					next.ServeHTTP(w, r)
-				})
-			})
+			prot.Use(authH.Middleware)
+
+			// Auth Password Management
+			prot.Post("/auth/password", authH.ChangePassword)
+			prot.Post("/auth/ssh_password", authH.ChangeSSHPassword)
 
 			// Cellular / AT / Bands / Towers
 			prot.Post("/at/send", cellH.SendCommand)
@@ -150,6 +186,7 @@ func NewRouter(s AppServices) http.Handler {
 			prot.Get("/cellular/profiles/current-settings", profileH.CurrentSettings)
 			prot.Get("/cellular/profiles/apply-status", profileH.ApplyStatus)
 			prot.Post("/cellular/profiles/apply", profileH.Apply)
+			prot.Post("/cellular/profiles/deactivate", profileH.Deactivate)
 			prot.Get("/cellular/profiles/{id}", profileH.Get)
 			prot.Delete("/cellular/profiles/{id}", profileH.Delete)
 
@@ -161,6 +198,8 @@ func NewRouter(s AppServices) http.Handler {
 			prot.Delete("/cellular/scenarios/{id}", scenarioH.Delete)
 
 			// Cellular Settings & Identity Suite
+			prot.Get("/cellular/settings", cellSettingsH.GetSettings)
+			prot.Post("/cellular/settings", cellSettingsH.ApplySettings)
 			prot.Get("/cellular/apn", apnH.GetAPN)
 			prot.Post("/cellular/apn", apnH.SaveAPN)
 			prot.Get("/cellular/imei", imeiH.GetIMEI)
@@ -173,10 +212,12 @@ func NewRouter(s AppServices) http.Handler {
 			prot.Post("/cellular/mbn", mbnH.SaveMBN)
 
 			// Network, Traffic & Ethernet
+			prot.Get("/network/ttl", netH.GetTTL)
 			prot.Post("/network/ttl", netH.SetTTL)
 			prot.Get("/network/dns", customDNSH.HandleGet)
 			prot.Post("/network/dns", customDNSH.HandlePost)
 			prot.Get("/network/ethernet", ethernetH.HandleEthernet)
+			prot.Post("/network/ethernet", ethernetH.HandleEthernet)
 			prot.Get("/network/data-usage", dataUsageH.GetDataUsed)
 			prot.Post("/network/data-usage/reset", dataUsageH.ResetDataUsed)
 			prot.Get("/network/passthrough", ipptH.Status)
@@ -229,6 +270,12 @@ func NewRouter(s AppServices) http.Handler {
 			prot.Get("/system/logs", logsH.GetLogs)
 			prot.Post("/system/logs", logsH.HandleLogsAction)
 			prot.Get("/system/modem-subsys", logsH.ModemSubsys)
+
+			// Settings / Quality Thresholds & Ping Profile
+			prot.Get("/settings/quality-thresholds", qualityH.Get)
+			prot.Post("/settings/quality-thresholds", qualityH.Save)
+			prot.Get("/settings/ping-profile", pingProfH.Get)
+			prot.Post("/settings/ping-profile", pingProfH.Save)
 		})
 	})
 
@@ -244,7 +291,10 @@ func NewRouter(s AppServices) http.Handler {
 		// Auth
 		cgi.Get("/auth/check.sh", authH.Check)
 		cgi.Post("/auth/login.sh", authH.Login)
+		cgi.Post("/auth/setup.sh", authH.Login)
 		cgi.Post("/auth/logout.sh", authH.Logout)
+		cgi.Post("/auth/password.sh", authH.ChangePassword)
+		cgi.Post("/auth/ssh_password.sh", authH.ChangeSSHPassword)
 
 		// Public Overview
 		cgi.Get("/public/overview.sh", publicH.Overview)
@@ -273,6 +323,7 @@ func NewRouter(s AppServices) http.Handler {
 
 		// Tower CGI
 		cgi.Get("/tower/status.sh", towerH.Status)
+		cgi.Post("/tower/lock.sh", cellH.HandleTowerLockCGI)
 		cgi.Post("/tower/settings.sh", towerH.Settings)
 		cgi.Post("/tower/schedule.sh", towerH.Schedule)
 		cgi.Get("/tower/failover_status.sh", towerH.FailoverStatus)
@@ -283,6 +334,7 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Post("/profiles/save.sh", profileH.Save)
 		cgi.Post("/profiles/delete.sh", profileH.Delete)
 		cgi.Post("/profiles/apply.sh", profileH.Apply)
+		cgi.Post("/profiles/deactivate.sh", profileH.Deactivate)
 		cgi.Get("/profiles/apply_status.sh", profileH.ApplyStatus)
 		cgi.Get("/profiles/current_settings.sh", profileH.CurrentSettings)
 
@@ -294,6 +346,8 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Post("/scenarios/delete.sh", scenarioH.Delete)
 
 		// Cellular settings CGI endpoints
+		cgi.Get("/cellular/settings.sh", cellSettingsH.GetSettings)
+		cgi.Post("/cellular/settings.sh", cellSettingsH.ApplySettings)
 		cgi.Get("/cellular/apn.sh", apnH.GetAPN)
 		cgi.Post("/cellular/apn.sh", apnH.SaveAPN)
 		cgi.Get("/cellular/imei.sh", imeiH.GetIMEI)
@@ -306,11 +360,14 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Post("/cellular/mbn.sh", mbnH.SaveMBN)
 
 		// Network & Ethernet CGI endpoints
+		cgi.Get("/network/ttl.sh", netH.GetTTL)
+		cgi.Post("/network/ttl.sh", netH.SetTTL)
 		cgi.Get("/network/ip_passthrough.sh", ipptH.Status)
 		cgi.Post("/network/ip_passthrough.sh", ipptH.Apply)
 		cgi.Get("/network/mtu.sh", mtuH.GetMTU)
 		cgi.Post("/network/mtu.sh", mtuH.SetMTU)
 		cgi.Get("/network/ethernet.sh", ethernetH.HandleEthernet)
+		cgi.Post("/network/ethernet.sh", ethernetH.HandleEthernet)
 		cgi.Get("/network/data_used.sh", dataUsageH.GetDataUsed)
 		cgi.Post("/network/data_used_reset.sh", dataUsageH.ResetDataUsed)
 		cgi.Get("/network/video_optimizer.sh", videoOptH.HandleGet)
@@ -337,6 +394,7 @@ func NewRouter(s AppServices) http.Handler {
 		// Language Packs CGI endpoints
 		cgi.Get("/system/language-packs/list.sh", langPacksH.List)
 		cgi.Post("/system/language-packs/install.sh", langPacksH.Install)
+		cgi.Post("/system/language-packs/install_cancel.sh", langPacksH.InstallCancel)
 		cgi.Get("/system/language-packs/install_status.sh", langPacksH.InstallStatus)
 		cgi.Post("/system/language-packs/remove.sh", langPacksH.Remove)
 
@@ -350,8 +408,14 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Get("/device/about.sh", sysH.Info)
 		cgi.Get("/system/settings.sh", sysH.GetConfig)
 		cgi.Post("/system/settings.sh", sysH.SaveConfig)
+		cgi.Get("/settings/quality_thresholds.sh", qualityH.Handle)
+		cgi.Post("/settings/quality_thresholds.sh", qualityH.Handle)
+		cgi.Get("/settings/ping_profile.sh", pingProfH.Handle)
+		cgi.Post("/settings/ping_profile.sh", pingProfH.Handle)
 		cgi.Get("/system/sim_registry.sh", simRegH.HandleRegistry)
 		cgi.Post("/system/sim_registry.sh", simRegH.HandleRegistry)
+		cgi.Get("/system/known_sims.sh", simRegH.HandleRegistry)
+		cgi.Post("/system/known_sims.sh", simRegH.HandleRegistry)
 		cgi.Post("/system/reboot.sh", sysH.Reboot)
 		cgi.Get("/system/update.sh", updateH.CheckUpdate)
 		cgi.Post("/system/update.sh", updateH.HandleUpdateAction)
@@ -359,6 +423,11 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Post("/system/logs.sh", logsH.HandleLogsAction)
 		cgi.Get("/system/modem-subsys.sh", logsH.ModemSubsys)
 	})
+
+	// Static File Server (Locales Packs)
+	localesServer := http.StripPrefix("/locales-packs/", http.FileServer(http.Dir(localesPath)))
+	r.Handle("/locales-packs/*", localesServer)
+	r.Handle("/locales-packs", localesServer)
 
 	// Embedded Static Frontend
 	staticContent, err := fs.Sub(s.DistFS, "dist")

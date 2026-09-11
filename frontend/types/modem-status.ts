@@ -512,10 +512,6 @@ export function worstSignalQuality(...qualities: SignalQuality[]): SignalQuality
   );
 }
 
-/** Daemon's authoritative tri-state connectivity outcome (from qmanager_ping.json's `connectivity` field).
-    Post ICMP-port there is no "limited" (carrier-intercept) outcome — an ICMP ping either answers or it doesn't. */
-export type PingTriState = "connected" | "disconnected" | "unknown";
-
 /** User-selectable preset for high_latency / high_packet_loss event thresholds. */
 export type QualityPreset = "standard" | "tolerant" | "very-tolerant";
 
@@ -532,6 +528,11 @@ export interface QualityThresholdsSettings {
   loss: { preset: QualityPreset };
 }
 
+/** The poller's derived connectivity verdict, computed in qmanager_poller from the
+    ICMP daemon's reachability plus the rolling packet-loss window. This is the only
+    connectivity verdict the UI reads: "degraded" means the probes answer but at least
+    a tenth of them are lost, "recovery" means the watchdog is mid-restore, and
+    "unknown" means the probe itself is not reporting — which is not an outage. */
 export type ConnectivityState =
   | "connected"
   | "degraded"
@@ -552,45 +553,51 @@ export interface ConnectivityStatus {
   min_latency_ms: number | null;
   /** Maximum RTT in history window */
   max_latency_ms: number | null;
-  /** Average inter-packet RTT variation */
+  /**
+   * Average inter-packet RTT variation. null when the history window holds
+   * fewer than the poller's MIN_STAT_SAMPLES readings — a ratio needs a
+   * series, and the ping daemon truncates the window on every probe-winner
+   * change, so a short window is a recurring state and not a boot transient.
+   */
   jitter_ms: number | null;
-  /** Percentage of failed pings in history window (0-100) */
-  packet_loss_pct: number;
-  /** Currently active ping target IP */
+  /**
+   * Percentage of failed pings in the history window (0-100), or null when
+   * the window is too short to express one. NEVER read a null here as 0: the
+   * whole point of the null is that "not measured yet" and "measured, and
+   * perfect" were previously indistinguishable.
+   */
+  packet_loss_pct: number | null;
+  /**
+   * The probe leg that actually answered — sourced from the ping daemon's
+   * `last_target`, falling back to the first configured slot when nothing has
+   * answered yet. The four-leg chain short-circuits on the first success, so
+   * this is NOT necessarily the first target configured.
+   */
   ping_target: string;
   /** Ring buffer of last N RTT values. null entries = failed pings. */
   latency_history: (number | null)[];
   /** Seconds between history samples */
   history_interval_sec: number;
-  /** Maximum entries in history array */
+  /**
+   * Maximum entries the history array can hold — a fixed CAPACITY (60), not a
+   * count of what is in it. `latency_history.length` is the measurement.
+   *
+   * Never derive a timestamp from this: the ping daemon truncates its history
+   * on every probe-winner change, so the array is routinely shorter than the
+   * capacity, and treating the two as equal strands the newest sample up to
+   * `(60 - length) * history_interval_sec` seconds in the past.
+   */
   history_size: number;
   /** Whether watchcat recovery is currently active */
   during_recovery: boolean;
-  /** Phase 2 — daemon's tri-state connectivity outcome. null means the field is missing
-      from status.json (rolling-upgrade fallback). */
-  state: PingTriState | null;
-  /** Address family of the daemon's most recent successful probe. "ipv6" means the IPv4
-      leg failed and the fallback carried the connection. "none" when nothing answered.
-      null on a poller that predates the ICMP port (rolling-upgrade fallback). */
+  /** Address family of the most recent successful probe, derived by qmanager_poller
+      from the ICMP daemon's own state file. "ipv6" means the IPv4 leg failed and the
+      fallback carried the connection. "none" when nothing answered. null on a poller
+      that predates the ICMP port (rolling-upgrade fallback). */
   last_family: "ipv4" | "ipv6" | "none" | null;
-  /** Legacy HTTP-probe field. Always null post ICMP-port (kept typed for rolling-upgrade
-      safety so a status.json emitted by an older poller still parses). */
-  limited_reason: number | null;
-  /** When state == "disconnected", the failure reason: "timeout" | "refused"
-      | "reset" | "dns" | "malformed". null otherwise. */
-  down_reason: string | null;
-  /** Legacy HTTP-probe field. Always 0 post ICMP-port (kept typed for rolling-upgrade
-      safety so a status.json emitted by an older poller still parses). */
-  streak_limited: number;
   /** Daemon's runtime profile string. A named preset, "custom" (env-var override),
       or "unknown" (daemon dead/stale). Typed as string to admit all three. */
   profile: string;
-  /** Runtime fail-threshold in seconds (active in the daemon). 0 if daemon dead/stale. */
-  fail_secs: number;
-  /** Runtime recover-threshold in seconds. 0 if daemon dead/stale. */
-  recover_secs: number;
-  /** Runtime intercept-threshold in seconds. 0 if daemon dead/stale. */
-  intercept_secs: number;
 }
 
 // --- Watchcat State (from /tmp/qmanager_watchcat.json via poller) ------------
@@ -773,8 +780,9 @@ export interface PingHistoryEntry {
   min: number | null;
   /** Maximum RTT in ms over ping daemon's history window */
   max: number | null;
-  /** Packet loss percentage (0-100) */
-  loss: number;
+  /** Packet loss percentage (0-100), or null when the poller's window was
+   *  too short to measure one at the moment this row was archived. */
+  loss: number | null;
   /** Jitter in ms, or null if insufficient data */
   jit: number | null;
 }
@@ -923,8 +931,10 @@ export function formatBytes(bytes: number): string {
  * @returns distance in km, or null if TA is unavailable/invalid/zero
  */
 export function calculateLteDistance(ta: number | null): number | null {
-  if (ta === null || ta === undefined || ta <= 0 || ta > 1282) return null;
-  const NTA = 16 * ta;
+  if (ta === null || ta === undefined || ta <= 0) return null;
+  const taIndex = ta > 1282 ? ta / 16 : ta;
+  if (taIndex > 1282) return null;
+  const NTA = 16 * taIndex;
   const TS = 1 / 30720000; // 1/(2048×15000)
   const SPEED_OF_LIGHT = 3e8;
   return (SPEED_OF_LIGHT * NTA * TS) / 2 / 1000;

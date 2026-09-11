@@ -38,6 +38,12 @@ const FAILOVER_POLL_INTERVAL = 1000; // 1s — watcher sleeps 5s then checks
 export interface UseBandLockingReturn {
   /** Currently locked/configured bands from ue_capability_band */
   currentBands: CurrentBands | null;
+  /** Supported bands reported by current.sh (fallback if status poller not yet loaded) */
+  supportedBands: {
+    lte: number[];
+    nsa_nr5g: number[];
+    sa_nr5g: number[];
+  } | null;
   /** Failover safety mechanism state */
   failover: FailoverState;
   /**
@@ -104,6 +110,11 @@ export interface UseBandLockingReturn {
 
 export function useBandLocking(): UseBandLockingReturn {
   const [currentBands, setCurrentBands] = useState<CurrentBands | null>(null);
+  const [supportedBands, setSupportedBands] = useState<{
+    lte: number[];
+    nsa_nr5g: number[];
+    sa_nr5g: number[];
+  } | null>(null);
   const [failover, setFailover] = useState<FailoverState>({
     enabled: false,
     activated: false,
@@ -168,6 +179,19 @@ export function useBandLocking(): UseBandLockingReturn {
       if (!mountedRef.current) return true;
 
       setCurrentBands(data.current);
+      if (data.supported) {
+        setSupportedBands({
+          lte: (data.supported.lte_bands || [])
+            .map((b) => parseInt(b, 10))
+            .filter((n) => !isNaN(n) && n > 0),
+          nsa_nr5g: (data.supported.nsa_nr5g_bands || [])
+            .map((b) => parseInt(b, 10))
+            .filter((n) => !isNaN(n) && n > 0),
+          sa_nr5g: (data.supported.sa_nr5g_bands || [])
+            .map((b) => parseInt(b, 10))
+            .filter((n) => !isNaN(n) && n > 0),
+        });
+      }
       setFailover(data.failover);
       // Only the READ error clears here. Clearing `error` too would erase a
       // failed lock's notice on the very re-read that follows the next write.
@@ -432,6 +456,7 @@ export function useBandLocking(): UseBandLockingReturn {
 
   return {
     currentBands,
+    supportedBands,
     failover,
     isLoading,
     isRefreshing,

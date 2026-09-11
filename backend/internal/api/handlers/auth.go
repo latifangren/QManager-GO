@@ -1,39 +1,279 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
 
-// AuthHandler manages session tokens and authentication.
+var defaultAuthFilePath = "/etc/qmanager/auth.json"
+
+// AuthStorage represents the persistent credential record in /etc/qmanager/auth.json.
+type AuthStorage struct {
+	Hash    string `json:"hash"`
+	Salt    string `json:"salt"`
+	Version int    `json:"version"`
+}
+
+// SSHPasswordUpdater defines a function to update the system root SSH password.
+type SSHPasswordUpdater func(password string) error
+
+func defaultSSHUpdater(password string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+
+	// Method 1: Generate MD5-crypt / SHA-512 crypt via openssl and update /etc/shadow atomically
+	cmd := exec.Command("openssl", "passwd", "-1", "-stdin")
+	cmd.Stdin = strings.NewReader(password + "\n")
+	out, err := cmd.Output()
+	var hash string
+	if err == nil && len(bytes.TrimSpace(out)) > 0 {
+		hash = string(bytes.TrimSpace(out))
+	}
+
+	if hash != "" {
+		shadowPath := "/etc/shadow"
+		data, err := os.ReadFile(shadowPath)
+		if err == nil {
+			lines := strings.Split(string(data), "\n")
+			updated := false
+			for i, line := range lines {
+				if strings.HasPrefix(line, "root:") {
+					parts := strings.Split(line, ":")
+					if len(parts) >= 2 {
+						parts[1] = hash
+						lines[i] = strings.Join(parts, ":")
+						updated = true
+					}
+					break
+				}
+			}
+			if updated {
+				tmpPath := fmt.Sprintf("%s.tmp.%d", shadowPath, time.Now().UnixNano())
+				if err := os.WriteFile(tmpPath, []byte(strings.Join(lines, "\n")), 0600); err == nil {
+					if err := os.Rename(tmpPath, shadowPath); err == nil {
+						return nil
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback to chpasswd if available
+	if path, err := exec.LookPath("chpasswd"); err == nil {
+		c := exec.Command(path)
+		c.Stdin = strings.NewReader(fmt.Sprintf("root:%s\n", password))
+		if err := c.Run(); err == nil {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("failed to update root password in /etc/shadow")
+}
+
+// AuthHandler manages session tokens, password verification, and credentials persistence.
 type AuthHandler struct {
-	mu       sync.RWMutex
-	password string
-	tokens   map[string]time.Time
-	timeout  time.Duration
+	mu             sync.RWMutex
+	authPath       string
+	hash           string
+	salt           string
+	setupRequired  bool
+	tokens         map[string]time.Time
+	timeout        time.Duration
+	sshUpdater     SSHPasswordUpdater
+	failedAttempts int
+	lockoutUntil   time.Time
 }
 
 // NewAuthHandler creates a new AuthHandler.
-func NewAuthHandler(defaultPassword string) *AuthHandler {
-	if defaultPassword == "" {
-		defaultPassword = "admin"
+func NewAuthHandler(defaultPassword string, optionalPath ...string) *AuthHandler {
+	path := defaultAuthFilePath
+	if len(optionalPath) > 0 && optionalPath[0] != "" {
+		path = optionalPath[0]
 	}
-	return &AuthHandler{
-		password: defaultPassword,
-		tokens:   make(map[string]time.Time),
-		timeout:  24 * time.Hour,
+
+	h := &AuthHandler{
+		authPath:      path,
+		tokens:        make(map[string]time.Time),
+		timeout:       24 * time.Hour,
+		setupRequired: true,
+		sshUpdater:    defaultSSHUpdater,
 	}
+
+	if defaultPassword != "" && defaultPassword != "admin" {
+		h.setPasswordInternal(defaultPassword)
+		h.setupRequired = false
+	} else if err := h.loadAuthFile(); err == nil {
+		h.setupRequired = false
+	}
+
+	return h
+}
+
+// SetSSHPasswordUpdater overrides the SSH password updater function (e.g. for testing).
+func (h *AuthHandler) SetSSHPasswordUpdater(updater SSHPasswordUpdater) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if updater != nil {
+		h.sshUpdater = updater
+	} else {
+		h.sshUpdater = defaultSSHUpdater
+	}
+}
+
+// SetAuthFilePath updates the auth storage file path and reloads credentials.
+func (h *AuthHandler) SetAuthFilePath(path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.authPath = path
+	if err := h.loadAuthFile(); err == nil {
+		h.setupRequired = false
+	} else {
+		h.setupRequired = true
+		h.hash = ""
+		h.salt = ""
+	}
+}
+
+// SetPassword sets a password directly in-memory and marks setup as completed.
+func (h *AuthHandler) SetPassword(password string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.setPasswordInternal(password)
+	h.setupRequired = false
+}
+
+// SetSetupRequired sets the setupRequired flag.
+func (h *AuthHandler) SetSetupRequired(req bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.setupRequired = req
+}
+
+// IsSetupRequired returns the setupRequired flag.
+func (h *AuthHandler) IsSetupRequired() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.setupRequired
+}
+
+func (h *AuthHandler) setPasswordInternal(password string) {
+	h.salt = generateSalt()
+	h.hash = hashPassword(password, h.salt)
+}
+
+func hashPassword(password, salt string) string {
+	hasher := sha256.New()
+	hasher.Write([]byte(salt + password))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func generateSalt() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func (h *AuthHandler) verifyPassword(password string) bool {
+	if h.hash == "" || h.salt == "" {
+		return false
+	}
+	computed := hashPassword(password, h.salt)
+	return subtle.ConstantTimeCompare([]byte(computed), []byte(h.hash)) == 1
+}
+
+func (h *AuthHandler) loadAuthFile() error {
+	data, err := os.ReadFile(h.authPath)
+	if err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		return errors.New("auth file is empty")
+	}
+
+	var storage AuthStorage
+	if err := json.Unmarshal(data, &storage); err != nil {
+		return err
+	}
+	if storage.Hash == "" || storage.Salt == "" {
+		return errors.New("invalid auth storage payload")
+	}
+
+	h.hash = storage.Hash
+	h.salt = storage.Salt
+	return nil
+}
+
+func (h *AuthHandler) saveAuthFile(hash, salt string) error {
+	dir := filepath.Dir(h.authPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	storage := AuthStorage{
+		Hash:    hash,
+		Salt:    salt,
+		Version: 1,
+	}
+
+	data, err := json.MarshalIndent(storage, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal auth storage: %w", err)
+	}
+
+	tmpFile := fmt.Sprintf("%s.tmp.%d", h.authPath, time.Now().UnixNano())
+	f, err := os.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to open temp auth file %s: %w", tmpFile, err)
+	}
+
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to write auth data: %w", err)
+	}
+
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to fsync auth file: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to close temp auth file: %w", err)
+	}
+
+	if err := os.Rename(tmpFile, h.authPath); err != nil {
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to rename temp auth file to %s: %w", h.authPath, err)
+	}
+
+	_ = os.Chmod(h.authPath, 0600)
+	return nil
 }
 
 type LoginRequest struct {
-	Password string `json:"password"`
+	Password        string `json:"password"`
+	Confirm         string `json:"confirm,omitempty"`
+	ConfirmPassword string `json:"confirm_password,omitempty"`
 }
 
-// Login verifies password and generates a bearer token.
+// Login verifies password or completes first-time setup, and generates a bearer token.
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -41,50 +281,220 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.mu.RLock()
-	correct := req.Password == h.password
-	h.mu.RUnlock()
+	h.mu.Lock()
+	setupReq := h.setupRequired && h.hash == ""
 
-	if !correct {
-		Error(w, http.StatusUnauthorized, "Invalid password")
-		return
+	if setupReq {
+		if len(req.Password) < 6 {
+			h.mu.Unlock()
+			Error(w, http.StatusBadRequest, "Password must be at least 6 characters")
+			return
+		}
+
+		confirm := req.Confirm
+		if confirm == "" {
+			confirm = req.ConfirmPassword
+		}
+		if confirm != "" && req.Password != confirm {
+			h.mu.Unlock()
+			Error(w, http.StatusBadRequest, "Passwords do not match")
+			return
+		}
+
+		salt := generateSalt()
+		hash := hashPassword(req.Password, salt)
+		_ = h.saveAuthFile(hash, salt)
+
+		h.hash = hash
+		h.salt = salt
+		h.setupRequired = false
+		h.failedAttempts = 0
+		h.lockoutUntil = time.Time{}
+	} else {
+		if time.Now().Before(h.lockoutUntil) {
+			remainingSecs := int(time.Until(h.lockoutUntil).Seconds())
+			if remainingSecs <= 0 {
+				remainingSecs = 1
+			}
+			h.mu.Unlock()
+			JSON(w, http.StatusTooManyRequests, map[string]interface{}{
+				"success": false,
+				"error":   "rate_limited",
+				"detail":  fmt.Sprintf("Too many failed attempts. Try again in %d seconds.", remainingSecs),
+				"lockout": map[string]interface{}{
+					"active":            true,
+					"remaining_seconds": remainingSecs,
+				},
+				"retry_after":        remainingSecs,
+				"attempts_remaining": 0,
+			})
+			return
+		}
+
+		if !h.verifyPassword(req.Password) {
+			h.failedAttempts++
+			if h.failedAttempts >= 5 {
+				h.lockoutUntil = time.Now().Add(60 * time.Second)
+				remainingSecs := 60
+				h.mu.Unlock()
+				JSON(w, http.StatusTooManyRequests, map[string]interface{}{
+					"success": false,
+					"error":   "rate_limited",
+					"detail":  fmt.Sprintf("Too many failed attempts. Try again in %d seconds.", remainingSecs),
+					"lockout": map[string]interface{}{
+						"active":            true,
+						"remaining_seconds": remainingSecs,
+					},
+					"retry_after":        remainingSecs,
+					"attempts_remaining": 0,
+				})
+				return
+			}
+			attemptsRemaining := 5 - h.failedAttempts
+			h.mu.Unlock()
+			JSON(w, http.StatusUnauthorized, map[string]interface{}{
+				"success":            false,
+				"error":              "invalid_password",
+				"detail":             "Invalid password",
+				"attempts_remaining": attemptsRemaining,
+			})
+			return
+		}
+
+		h.failedAttempts = 0
+		h.lockoutUntil = time.Time{}
 	}
 
 	tokenBytes := make([]byte, 16)
 	_, _ = rand.Read(tokenBytes)
 	token := hex.EncodeToString(tokenBytes)
-
-	h.mu.Lock()
-	h.tokens[token] = time.Now().Add(h.timeout)
+	expires := time.Now().Add(h.timeout)
+	h.tokens[token] = expires
 	h.mu.Unlock()
 
-	http.SetCookie(w, &http.Cookie{
+	cookie := &http.Cookie{
 		Name:     "qm_auth_token",
 		Value:    token,
 		Path:     "/",
-		Expires:  time.Now().Add(h.timeout),
+		MaxAge:   86400,
+		Expires:  expires,
 		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+	http.SetCookie(w, cookie)
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "qm_logged_in",
+		Value:    "1",
+		Path:     "/",
+		MaxAge:   86400,
+		Expires:  expires,
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
 	})
 
-	Success(w, map[string]interface{}{
-		"token":     token,
-		"expires":   time.Now().Add(h.timeout).Unix(),
-		"role":      "admin",
-		"auth_type": "session",
+	dataMap := map[string]interface{}{
+		"token":           token,
+		"expires":         expires.Unix(),
+		"role":            "admin",
+		"auth_type":       "session",
+		"authenticated":   true,
+		"setup_required":  false,
+		"setup_completed": setupReq,
+	}
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success":         true,
+		"authenticated":   true,
+		"token":           token,
+		"expires":         expires.Unix(),
+		"role":            "admin",
+		"setup_required":  false,
+		"setup_completed": setupReq,
+		"auth_type":       "session",
+		"data":            dataMap,
 	})
 }
 
-// Check validates token in header or cookie.
+// Check validates token in header or cookie or returns setup_required status.
 func (h *AuthHandler) Check(w http.ResponseWriter, r *http.Request) {
-	token := h.extractToken(r)
-	if token == "" || !h.validateToken(token) {
-		Error(w, http.StatusUnauthorized, "Not authenticated")
+	h.mu.RLock()
+	setupReq := h.setupRequired
+	h.mu.RUnlock()
+
+	if setupReq {
+		JSON(w, http.StatusOK, map[string]interface{}{
+			"success":        false,
+			"authenticated":  false,
+			"setup_required": true,
+			"data": map[string]interface{}{
+				"authenticated":  false,
+				"setup_required": true,
+			},
+		})
 		return
 	}
 
-	Success(w, map[string]interface{}{
-		"authenticated": true,
-		"role":          "admin",
+	token := h.extractToken(r)
+	if token == "" || !h.validateToken(token) {
+		h.mu.RLock()
+		locked := time.Now().Before(h.lockoutUntil)
+		remainingSecs := 0
+		if locked {
+			remainingSecs = int(time.Until(h.lockoutUntil).Seconds())
+			if remainingSecs <= 0 {
+				remainingSecs = 1
+			}
+		}
+		attemptsRemaining := 5 - h.failedAttempts
+		if attemptsRemaining < 0 {
+			attemptsRemaining = 0
+		}
+		h.mu.RUnlock()
+
+		resp := map[string]interface{}{
+			"success":            false,
+			"authenticated":      false,
+			"setup_required":     false,
+			"error":              "Not authenticated",
+			"attempts_remaining": attemptsRemaining,
+		}
+		if locked {
+			resp["rate_limited"] = true
+			resp["retry_after"] = remainingSecs
+			resp["lockout"] = map[string]interface{}{
+				"active":            true,
+				"remaining_seconds": remainingSecs,
+			}
+		}
+		JSON(w, http.StatusUnauthorized, resp)
+		return
+	}
+
+	h.mu.RLock()
+	var expiresAt int64
+	if exp, exists := h.tokens[token]; exists {
+		expiresAt = exp.Unix()
+	}
+	h.mu.RUnlock()
+
+	now := time.Now()
+	if now.Year() < 2024 {
+		expiresAt = now.Unix() + 86400*30
+	}
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success":            true,
+		"authenticated":      true,
+		"role":               "admin",
+		"setup_required":     false,
+		"session_expires_at": expiresAt,
+		"data": map[string]interface{}{
+			"authenticated":      true,
+			"role":               "admin",
+			"setup_required":     false,
+			"session_expires_at": expiresAt,
+		},
 	})
 }
 
@@ -101,11 +511,146 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Name:     "qm_auth_token",
 		Value:    "",
 		Path:     "/",
+		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
 	})
 
-	Success(w, map[string]string{"message": "Logged out successfully"})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "qm_logged_in",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Logged out successfully",
+	})
+}
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+	ConfirmPassword string `json:"confirm_password,omitempty"`
+}
+
+// ChangePassword updates the administrator password after validating current password.
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	var req ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if !h.verifyPassword(req.CurrentPassword) {
+		Error(w, http.StatusBadRequest, "Current password is incorrect")
+		return
+	}
+
+	if len(req.NewPassword) < 6 {
+		Error(w, http.StatusBadRequest, "New password must be at least 6 characters")
+		return
+	}
+
+	if req.ConfirmPassword != "" && req.NewPassword != req.ConfirmPassword {
+		Error(w, http.StatusBadRequest, "Passwords do not match")
+		return
+	}
+
+	salt := generateSalt()
+	hash := hashPassword(req.NewPassword, salt)
+	if err := h.saveAuthFile(hash, salt); err != nil {
+		Error(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save new password: %v", err))
+		return
+	}
+
+	h.hash = hash
+	h.salt = salt
+	h.setupRequired = false
+	h.tokens = make(map[string]time.Time)
+
+	Success(w, map[string]string{
+		"message": "Password changed successfully",
+	})
+}
+
+type ChangeSSHPasswordRequest struct {
+	Password        string `json:"password,omitempty"`
+	NewPassword     string `json:"new_password,omitempty"`
+	CurrentPassword string `json:"current_password,omitempty"`
+	ConfirmPassword string `json:"confirm_password,omitempty"`
+}
+
+// ChangeSSHPassword updates the system root SSH password.
+func (h *AuthHandler) ChangeSSHPassword(w http.ResponseWriter, r *http.Request) {
+	var req ChangeSSHPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// If current_password is provided, verify against QManager auth
+	if req.CurrentPassword != "" {
+		if !h.verifyPassword(req.CurrentPassword) {
+			Error(w, http.StatusBadRequest, "Current QManager password is incorrect")
+			return
+		}
+	}
+
+	targetPass := req.NewPassword
+	if targetPass == "" {
+		targetPass = req.Password
+	}
+
+	if len(targetPass) < 6 {
+		Error(w, http.StatusBadRequest, "Password must be at least 6 characters")
+		return
+	}
+
+	if req.ConfirmPassword != "" && targetPass != req.ConfirmPassword {
+		Error(w, http.StatusBadRequest, "Passwords do not match")
+		return
+	}
+
+	updater := h.sshUpdater
+	if updater == nil {
+		updater = defaultSSHUpdater
+	}
+	if err := updater(targetPass); err != nil {
+		Error(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update system SSH password: %v", err))
+		return
+	}
+
+	Success(w, map[string]string{
+		"message": "SSH password updated successfully",
+	})
+}
+
+// Middleware creates an HTTP middleware for authenticating protected routes.
+func (h *AuthHandler) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := h.extractToken(r)
+		if token == "" || !h.validateToken(token) {
+			JSON(w, http.StatusUnauthorized, map[string]interface{}{
+				"success":       false,
+				"authenticated": false,
+				"error":         "Unauthorized",
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ValidateToken is helper for auth middleware.
@@ -114,20 +659,26 @@ func (h *AuthHandler) ValidateToken(token string) bool {
 }
 
 func (h *AuthHandler) validateToken(token string) bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
 	exp, ok := h.tokens[token]
 	if !ok {
 		return false
 	}
-	return time.Now().Before(exp)
+	now := time.Now()
+	// Re-anchor token if system clock stepped forward from 1970 boot epoch
+	if exp.Year() < 2024 && now.Year() >= 2024 {
+		exp = now.Add(h.timeout)
+		h.tokens[token] = exp
+	}
+	return now.Before(exp)
 }
 
 func (h *AuthHandler) extractToken(r *http.Request) string {
 	if auth := r.Header.Get("Authorization"); auth != "" {
-		if len(auth) > 7 && auth[:7] == "Bearer " {
-			return auth[7:]
+		if len(auth) > 7 && strings.EqualFold(auth[:7], "Bearer ") {
+			return strings.TrimSpace(auth[7:])
 		}
 	}
 	if cookie, err := r.Cookie("qm_auth_token"); err == nil {

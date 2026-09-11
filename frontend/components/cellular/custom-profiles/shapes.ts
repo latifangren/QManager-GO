@@ -340,15 +340,18 @@ export const PROFILE_STATUS_BADGE: Record<
 export const HERO_CARD =
   "@container/hero flex flex-col gap-5 rounded-hero border-0 bg-surface p-6 shadow-[var(--shadow-whisper)]";
 
-/** The hero's identity line: disc, name column, trailing chip + actions. */
+/** The hero's identity line: disc+name group, trailing chip + actions. */
 export const HERO_TOP = "flex flex-wrap items-start gap-[1.125rem]";
 
+/** The disc + name column, stretched together so the disc can match the column's height. */
+export const HERO_IDENTITY = "flex min-w-0 flex-1 items-stretch gap-[1.125rem]";
+
 /**
- * The hero's leading glyph disc — geometry only. 52px, matching the tile disc
- * one step below it so the hero and its own tiles read as one family.
+ * The hero's leading glyph disc — geometry only. Fixed 52px square: `aspect-square`
+ * under `items-stretch` let the cross-axis height win while the flex item's own
+ * width resolved independently, so the disc rendered as an ellipse.
  */
-export const HERO_DISC =
-  "grid size-[3.25rem] flex-none place-items-center rounded-pill";
+export const HERO_DISC = "grid size-[3.25rem] flex-none place-items-center rounded-full";
 
 /**
  * Its fill, by what the hero is currently reporting. FILL layer, per the
@@ -459,7 +462,7 @@ export const HERO_STATE = {
  * corners — the wrapper paints nothing.
  */
 export const SAVED_PROFILES_ANCHOR =
-  "h-full scroll-mt-20 rounded-card outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px]";
+  "h-full scroll-mt-20 rounded-card outline-none focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:ring-[3px]";
 
 /**
  * The eyebrow above the active profile's name.
@@ -520,6 +523,16 @@ export const HERO_TILE_SHAPE = {
   /** The wrapping tag row every tile ends with. */
   TAGS: "flex min-w-0 flex-wrap items-center gap-1.5",
 } as const;
+
+/**
+ * A hero tile's VALUE, in machine voice. Not `cn(HERO_TILE_SHAPE.VALUE,
+ * MACHINE_VALUE)`: at an identical font-size, JetBrains Mono's wider glyphs and
+ * an all-caps device token (an APN routinely IS all-caps) read visibly larger
+ * than the sans value beside it, even though the two share one type step. This
+ * steps the mono value down to the size that reads as equal.
+ */
+export const HERO_TILE_VALUE_MONO =
+  "truncate text-[0.8125rem] font-semibold tracking-[-0.01em] font-mono tabular-nums";
 
 /**
  * THE TILE BODY IS NEUTRAL. THE DISC CARRIES THE COLOUR.

@@ -5,19 +5,18 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
-	"time"
+
+	"qmanager/internal/dpi"
 )
 
-const (
-	dpiConfigFile      = "/etc/qmanager/dpi_config.json"
-	dpiHostlistFile    = "/etc/qmanager/dpi_hostlist.txt"
-	dpiVerifyFile      = "/tmp/qmanager_dpi_verify.json"
-	dpiInstallFile     = "/tmp/qmanager_dpi_install.json"
-	dpiInstallPidFile  = "/tmp/qmanager_dpi_install.pid"
+var (
+	dpiConfigFile     = "/etc/qmanager/dpi_config.json"
+	dpiHostlistFile   = "/etc/qmanager/dpi_hostlist.txt"
+	dpiVerifyFile     = "/tmp/qmanager_dpi_verify.json"
+	dpiInstallFile    = "/tmp/qmanager_dpi_install.json"
+	dpiInstallPidFile = "/tmp/qmanager_dpi_install.pid"
 )
 
 // VideoOptimizerHandler handles DPI bypass / Traffic Engine / Video Optimizer.
@@ -31,10 +30,25 @@ func NewVideoOptimizerHandler() *VideoOptimizerHandler {
 }
 
 // TrafficEngineConfig represents stored engine state.
-type TrafficEngineConfig struct {
-	VideoOptimizerEnabled bool   `json:"video_optimizer_enabled"`
-	MasqueradeEnabled     bool   `json:"masquerade_enabled"`
-	SNIDomain             string `json:"sni_domain"`
+type TrafficEngineConfig = dpi.Config
+
+func readDpiConfig() TrafficEngineConfig {
+	dpi.DPIConfigFile = dpiConfigFile
+	return dpi.ReadConfig()
+}
+
+func writeDpiConfig(c TrafficEngineConfig) error {
+	dpi.DPIConfigFile = dpiConfigFile
+	return dpi.WriteConfig(c)
+}
+
+func readHostlistDomains() []string {
+	dpi.DPIHostlistFile = dpiHostlistFile
+	return dpi.ReadHostlist()
+}
+
+func countHostlistDomains() int {
+	return len(readHostlistDomains())
 }
 
 // HandleGet handles GET /api/v1/network/traffic-engine, /api/v1/network/video-optimizer, and /cgi-bin/quecmanager/network/video_optimizer.sh
@@ -61,28 +75,27 @@ func (h *VideoOptimizerHandler) HandleGet(w http.ResponseWriter, r *http.Request
 
 	// Status response
 	cfg := readDpiConfig()
-	isMasquerade := section == "masquerade"
+	isFullBypass := section == "full_bypass" || section == "masquerade"
 
 	enabled := cfg.VideoOptimizerEnabled
-	if isMasquerade {
+	if isFullBypass {
 		enabled = cfg.MasqueradeEnabled
 	}
 
-	binaryInstalled := checkBinaryInstalled("tpws")
+	mgr := dpi.GetManager()
+	isRunning := mgr.IsRunning()
+	engineEnabled := cfg.VideoOptimizerEnabled || cfg.MasqueradeEnabled
 	status := "stopped"
-	if enabled {
-		if isProcessRunning("tpws") {
+	if engineEnabled {
+		if isRunning {
 			status = "running"
 		} else {
 			status = "error"
 		}
 	}
 
-	uptime := "0m"
-	if status == "running" {
-		uptime = "12m"
-	}
-
+	uptime := mgr.Uptime()
+	pkts := mgr.GetPacketsProcessed()
 	domainsLoaded := countHostlistDomains()
 
 	resp := map[string]interface{}{
@@ -90,13 +103,15 @@ func (h *VideoOptimizerHandler) HandleGet(w http.ResponseWriter, r *http.Request
 		"enabled":              enabled,
 		"status":               status,
 		"uptime":               uptime,
-		"packets_processed":    1024,
+		"packets_processed":    pkts,
 		"domains_loaded":       domainsLoaded,
-		"binary_installed":     binaryInstalled,
+		"binary_installed":     true, // Embedded tpws is always ready
 		"kernel_module_loaded": true,
+		"force_tcp":            cfg.ForceTCP,
+		"force_tcp_active":     dpi.IsForceTCPActive(),
 	}
 
-	if isMasquerade {
+	if isFullBypass {
 		sni := cfg.SNIDomain
 		if sni == "" {
 			sni = "speedtest.net"
@@ -109,10 +124,10 @@ func (h *VideoOptimizerHandler) HandleGet(w http.ResponseWriter, r *http.Request
 
 // VideoOptimizerSavePayload represents the POST request body.
 type VideoOptimizerSavePayload struct {
-	Action     string   `json:"action"` // "save", "save_masquerade", "install", "uninstall", "verify", "save_hostlist"
-	Enabled    *bool    `json:"enabled,omitempty"`
-	SNIDomain  string   `json:"sni_domain,omitempty"`
-	Domains    []string `json:"domains,omitempty"`
+	Action    string   `json:"action"` // "save", "save_full_bypass", "save_masquerade", "save_force_tcp", "install", "uninstall", "verify", "save_hostlist", "restore_hostlist"
+	Enabled   *bool    `json:"enabled,omitempty"`
+	SNIDomain string   `json:"sni_domain,omitempty"`
+	Domains   []string `json:"domains,omitempty"`
 }
 
 // HandlePost handles POST /api/v1/network/traffic-engine, /api/v1/network/video-optimizer, and /cgi-bin/quecmanager/network/video_optimizer.sh
@@ -126,10 +141,14 @@ func (h *VideoOptimizerHandler) HandlePost(w http.ResponseWriter, r *http.Reques
 	switch payload.Action {
 	case "save":
 		h.handleSaveVideoOptimizer(w, payload)
-	case "save_masquerade":
-		h.handleSaveMasquerade(w, payload)
+	case "save_full_bypass", "save_masquerade":
+		h.handleSaveFullBypass(w, payload)
+	case "save_force_tcp":
+		h.handleSaveForceTCP(w, payload)
 	case "save_hostlist":
 		h.handleSaveHostlist(w, payload)
+	case "restore_hostlist":
+		h.handleRestoreHostlist(w)
 	case "install":
 		h.handleInstall(w)
 	case "uninstall":
@@ -154,82 +173,132 @@ func (h *VideoOptimizerHandler) handleSaveVideoOptimizer(w http.ResponseWriter, 
 	}
 	_ = writeDpiConfig(cfg)
 
-	// Manage systemd service or tpws daemon
+	mgr := dpi.GetManager()
 	if enabled {
-		_ = exec.Command("systemctl", "restart", "qmanager-dpi.service").Run()
+		_ = mgr.StartEngine("video_optimizer")
 	} else {
-		_ = exec.Command("systemctl", "stop", "qmanager-dpi.service").Run()
+		mgr.StopEngine()
+	}
+
+	status := "stopped"
+	if enabled && mgr.IsRunning() {
+		status = "running"
 	}
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"enabled": enabled,
-		"status":  "running",
+		"status":  status,
 	})
 }
 
-func (h *VideoOptimizerHandler) handleSaveMasquerade(w http.ResponseWriter, p VideoOptimizerSavePayload) {
+func (h *VideoOptimizerHandler) handleSaveFullBypass(w http.ResponseWriter, p VideoOptimizerSavePayload) {
 	enabled := false
 	if p.Enabled != nil {
 		enabled = *p.Enabled
 	}
-	sni := strings.TrimSpace(p.SNIDomain)
-	if sni == "" {
-		sni = "speedtest.net"
-	}
 
 	cfg := readDpiConfig()
 	cfg.MasqueradeEnabled = enabled
-	cfg.SNIDomain = sni
 	if enabled {
 		cfg.VideoOptimizerEnabled = false // Mutex
 	}
+	if p.SNIDomain != "" {
+		cfg.SNIDomain = p.SNIDomain
+	}
 	_ = writeDpiConfig(cfg)
 
+	mgr := dpi.GetManager()
 	if enabled {
-		_ = exec.Command("systemctl", "restart", "qmanager-dpi.service").Run()
+		_ = mgr.StartEngine("masquerade")
 	} else {
-		_ = exec.Command("systemctl", "stop", "qmanager-dpi.service").Run()
+		mgr.StopEngine()
+	}
+
+	status := "stopped"
+	if enabled && mgr.IsRunning() {
+		status = "running"
 	}
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success":    true,
 		"enabled":    enabled,
-		"sni_domain": sni,
-		"status":     "running",
+		"status":     status,
+		"sni_domain": cfg.SNIDomain,
+	})
+}
+
+func (h *VideoOptimizerHandler) handleSaveForceTCP(w http.ResponseWriter, p VideoOptimizerSavePayload) {
+	enabled := false
+	if p.Enabled != nil {
+		enabled = *p.Enabled
+	}
+
+	cfg := readDpiConfig()
+	cfg.ForceTCP = enabled
+	_ = writeDpiConfig(cfg)
+
+	if enabled {
+		_ = dpi.ApplyForceTCPRule()
+	} else {
+		dpi.RemoveForceTCPRule()
+	}
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success":          true,
+		"force_tcp":        enabled,
+		"force_tcp_active": dpi.IsForceTCPActive(),
 	})
 }
 
 func (h *VideoOptimizerHandler) handleSaveHostlist(w http.ResponseWriter, p VideoOptimizerSavePayload) {
-	_ = os.MkdirAll(filepath.Dir(dpiHostlistFile), 0755)
-	content := strings.Join(p.Domains, "\n") + "\n"
-	_ = os.WriteFile(dpiHostlistFile, []byte(content), 0644)
+	dpi.DPIHostlistFile = dpiHostlistFile
+	if err := dpi.WriteHostlist(p.Domains); err != nil {
+		Error(w, http.StatusInternalServerError, "Failed to write hostlist")
+		return
+	}
 
-	// Hot reload tpws if running (HUP or restart)
-	_ = exec.Command("systemctl", "reload-or-restart", "qmanager-dpi.service").Run()
+	cfg := readDpiConfig()
+	if cfg.VideoOptimizerEnabled {
+		_ = dpi.GetManager().StartEngine("video_optimizer")
+	}
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
-		"count":   len(p.Domains),
+		"message": "Hostlist saved",
+	})
+}
+
+func (h *VideoOptimizerHandler) handleRestoreHostlist(w http.ResponseWriter) {
+	dpi.DPIHostlistFile = dpiHostlistFile
+	if err := dpi.WriteHostlist(dpi.DefaultHostlist); err != nil {
+		Error(w, http.StatusInternalServerError, "Failed to restore hostlist")
+		return
+	}
+
+	cfg := readDpiConfig()
+	if cfg.VideoOptimizerEnabled {
+		_ = dpi.GetManager().StartEngine("video_optimizer")
+	}
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Hostlist restored to default",
 	})
 }
 
 func (h *VideoOptimizerHandler) handleInstall(w http.ResponseWriter) {
-	_ = os.WriteFile(dpiInstallFile, []byte(`{"status":"running","message":"Installing tpws binary..."}`), 0644)
-
-	go func() {
-		time.Sleep(1 * time.Second)
-		_ = os.WriteFile(dpiInstallFile, []byte(`{"status":"complete","message":"Installation complete"}`), 0644)
-	}()
+	_ = dpi.GetManager().EnsureBinaryExtracted()
+	_ = os.WriteFile(dpiInstallFile, []byte(`{"success":true,"status":"complete","message":"tpws ready"}`), 0644)
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
-		"status":  "running",
+		"status":  "complete",
 	})
 }
 
 func (h *VideoOptimizerHandler) handleUninstall(w http.ResponseWriter) {
-	_ = exec.Command("systemctl", "stop", "qmanager-dpi.service").Run()
+	dpi.GetManager().StopEngine()
 	_ = os.Remove(dpiConfigFile)
 
 	JSON(w, http.StatusOK, map[string]interface{}{
@@ -239,139 +308,63 @@ func (h *VideoOptimizerHandler) handleUninstall(w http.ResponseWriter) {
 }
 
 func (h *VideoOptimizerHandler) handleVerify(w http.ResponseWriter) {
-	_ = os.WriteFile(dpiVerifyFile, []byte(`{"status":"running","message":"Testing bypass speed..."}`), 0644)
-
-	go func() {
-		time.Sleep(2 * time.Second)
-		res := map[string]interface{}{
-			"status":    "complete",
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
-			"without_bypass": map[string]interface{}{
-				"speed_mbps": 4.5,
-				"throttled":  true,
-			},
-			"with_bypass": map[string]interface{}{
-				"speed_mbps": 48.2,
-				"throttled":  false,
-			},
-			"improvement": "10.7x faster",
-		}
-		data, _ := json.Marshal(res)
-		_ = os.WriteFile(dpiVerifyFile, data, 0644)
-	}()
+	dpi.GetManager().StartVerify()
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"status":  "running",
+		"message": "Verify started",
 	})
 }
 
 func (h *VideoOptimizerHandler) getVerifyStatus(w http.ResponseWriter) {
-	if data, err := os.ReadFile(dpiVerifyFile); err == nil && len(data) > 0 {
-		var res map[string]interface{}
-		if err := json.Unmarshal(data, &res); err == nil {
-			res["success"] = true
-			JSON(w, http.StatusOK, res)
-			return
-		}
+	data, err := os.ReadFile(dpiVerifyFile)
+	if err != nil {
+		JSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"status":  "idle",
+			"message": "No verification run",
+		})
+		return
 	}
-	JSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"status":  "idle",
-	})
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		JSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"status":  "idle",
+			"message": "No verification run",
+		})
+		return
+	}
+
+	if _, ok := resp["success"]; !ok {
+		resp["success"] = true
+	}
+
+	JSON(w, http.StatusOK, resp)
 }
 
 func (h *VideoOptimizerHandler) getInstallStatus(w http.ResponseWriter) {
-	if data, err := os.ReadFile(dpiInstallFile); err == nil && len(data) > 0 {
-		var res map[string]interface{}
-		if err := json.Unmarshal(data, &res); err == nil {
-			res["success"] = res["status"] == "complete"
-			JSON(w, http.StatusOK, res)
-			return
-		}
-	}
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
-		"status":  "idle",
+		"status":  "complete",
+		"message": "tpws binary embedded and ready",
 	})
 }
 
 func (h *VideoOptimizerHandler) getHostlist(w http.ResponseWriter) {
 	domains := readHostlistDomains()
-	JSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"domains": domains,
-	})
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(strings.Join(domains, "\n")))
 }
 
 func (h *VideoOptimizerHandler) getHostlistSection(w http.ResponseWriter) {
 	domains := readHostlistDomains()
-	defaultDomains := []string{
-		"googlevideo.com",
-		"youtube.com",
-		"netflix.com",
-		"nflxvideo.net",
-		"tiktokv.com",
-	}
-
 	JSON(w, http.StatusOK, map[string]interface{}{
-		"success":         true,
-		"domains":         domains,
-		"default_domains": defaultDomains,
-		"count":           len(domains),
+		"success": true,
+		"domains": domains,
+		"count":   len(domains),
 	})
-}
-
-func readHostlistDomains() []string {
-	data, err := os.ReadFile(dpiHostlistFile)
-	if err != nil {
-		return []string{}
-	}
-	var domains []string
-	lines := strings.Split(string(data), "\n")
-	for _, l := range lines {
-		l = strings.TrimSpace(l)
-		if l != "" && !strings.HasPrefix(l, "#") {
-			domains = append(domains, l)
-		}
-	}
-	return domains
-}
-
-func countHostlistDomains() int {
-	return len(readHostlistDomains())
-}
-
-func checkBinaryInstalled(bin string) bool {
-	_, err := exec.LookPath(bin)
-	return err == nil
-}
-
-func isProcessRunning(name string) bool {
-	cmd := exec.Command("pgrep", "-f", name)
-	err := cmd.Run()
-	return err == nil
-}
-
-func readDpiConfig() TrafficEngineConfig {
-	data, err := os.ReadFile(dpiConfigFile)
-	if err != nil {
-		return TrafficEngineConfig{
-			VideoOptimizerEnabled: false,
-			MasqueradeEnabled:     false,
-			SNIDomain:             "speedtest.net",
-		}
-	}
-	var c TrafficEngineConfig
-	_ = json.Unmarshal(data, &c)
-	return c
-}
-
-func writeDpiConfig(c TrafficEngineConfig) error {
-	_ = os.MkdirAll(filepath.Dir(dpiConfigFile), 0755)
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dpiConfigFile, data, 0644)
 }

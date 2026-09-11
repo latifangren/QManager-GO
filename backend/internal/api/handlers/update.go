@@ -22,12 +22,24 @@ import (
 )
 
 const (
-	CurrentQManagerVersion = "v0.1.14"
-	DefaultGitHubRepo      = "iamromulan/quecmanager-core"
+	CurrentQManagerVersion = "1.0.0-beta"
+	DefaultGitHubRepo      = "latifangren/QManager-GO"
 	DefaultUpdateLockFile  = "/tmp/qmanager_update.lock"
 	DefaultUpdateDir       = "/tmp/qmanager_update"
-	DefaultBinaryPath      = "/usr/bin/qmanager"
+	DefaultBinaryPath      = "/usrdata/qmanager/qmanager"
 )
+
+const DefaultInitialChangelog = `### QManager-GO v1.0.0-beta
+- **Single-Binary Pure Go Architecture**: Standalone lightweight web and telemetry daemon.
+- **RAM-First Storage Safety**: Zero NAND flash wear; live metrics and logs stored in RAM/tmpfs.
+- **Traffic Engine (DPI Bypass)**: Embedded on-demand tpws engine with YouTube optimizer & Full Bypass.
+- **Native Web Console**: Pure Go PTY WebSocket bridge (/console/ws) for in-browser root shell.
+- **AT Command Palette**: Redesigned 2-line responsive popover with 43 Quectel diagnostic presets.
+- **Tailscale VPN**: On-demand modular host lifecycle and automated background installer.
+- **System Health Check**: 26 native Go diagnostic probes with one-click support bundle export.
+- **Custom DNS**: 9 popular 1-click public DNS presets plus custom manual input.
+- **SSH Access Security**: Atomic /etc/shadow updater using native openssl password hashing.
+- **Multi-Language**: Full translations in English, Indonesian, Simplified/Traditional Chinese, and Italian.`
 
 // UpdateSettings holds update preferences.
 type UpdateSettings struct {
@@ -46,22 +58,25 @@ type DownloadState struct {
 
 // UpdateResponse represents response for GET /system/update.sh
 type UpdateResponse struct {
-	Success          bool           `json:"success"`
-	CurrentVersion   string         `json:"current_version"`
-	LatestVersion    *string        `json:"latest_version"`
-	UpdateAvailable  bool           `json:"update_available"`
-	Changelog        *string        `json:"changelog"`
-	CurrentChangelog *string        `json:"current_changelog"`
-	DownloadURL      *string        `json:"download_url"`
-	DownloadSize     *string        `json:"download_size"`
-	PublishedAt      *string        `json:"published_at"`
-	IsPrerelease     bool           `json:"is_prerelease"`
-	Settings         UpdateSettings `json:"settings"`
-	Download         *DownloadState `json:"download,omitempty"`
-	PendingInstall   bool           `json:"pending_install_found"`
-	PendingVersion   *string        `json:"pending_version"`
-	Error            string         `json:"error,omitempty"`
-	Detail           string         `json:"detail,omitempty"`
+	Success           bool           `json:"success"`
+	CurrentVersion    string         `json:"current_version"`
+	LatestVersion     *string        `json:"latest_version"`
+	UpdateAvailable   bool           `json:"update_available"`
+	Changelog         *string        `json:"changelog"`
+	CurrentChangelog  *string        `json:"current_changelog"`
+	DownloadURL       *string        `json:"download_url"`
+	DownloadSize      *string        `json:"download_size"`
+	PublishedAt       *string        `json:"published_at"`
+	IsPrerelease      bool           `json:"is_prerelease"`
+	IncludePrerelease bool           `json:"include_prerelease"`
+	AutoUpdateEnabled bool           `json:"auto_update_enabled"`
+	AutoUpdateTime    string         `json:"auto_update_time"`
+	Settings          UpdateSettings `json:"settings"`
+	Download          *DownloadState `json:"download,omitempty"`
+	PendingInstall    bool           `json:"pending_install_found"`
+	PendingVersion    *string        `json:"pending_version"`
+	Error             string         `json:"error,omitempty"`
+	Detail            string         `json:"detail,omitempty"`
 }
 
 // GitHubRelease represents GitHub API release response.
@@ -128,6 +143,11 @@ func (h *UpdateHandler) GetCurrentVersion() string {
 // CheckUpdate handles GET /api/v1/system/update and GET /cgi-bin/quecmanager/system/update.sh
 func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 	action := r.URL.Query().Get("action")
+	if action == "reboot_ack" {
+		Success(w, map[string]interface{}{"success": true, "message": "Reboot acknowledged"})
+		return
+	}
+
 	if action == "status" || action == "download_status" {
 		h.downloadMu.Lock()
 		state := *h.currentDown
@@ -165,10 +185,16 @@ func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 		settings.AutoUpdateTime = "03:00"
 	}
 
+	initChangelog := DefaultInitialChangelog
 	resp := UpdateResponse{
-		Success:        true,
-		CurrentVersion: currentVer,
-		Settings:       settings,
+		Success:           true,
+		CurrentVersion:    currentVer,
+		CurrentChangelog:  &initChangelog,
+		Settings:          settings,
+		IsPrerelease:      true,
+		IncludePrerelease: settings.IncludePrerelease,
+		AutoUpdateEnabled: settings.AutoUpdateEnabled,
+		AutoUpdateTime:    settings.AutoUpdateTime,
 	}
 
 	// Check if staged download is ready in updateDir
@@ -238,8 +264,17 @@ func (h *UpdateHandler) HandleUpdateAction(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		action := r.URL.Query().Get("action")
+		if action == "reboot_ack" {
+			Success(w, map[string]interface{}{"success": true, "message": "Reboot acknowledged"})
+			return
+		}
 		Error(w, http.StatusBadRequest, "Invalid JSON payload")
 		return
+	}
+
+	if payload.Action == "" {
+		payload.Action = r.URL.Query().Get("action")
 	}
 
 	switch payload.Action {
@@ -625,6 +660,9 @@ func CompareSemver(v1, v2 string) int {
 }
 
 func extractBinaryFromTar(tarPath, destDir string) (string, error) {
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return "", err
+	}
 	file, err := os.Open(tarPath)
 	if err != nil {
 		return "", err

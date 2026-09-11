@@ -130,7 +130,12 @@ export const CONSOLE = {
   SCORE: "text-[52px] font-semibold leading-none tabular-nums",
   SCORE_BOX: "h-[52px]",
 
-  /** The composite meter. 8px so it out-weighs the 4px leg lanes. */
+  /**
+   * The composite meter. 8px — which is now every bar in the product, so this
+   * no longer out-weighs the leg lanes by thickness. It out-weighs them by
+   * spanning the card's own line where a leg gets a 56px lane, and by the 52px
+   * numeral it sits under.
+   */
   METER_LANE: "relative flex h-2 items-center",
   /**
    * The session peak. Positioned with `left`, deliberately never animated: a
@@ -143,7 +148,8 @@ export const CONSOLE = {
   LEG_ROW:
     "flex items-center gap-3 rounded-pill bg-surface-container px-4 py-2.5",
   LEG_KEY: KEY_LABEL,
-  /** The 56px inline bar lane. A 4px bar in a 20px line box adds no height. */
+  /** The 56px inline bar lane. An 8px bar centres in the same 20px line box a
+   *  4px one did, so the 40px leg row is unchanged — measured, not assumed. */
   LEG_LANE: "w-14 shrink-0",
   LEG_VALUE: "w-[4.75rem] shrink-0 text-right text-[13px]/5 font-semibold tabular-nums",
   /**
@@ -260,7 +266,7 @@ export const SLOT = {
    * and focus ring; the `<input>` inside is transparent and unstyled.
    */
   LABEL_SHELL:
-    "flex h-11 w-[5.5rem] shrink-0 items-center gap-1.5 rounded-field bg-surface-container-high px-3 focus-within:ring-[3px] focus-within:ring-ring/50",
+    "flex h-11 w-[5.5rem] shrink-0 items-center gap-1.5 rounded-field bg-surface-container-high px-3 focus-within:ring-[3px] focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background",
   LABEL_FIELD:
     "min-w-0 flex-1 border-0 bg-transparent p-0 text-[13px] font-semibold focus-visible:outline-none",
   LABEL_STATIC: "w-[5.5rem] shrink-0 truncate text-[13px] font-semibold",
@@ -325,8 +331,14 @@ export const PORT = {
   METRIC: "flex flex-col gap-1",
   METRIC_HEAD: "flex items-baseline justify-between gap-2",
   KEY: KEY_LABEL,
-  /** Pinned so a bar, a caption and a "not reported" line share one band. */
-  LANE: "flex h-1 items-center",
+  /**
+   * Pinned so a bar, a caption and a "not reported" line share one band.
+   *
+   * This tracks the bar's own height and must move with it: the band was 4px
+   * while `MetricBar` was, and an 8px bar inside a 4px `items-center` box
+   * overflows the band this constant exists to hold.
+   */
+  LANE: "flex h-2 items-center",
   VALUE: "shrink-0 text-right text-[13px]/5 font-semibold tabular-nums",
 } as const;
 

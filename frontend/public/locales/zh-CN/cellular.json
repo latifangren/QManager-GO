@@ -320,6 +320,7 @@
       "scanning_title": "正在逐个频段调谐",
       "scanning_body": "请保持此标签页打开——模块完成后结果会显示在这里。",
       "complete_title": "扫描完成",
+      "summary_total_cells": "小区总数",
       "failed_title": "扫描失败",
       "failed_body": "模块可能正忙或无法访问。请检查连接后重新扫描。"
     },
@@ -425,10 +426,8 @@
         "link_blocked": "本次读取结束后可用。",
         "summary_empty": "本次读取结束时未列出任何邻区，因此没有可分析的内容。",
         "summary_measured_label": "有测量值",
-        "summary_channels_one": "1 个信道",
-        "summary_channels_other": "{{count}} 个信道",
-        "summary_channel_only_one": "1 个仅信道",
-        "summary_channel_only_other": "{{count}} 个仅信道",
+        "available_bands_one": "1 个可用频段",
+        "available_bands_other": "{{count}} 个可用频段",
         "verdict_channel_only_one": "1 个邻区仅返回了信道：服务小区知道它存在，但没有对它的当前测量值，因此它不带质量信息，也无法锁定。",
         "verdict_channel_only_other": "{{count}} 个邻区仅返回了信道：服务小区知道它们存在，但没有对它们的当前测量值，因此它们不带质量信息，也无法锁定。",
         "idle_title": "尚未读取",
@@ -451,7 +450,9 @@
         "tally_measured_one": "1 个有测量值",
         "tally_measured_other": "{{count}} 个有测量值",
         "tally_channel_only_one": "1 个仅信道",
-        "tally_channel_only_other": "{{count}} 个仅信道"
+        "tally_channel_only_other": "{{count}} 个仅信道",
+        "tally_bands_one": "1 个频段",
+        "tally_bands_other": "{{count}} 个频段"
       },
       "columns": {
         "cell_type": "关系",
@@ -587,12 +588,10 @@
         "title": "APN 配置",
         "description": "调制解调器用于建立数据连接的接入点名称。"
       },
-      "status": {
-        "active": "已激活",
-        "not_live": "未生效",
-        "carrier_default": "运营商默认"
+      "cards": {
+        "unread": "尚未从调制解调器读取到任何数据，因此此卡片没有可显示的值。"
       },
-      "save_connection_notice": "保存时调制解调器重连期间蜂窝连接会短暂中断。",
+      "save_connection_notice": "保存会让调制解调器断开并重新附着网络。蜂窝数据会中断约四秒——如果你是通过调制解调器的以太网口连接的，此页面也会随之断开，并会自动重新连接。",
       "carrier_default": {
         "button": "使用运营商默认",
         "dialog": {
@@ -606,7 +605,8 @@
         "saved": "APN 设置已保存",
         "save_error": "保存 APN 设置失败",
         "deactivated": "已恢复到运营商默认 APN",
-        "deactivate_error": "恢复到运营商默认失败"
+        "deactivate_error": "恢复到运营商默认失败",
+        "reconciling": "正在确认连接是否已恢复…"
       },
       "controls_label": "APN 配置",
       "managed_by_profile_fallback": "活动的自定义 SIM 配置",
@@ -643,6 +643,9 @@
           "description_sos": "CID {{cid}} 被保留用于紧急（SOS）呼叫。在此写入数据 APN 可能会中断紧急呼叫。仍要继续吗？",
           "confirm": "仍然使用",
           "cancel": "取消"
+        },
+        "reserved_dialog": {
+          "unverified_body": "该上下文通常保留用于 VoLTE 或紧急呼叫，但调制解调器未报告它的类型。在此写入数据 APN 可能会中断这些服务。"
         }
       },
       "rows": {
@@ -665,7 +668,6 @@
       "readout": {
         "title": "网络授予的内容",
         "description": "实时读取自调制解调器，而非已保存的设置。",
-        "serving_apn": "生效的 APN",
         "granted_ip": "已授予的 IP",
         "bearer_state": "承载状态",
         "ipv4": "IPv4 地址",
@@ -677,7 +679,14 @@
         "ip_both": "IPv4 和 IPv6",
         "ip_none": "未分配",
         "error_title": "无法获取实时状态",
-        "error_body": "调制解调器状态源未响应。下方的值可能缺失。"
+        "error_body": "调制解调器状态源未响应。下方的值可能缺失。",
+        "configured_label": "你配置的",
+        "granted_label": "网络授予的",
+        "source_stored": "来自已保存的设置",
+        "source_negotiated": "与网络协商的结果",
+        "stale": "读数已停止更新",
+        "stale_body": "调制解调器状态源近期没有更新。上方的值可能已经不再准确。",
+        "reread": "从调制解调器重新读取"
       },
       "mbn": {
         "title": "运营商配置文件 (MBN)",
@@ -688,7 +697,6 @@
         },
         "list_label": "可用配置包",
         "selected_caption": "已选择，自上次启动起生效",
-        "reboot_notice": "配置包需重启后才会生效。QManager 只会提示重启，绝不擅自重启。",
         "pending_note": "更改将在重启后生效。",
         "save": "应用配置文件",
         "empty": {
@@ -798,27 +806,34 @@
         "reread": "从调制解调器重新读取",
         "in_sync": "已保存的设置与调制解调器一致。"
       },
-      "hero": {
-        "title": "当前连接",
-        "description": "调制解调器当前接入的网络，以及该网络为它设定的速率上限。",
-        "params_heading": "当前参数",
-        "rates_note": "速率上限是网络授予的上限值，不是实测速度。它们在页面打开时读取，每次保存后再读取一次。",
-        "sr_rate_block": "{{radio}}：{{state}}",
-        "live": "实时",
+      "strip": {
+        "label": "实时状态",
         "stale": "已过时",
+        "network": "网络",
+        "sim": "SIM 卡",
+        "aggregation": "载波聚合",
+        "data_path": "数据通道",
         "carrier_none": "未报告运营商",
+        "bands_none": "未报告频段",
+        "ip_dual": "已分配 IPv4 和 IPv6",
+        "ip_v4": "仅 IPv4",
+        "ip_v6": "仅 IPv6",
+        "ip_none": "未分配地址",
         "unavailable_title": "无法读取调制解调器",
-        "unavailable_retrying": "上次读取失败。QManager 仍在重试。",
-        "unavailable_static": "上次读取失败。请使用下方的“从调制解调器重新读取”再试一次。"
+        "unavailable_retrying": "上次读取失败。QManager 仍在重试。"
+      },
+      "rate_ceiling": {
+        "eyebrow": "网络授予的速率上限",
+        "in_force": "{{radio}} AMBR 生效中",
+        "no_ceiling": "未读到上限",
+        "sr_rate_block": "{{radio}}：{{state}}",
+        "provenance": "速率上限是网络授予的上限值，不是实测速度。它们在页面打开时读取，每次保存后再读取一次。",
+        "unavailable": "上次读取失败。请使用下方的“从调制解调器重新读取”再试一次。"
       },
       "readout": {
-        "active_slot": "活动插槽",
         "slot_n": "SIM {{slot}}",
         "unknown": "未知",
-        "radio_power_label": "射频状态",
-        "apn_label": "当前 APN",
         "no_apn": "未报告",
-        "carrier_aggregation": "载波聚合",
         "ca_none": "未启用",
         "ca_breakdown": "LTE {{lte}} + NR {{nr}}",
         "ca_lte_only": "LTE {{lte}}",
@@ -833,7 +848,6 @@
         "unknown": "未知"
       },
       "sim_slots": {
-        "label": "SIM 卡槽",
         "empty": "空",
         "sr_active": "SIM {{slot}}，使用中，卡号尾号 {{last4}}",
         "sr_standby": "SIM {{slot}}，备用，卡号尾号 {{last4}}",
@@ -845,13 +859,13 @@
         "governing": "生效中",
         "not_governing": "未生效",
         "nsa_note": "5G 非独立组网走 LTE 数据会话，因此以这条上限为准。",
-        "lte_empty_title": "未报告 LTE 速率",
         "lte_empty_reason": "调制解调器仅在 LTE 数据会话建立期间才发布 LTE 上限。",
-        "nr_empty_title": "未报告 5G 速率",
         "nr_empty_reason": "调制解调器仅在 5G 数据会话建立期间才发布 5G 上限。",
         "download": "下载",
         "upload": "上传",
-        "governing_unread": "您的连接正在使用该射频。打开本页时未读到它的上限。"
+        "governing_unread": "您的连接正在使用该射频。打开本页时未读到它的上限。",
+        "lte_short": "LTE",
+        "nr_short": "5G NR"
       }
     },
     "fplmn": {
@@ -1132,7 +1146,8 @@
         "imei_override": "IMEI 覆盖",
         "scenario": "生效中的场景",
         "scheduled": "已排定计划",
-        "radio": "无线电，由场景掌管",
+        "not_scheduled": "未计划",
+        "radio": "无线电配置",
         "band_locking": "频段锁定",
         "network_mode": "网络模式",
         "lte_bands": "LTE 频段",

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	DefaultLanguagePacksDir = "/usrdata/qmanager/language-packs"
+	DefaultLanguagePacksDir = "/usrdata/qmanager/locales-packs"
 )
 
 // InstalledPack represents a downloaded/installed language pack.
@@ -42,9 +42,13 @@ type LanguagePacksHandler struct {
 }
 
 // NewLanguagePacksHandler creates a new LanguagePacksHandler.
-func NewLanguagePacksHandler() *LanguagePacksHandler {
+func NewLanguagePacksHandler(optionalDir ...string) *LanguagePacksHandler {
+	dir := DefaultLanguagePacksDir
+	if len(optionalDir) > 0 && optionalDir[0] != "" {
+		dir = optionalDir[0]
+	}
 	return &LanguagePacksHandler{
-		packsDir: DefaultLanguagePacksDir,
+		packsDir: dir,
 		installState: LanguagePackInstallState{
 			State:    "idle",
 			Progress: 0,
@@ -143,6 +147,24 @@ func (h *LanguagePacksHandler) InstallStatus(w http.ResponseWriter, r *http.Requ
 	defer h.mu.Unlock()
 
 	JSON(w, http.StatusOK, h.installState)
+}
+
+// InstallCancel handles POST /cgi-bin/quecmanager/system/language-packs/install_cancel.sh and cancels an in-progress install.
+func (h *LanguagePacksHandler) InstallCancel(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.installState = LanguagePackInstallState{
+		State:     "idle",
+		Progress:  0,
+		Message:   "Installation canceled",
+		UpdatedAt: time.Now().Unix(),
+	}
+
+	Success(w, map[string]interface{}{
+		"success": true,
+		"message": "Language pack installation canceled",
+	})
 }
 
 // Remove handles POST /cgi-bin/quecmanager/system/language-packs/remove.sh and /api/system/language-packs/remove

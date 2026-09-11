@@ -12,25 +12,25 @@ func TestTelemetryHistory_SignalRing(t *testing.T) {
 	val3 := 30
 	val4 := 40
 
-	hist.RecordSignal(SignalHistoryPoint{Timestamp: 100, LteRSRP: []*int{&val1}})
-	hist.RecordSignal(SignalHistoryPoint{Timestamp: 101, LteRSRP: []*int{&val2}})
-	hist.RecordSignal(SignalHistoryPoint{Timestamp: 102, LteRSRP: []*int{&val3}})
+	hist.RecordSignal(SignalHistoryPoint{TS: 100, LteRsrp: []*int{&val1}})
+	hist.RecordSignal(SignalHistoryPoint{TS: 101, LteRsrp: []*int{&val2}})
+	hist.RecordSignal(SignalHistoryPoint{TS: 102, LteRsrp: []*int{&val3}})
 
 	pts := hist.GetSignalHistory(10)
 	if len(pts) != 3 {
 		t.Fatalf("expected 3 points, got %d", len(pts))
 	}
-	if *pts[0].LteRSRP[0] != 10 || *pts[2].LteRSRP[0] != 30 {
+	if *pts[0].LteRsrp[0] != 10 || *pts[2].LteRsrp[0] != 30 {
 		t.Errorf("signal points mismatch: %+v", pts)
 	}
 
 	// Wrap around
-	hist.RecordSignal(SignalHistoryPoint{Timestamp: 103, LteRSRP: []*int{&val4}})
+	hist.RecordSignal(SignalHistoryPoint{TS: 103, LteRsrp: []*int{&val4}})
 	ptsWrapped := hist.GetSignalHistory(10)
 	if len(ptsWrapped) != 3 {
 		t.Fatalf("expected 3 points after wrap, got %d", len(ptsWrapped))
 	}
-	if *ptsWrapped[0].LteRSRP[0] != 20 || *ptsWrapped[2].LteRSRP[0] != 40 {
+	if *ptsWrapped[0].LteRsrp[0] != 20 || *ptsWrapped[2].LteRsrp[0] != 40 {
 		t.Errorf("wrapped signal points mismatch: %+v", ptsWrapped)
 	}
 }

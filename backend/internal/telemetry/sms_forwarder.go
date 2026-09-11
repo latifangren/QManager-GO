@@ -367,10 +367,14 @@ func (f *SMSForwarder) sendSMSWithRetry(ctx context.Context, targetPhone, body s
 			_, _ = f.engine.ExecContext(ctx, "AT+CMGF=1")
 			cmgsCmd := fmt.Sprintf("AT+CMGS=\"%s\"\r%s\x1A", targetPhone, body)
 			res, err := f.engine.ExecContext(ctx, cmgsCmd)
-			if err == nil && !strings.Contains(res.Raw, "ERROR") {
+			if err == nil && (res == nil || !strings.Contains(res.Raw, "ERROR")) {
 				return nil
 			}
-			lastErr = fmt.Errorf("AT CMGS error: %s (%v)", res.Raw, err)
+			rawMsg := ""
+			if res != nil {
+				rawMsg = res.Raw
+			}
+			lastErr = fmt.Errorf("AT CMGS error: %s (%v)", rawMsg, err)
 		}
 
 		time.Sleep(3 * time.Second)
@@ -480,6 +484,25 @@ func (f *SMSForwarder) recordFailure(sender, errMsg string) {
 	log.Printf("[SMSForwarder] Failure recorded for %s: %s", sender, errMsg)
 }
 
+// ParseSmsToolOutput parses JSON output from `sms_tool -j recv`.
+// Handles both root array `[...]` and root envelope `{"msg": [...]}`.
+func ParseSmsToolOutput(out []byte) []RawSmsToolItem {
+	var raw []RawSmsToolItem
+	if err := json.Unmarshal(out, &raw); err == nil && len(raw) > 0 {
+		return raw
+	}
+	var envelope struct {
+		Msg []RawSmsToolItem `json:"msg"`
+	}
+	if err := json.Unmarshal(out, &envelope); err == nil {
+		return envelope.Msg
+	}
+	if raw != nil {
+		return raw
+	}
+	return nil
+}
+
 // FetchInboxAndStorage reads inbox messages and storage statistics across ME and SM storage pools.
 func FetchInboxAndStorage(ctx context.Context, smsToolPath, atDevice string, engine *atengine.Engine) ([]SMSMessage, SMSStorage, error) {
 	if _, err := os.Stat(smsToolPath); err == nil {
@@ -489,12 +512,12 @@ func FetchInboxAndStorage(ctx context.Context, smsToolPath, atDevice string, eng
 		var rawME, rawSM []RawSmsToolItem
 		cmdME := exec.CommandContext(ctx, smsToolPath, "-d", atDevice, "-s", "ME", "recv", "-j")
 		if out, err := cmdME.Output(); err == nil {
-			_ = json.Unmarshal(out, &rawME)
+			rawME = ParseSmsToolOutput(out)
 		}
 
 		cmdSM := exec.CommandContext(ctx, smsToolPath, "-d", atDevice, "-s", "SM", "recv", "-j")
 		if out, err := cmdSM.Output(); err == nil {
-			_ = json.Unmarshal(out, &rawSM)
+			rawSM = ParseSmsToolOutput(out)
 		}
 
 		meMsgs := ConvertRawSmsItems(rawME, "ME")
@@ -502,6 +525,9 @@ func FetchInboxAndStorage(ctx context.Context, smsToolPath, atDevice string, eng
 
 		merged := append(meMsgs, smMsgs...)
 		SortSMSMessages(merged)
+		if merged == nil {
+			merged = []SMSMessage{}
+		}
 
 		meStat := ReadSmsToolStatus(ctx, smsToolPath, atDevice, "ME")
 		smStat := ReadSmsToolStatus(ctx, smsToolPath, atDevice, "SM")
@@ -673,6 +699,32 @@ func extractIndexes(raw interface{}) []int {
 		return []int{int(v)}
 	case int:
 		return []int{v}
+	case string:
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return []int{}
+		}
+		var out []int
+		for _, part := range strings.Split(v, ",") {
+			part = strings.TrimSpace(part)
+			if strings.Contains(part, "-") {
+				sub := strings.Split(part, "-")
+				if len(sub) == 2 {
+					start, err1 := strconv.Atoi(strings.TrimSpace(sub[0]))
+					end, err2 := strconv.Atoi(strings.TrimSpace(sub[1]))
+					if err1 == nil && err2 == nil && start <= end {
+						for i := start; i <= end; i++ {
+							out = append(out, i)
+						}
+						continue
+					}
+				}
+			}
+			if num, err := strconv.Atoi(part); err == nil {
+				out = append(out, num)
+			}
+		}
+		return out
 	case []interface{}:
 		var out []int
 		for _, item := range v {
@@ -680,6 +732,8 @@ func extractIndexes(raw interface{}) []int {
 				out = append(out, int(f))
 			} else if i, ok := item.(int); ok {
 				out = append(out, i)
+			} else if s, ok := item.(string); ok {
+				out = append(out, extractIndexes(s)...)
 			}
 		}
 		return out

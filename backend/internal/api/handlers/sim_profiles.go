@@ -20,11 +20,14 @@ import (
 )
 
 const (
-	defaultProfileDir         = "/etc/qmanager/profiles"
-	defaultActiveProfilePath  = "/etc/qmanager/active_profile"
-	defaultProfileStatePath   = "/tmp/qmanager_profile_state.json"
-	defaultSimRegistryPath    = "/etc/qmanager/sim_registry.json"
-	maxProfiles               = 10
+	maxProfiles = 10
+)
+
+var (
+	defaultProfileDir        = "/etc/qmanager/profiles"
+	defaultActiveProfilePath = "/etc/qmanager/active_profile"
+	defaultProfileStatePath  = "/tmp/qmanager_profile_state.json"
+	defaultSimRegistryPath   = "/etc/qmanager/sim_registry.json"
 )
 
 // ProfileSettings represents core radio/network settings in a profile.
@@ -99,14 +102,21 @@ type SIMProfileHandler struct {
 	activeProfilePath string
 	profileStatePath  string
 	mu                sync.Mutex
+	wg                sync.WaitGroup
 }
 
 // NewSIMProfileHandler creates a new SIMProfileHandler.
-func NewSIMProfileHandler(engine *atengine.Engine) *SIMProfileHandler {
+func NewSIMProfileHandler(engine *atengine.Engine, optionalConfigDir ...string) *SIMProfileHandler {
+	profDir := defaultProfileDir
+	activePath := defaultActiveProfilePath
+	if len(optionalConfigDir) > 0 && optionalConfigDir[0] != "" {
+		profDir = filepath.Join(optionalConfigDir[0], "profiles")
+		activePath = filepath.Join(optionalConfigDir[0], "active_profile")
+	}
 	return &SIMProfileHandler{
 		engine:            engine,
-		profileDir:        defaultProfileDir,
-		activeProfilePath: defaultActiveProfilePath,
+		profileDir:        profDir,
+		activeProfilePath: activePath,
 		profileStatePath:  defaultProfileStatePath,
 	}
 }
@@ -118,6 +128,11 @@ func (h *SIMProfileHandler) SetStoragePaths(profileDir, activePath, statePath st
 	h.profileDir = profileDir
 	h.activeProfilePath = activePath
 	h.profileStatePath = statePath
+}
+
+// WaitForAsync blocks until any running background tasks complete.
+func (h *SIMProfileHandler) WaitForAsync() {
+	h.wg.Wait()
 }
 
 func (h *SIMProfileHandler) getActiveProfileID() string {
@@ -420,7 +435,9 @@ func (h *SIMProfileHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 
 	// Execute apply steps asynchronously or synchronously via AT engine
+	h.wg.Add(1)
 	go func() {
+		defer h.wg.Done()
 		h.mu.Lock()
 		defer h.mu.Unlock()
 
@@ -487,6 +504,24 @@ func (h *SIMProfileHandler) ApplyStatus(w http.ResponseWriter, r *http.Request) 
 	}
 
 	JSON(w, http.StatusOK, state)
+}
+
+// Deactivate handles POST /cgi-bin/quecmanager/profiles/deactivate.sh and resets the active SIM profile.
+func (h *SIMProfileHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	_ = h.setActiveProfileID("")
+	state := ProfileApplyState{
+		Status:    "idle",
+		Timestamp: time.Now().Unix(),
+	}
+	_ = h.writeState(state)
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Active profile deactivated",
+	})
 }
 
 func (h *SIMProfileHandler) writeState(st ProfileApplyState) error {

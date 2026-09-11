@@ -14,7 +14,7 @@ import (
 	"qmanager/internal/atengine"
 )
 
-const (
+var (
 	ipptConfigPath = "/etc/qmanager/ippt_config.json"
 )
 

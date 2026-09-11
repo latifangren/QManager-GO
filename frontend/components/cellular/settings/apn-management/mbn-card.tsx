@@ -39,9 +39,11 @@ import type { MbnProfile, MbnSaveRequest } from "@/types/mbn-settings";
 
 import SettingRow from "../setting-row";
 import {
+  BANNER_ACTION,
   EMPTY_BLOCK,
   CARD_PAD,
   CARD_SHELL,
+  CARD_TITLE,
   CHOICE_ROW,
   PILL_ACTION,
   ROW_GROUP,
@@ -127,7 +129,7 @@ export function MBNCard({
     return (
       <Card className={cn(CARD_SHELL)}>
         <CardHeader className={CARD_PAD}>
-          <CardTitle>{t(`${K}.title`)}</CardTitle>
+          <CardTitle className={CARD_TITLE}>{t(`${K}.title`)}</CardTitle>
           <CardDescription>{t(`${K}.description`)}</CardDescription>
         </CardHeader>
         <CardContent className={cn(CARD_PAD, "flex flex-col gap-4")}>
@@ -266,7 +268,7 @@ export function MBNCard({
   return (
     <Card className={cn(CARD_SHELL)}>
       <CardHeader className={CARD_PAD}>
-        <CardTitle>{t(`${K}.title`)}</CardTitle>
+        <CardTitle className={CARD_TITLE}>{t(`${K}.title`)}</CardTitle>
         <CardDescription>{t(`${K}.description`)}</CardDescription>
       </CardHeader>
 
@@ -285,7 +287,7 @@ export function MBNCard({
                   variant="ghost"
                   size="sm"
                   onClick={onRetry}
-                  className="h-8 rounded-pill px-3 text-xs font-semibold"
+                  className={BANNER_ACTION}
                 >
                   {t("actions.retry", { ns: "common" })}
                 </Button>
@@ -314,11 +316,20 @@ export function MBNCard({
           />
         </div>
 
-        {bundles.length === 0 ? (
-          // Honest empty state: some firmware simply returns no bundle list, in
-          // which case automatic selection is not a preference, it is the only
-          // thing available. Geometry imported from the family's empty-state
-          // constant rather than restated.
+        {/* THE EMPTY STATE IS GATED ON A REAL READ. `bundles = profiles ?? []`
+            collapses `null` (never fetched, or the fetch failed) and `[]` (the
+            firmware genuinely reported none) into one `.length === 0` branch —
+            so on a failed fetch the user saw the destructive banner above
+            ("Failed to load carrier profiles") and, directly underneath it, a
+            paragraph asserting the firmware had reported none. A contradiction
+            on one screen, not a silence. When `profiles === null` the banner is
+            the whole story and this block does not render.
+
+            The copy below is only true of a SUCCESSFUL read that returned
+            nothing: some firmware really does ship no bundle list, and there
+            automatic selection is not a preference, it is the only option.
+            Geometry imported from the family's empty-state constant. */}
+        {profiles !== null && bundles.length === 0 ? (
           <div className={EMPTY_BLOCK.ROOT}>
             <MaterialSymbol
               name="sim_card"
@@ -328,7 +339,7 @@ export function MBNCard({
             <span className={EMPTY_BLOCK.TITLE}>{t(`${K}.empty.title`)}</span>
             <span className={EMPTY_BLOCK.BODY}>{t(`${K}.empty.body`)}</span>
           </div>
-        ) : (
+        ) : bundles.length === 0 ? null : (
           <div className="flex flex-col gap-2">
             <span className={SETTING_ROW.CONSEQUENCE}>
               {t(`${K}.list_label`)}
@@ -393,9 +404,17 @@ export function MBNCard({
           </div>
         )}
 
-        <TonalBanner tone="warning" icon="warning">
-          {t(`${K}.reboot_notice`)}
-        </TonalBanner>
+        {/* THE STANDING REBOOT WARNING IS GONE. A `warning` TonalBanner
+            rendered here unconditionally — at rest, nothing pending, nothing
+            selected — and said what two other elements on this card already
+            say: `pending_note` in the save bar below, and `reboot.description`
+            in the confirm dialog. Two of the three were on screen at once.
+
+            A warning that has no off state is not a warning, it is wallpaper,
+            and it spends the Functional-Color Promise on a static caption. The
+            fact survives in the two places that carry it when it is actually
+            actionable: the moment a change is pending, and the moment of
+            committing it. */}
 
         {/* The bar exists only while something is pending. Enter-only motion —
             `SaveButton` keeps all three of its layers mounted to hold its width
@@ -470,7 +489,12 @@ export function MBNCard({
                   <MaterialSymbol
                     name="progress_activity"
                     size={16}
-                    className="animate-spin motion-reduce:animate-none"
+                    // `motion-safe:`, matching `ConditionScreen` and the rest
+                    // of the family. Both variants are redefined in
+                    // globals.css so the Animations preference can outrank the
+                    // OS setting in either direction; two spellings for one
+                    // gesture inside one feature is how a retune misses half.
+                    className="motion-safe:animate-spin"
                   />
                   {t(`${K}.reboot.rebooting`)}
                 </>

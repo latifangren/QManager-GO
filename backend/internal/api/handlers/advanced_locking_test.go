@@ -225,12 +225,14 @@ OK
 	}
 
 	// 6. Delete profile
+	h.WaitForAsync()
 	reqDel := httptest.NewRequest("DELETE", "/api/v1/cellular/profiles/"+saveResp.ID, nil)
 	wDel := httptest.NewRecorder()
 	h.Delete(wDel, reqDel)
 	if wDel.Code != http.StatusOK {
 		t.Fatalf("expected 200 from Delete, got %d", wDel.Code)
 	}
+	h.WaitForAsync()
 }
 
 func TestScenarioHandler_CRUD(t *testing.T) {

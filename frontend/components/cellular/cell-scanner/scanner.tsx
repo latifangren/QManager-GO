@@ -6,31 +6,27 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { MaterialSymbol } from "@/components/ui/material-symbol";
 import { useCellScanner } from "@/hooks/use-cell-scanner";
 import { downloadCSV } from "@/lib/download-csv";
 import { staggerItem } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 import type { CellScanResult } from "@/types/cell-scanner";
 
 import LockCellDialog, { type LockCellTarget } from "./lock-cell-dialog";
 import RunHero from "./run-hero";
 import RunSummary, { type SummaryTile, type SummaryVerdict } from "./run-summary";
 import ScanResultView from "./scan-result";
-import { ScanErrorState } from "./scan-states";
+import { ScanEmptyState, ScanErrorState } from "./scan-states";
 import { ScannerSkeleton } from "./scanner-skeleton";
 import SiblingRouteLink from "./sibling-link";
 import {
-  EMPTY_PANEL,
   PILL_ACTION,
+  POSTURE_DISC,
+  POSTURE_GLYPH,
   RESULTS_CARD,
   SECTION_HEAD,
+  SUMMARY,
   runPosture,
   type SignalTier,
 } from "./shapes";
@@ -48,18 +44,10 @@ import { summariseSweep } from "./summaries";
 // layouts, so the action row appeared and disappeared with the state it happened
 // to be rendered beside.
 //
-// THE RESULTS CARD DOES NOT RENDER AT IDLE (2026-08-24). Before a run there are
-// no results, and a card whose entire content is a dashed box announcing their
-// absence is furniture — it was also the second panel resizing on a single
-// click, since it swapped that box for a taller skeleton at the same moment the
-// hero grew. The card ENTERS on the standard card cascade when a run starts, and
-// from then on it stays.
-//
-// Its `Empty` panel is therefore reachable only after a sweep that COMPLETED and
-// listed nothing, and it no longer carries a button: the hero directly above it
-// is showing a 0 and a "Sweep again" action in exactly that state, and the whole
-// point of moving the primary action into the hero header was that one act gets
-// one affordance. See `EMPTY_PANEL` in `shapes.ts`.
+// The results card is always mounted, same as the neighbour route (2026-09-10):
+// at idle it shows the shared `ScanEmptyState`, the same object a completed
+// sweep with zero results falls back to, so the two causes read alike and the
+// card never has to unmount.
 // =============================================================================
 
 function buildCsvRows(results: CellScanResult[]): string[] {
@@ -193,6 +181,31 @@ export function FullScanner() {
 
   const copy = POSTURE_COPY[posture];
 
+  // The run's own count, folded into the tile grid as a peer instead of a
+  // larger rail beside it — see `RunHero`'s `hideRail` and `RunSummary`'s
+  // `leading`. Its label is its own key: the rail still says "Sweep finished".
+  const totalCellsTile = hasResults ? (
+    <div className={SUMMARY.TILE}>
+      <span className={cn(SUMMARY.DISC, POSTURE_DISC.complete)}>
+        <MaterialSymbol
+          name={POSTURE_GLYPH.complete.glyph}
+          size={26}
+          filled={POSTURE_GLYPH.complete.filled}
+        />
+      </span>
+      <div className={SUMMARY.COPY}>
+        <span className={SUMMARY.LABEL}>
+          {t("cell_scanner.run.summary_total_cells")}
+        </span>
+        <span className={SUMMARY.DETAILS}>
+          <span className={SUMMARY.DETAIL_FIGURE}>
+            {t("cell_scanner.results.count", { count: results.length })}
+          </span>
+        </span>
+      </div>
+    </div>
+  ) : null;
+
   // Every aggregate on this page, derived once. `summariseSweep` is pure and
   // total: an empty array, a single row and an all-sentinel result set all
   // return a well-formed summary rather than `NaN` or `-Infinity`.
@@ -320,6 +333,9 @@ export function FullScanner() {
           // 30-180 seconds, so the grow lands once, early, and then the reader
           // waits — the morph reads as the page committing to a long operation.
           idleCollapsed
+          // Only when there is a folded-in `totalCellsTile` to take its place —
+          // `RunHero` falls back to its own rail otherwise.
+          hideRail={hasResults}
           summary={
             isScanning || posture === "complete" ? (
               <RunSummary
@@ -329,6 +345,7 @@ export function FullScanner() {
                 tiles={summaryTiles}
                 verdict={verdict}
                 emptyText={t("cell_scanner.run.summary_empty")}
+                leading={totalCellsTile}
               />
             ) : null
           }
@@ -370,12 +387,6 @@ export function FullScanner() {
         />
       </motion.div>
 
-      {/* NOT RENDERED AT IDLE. There are no results before a run, and a card
-          holding nothing but a dashed box announcing that is furniture. It
-          ENTERS on the standard card cascade the moment a sweep starts — the
-          same `staggerItem` every other card on the page arrives on — and from
-          then on it stays through complete, failed and a re-run. */}
-      {posture === "idle" ? null : (
       <motion.div variants={staggerItem}>
         <Card className={RESULTS_CARD}>
           <div className={SECTION_HEAD.ROOT}>
@@ -425,26 +436,15 @@ export function FullScanner() {
               </div>
             </>
           ) : (
-            /* Reached ONLY after a sweep that completed and listed nothing —
-               the card does not render before the first run at all. It carries
-               NO button: the hero directly above is showing a 0 and a "Sweep
-               again" action in exactly this state, and one act gets one
-               affordance. */
-            <Empty className={EMPTY_PANEL}>
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <MaterialSymbol name="radar" size={24} aria-hidden />
-                </EmptyMedia>
-                <EmptyTitle>{t("cell_scanner.results.empty_title")}</EmptyTitle>
-                <EmptyDescription className="text-pretty">
-                  {t("cell_scanner.results.empty_body")}
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            // Idle, or a completed sweep that listed nothing — same panel,
+            // no button: the hero above already carries the "Sweep" action.
+            <ScanEmptyState
+              title={t("cell_scanner.results.empty_title")}
+              body={t("cell_scanner.results.empty_body")}
+            />
           )}
         </Card>
       </motion.div>
-      )}
 
       <LockCellDialog
         target={lockTarget}

@@ -5,15 +5,15 @@ import (
 	"time"
 )
 
-// SignalHistoryPoint represents one sample in signal history.
+// SignalHistoryPoint represents one sample in signal history matching SignalHistoryEntry.
 type SignalHistoryPoint struct {
-	Timestamp int64  `json:"ts"`
-	LteRSRP   []*int `json:"lte_rsrp"`
-	LteRSRQ   []*int `json:"lte_rsrq"`
-	LteSINR   []*int `json:"lte_sinr"`
-	NrRSRP    []*int `json:"nr_rsrp"`
-	NrRSRQ    []*int `json:"nr_rsrq"`
-	NrSINR    []*int `json:"nr_sinr"`
+	TS      int64  `json:"ts"`
+	LteRsrp []*int `json:"lte_rsrp"`
+	LteRsrq []*int `json:"lte_rsrq"`
+	LteSinr []*int `json:"lte_sinr"`
+	NrRsrp  []*int `json:"nr_rsrp"`
+	NrRsrq  []*int `json:"nr_rsrq"`
+	NrSinr  []*int `json:"nr_sinr"`
 }
 
 // PingHistoryPoint represents one aggregated ping sample.
@@ -95,8 +95,8 @@ func (h *TelemetryHistory) RecordSignal(pt SignalHistoryPoint) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if pt.Timestamp == 0 {
-		pt.Timestamp = time.Now().Unix()
+	if pt.TS == 0 {
+		pt.TS = time.Now().Unix()
 	}
 
 	h.signalBuffer[h.signalHead] = pt
@@ -120,13 +120,35 @@ func (h *TelemetryHistory) GetSignalHistory(max int) []SignalHistoryPoint {
 
 	for i := 0; i < h.signalCount; i++ {
 		idx := (startIdx + i) % h.signalCap
-		result = append(result, h.signalBuffer[idx])
+		pt := h.signalBuffer[idx]
+		if pt.LteRsrp == nil {
+			pt.LteRsrp = []*int{nil, nil, nil, nil}
+		}
+		if pt.LteRsrq == nil {
+			pt.LteRsrq = []*int{nil, nil, nil, nil}
+		}
+		if pt.LteSinr == nil {
+			pt.LteSinr = []*int{nil, nil, nil, nil}
+		}
+		if pt.NrRsrp == nil {
+			pt.NrRsrp = []*int{nil, nil, nil, nil}
+		}
+		if pt.NrRsrq == nil {
+			pt.NrRsrq = []*int{nil, nil, nil, nil}
+		}
+		if pt.NrSinr == nil {
+			pt.NrSinr = []*int{nil, nil, nil, nil}
+		}
+		result = append(result, pt)
 	}
 
 	if max > 0 && len(result) > max {
 		result = result[len(result)-max:]
 	}
 
+	if result == nil {
+		return []SignalHistoryPoint{}
+	}
 	return result
 }
 
@@ -167,6 +189,9 @@ func (h *TelemetryHistory) GetPingHistory(max int) []PingHistoryPoint {
 		result = result[len(result)-max:]
 	}
 
+	if result == nil {
+		return []PingHistoryPoint{}
+	}
 	return result
 }
 
@@ -207,5 +232,8 @@ func (h *TelemetryHistory) GetEvents(max int) []NetworkEventItem {
 		result = result[len(result)-max:]
 	}
 
+	if result == nil {
+		return []NetworkEventItem{}
+	}
 	return result
 }

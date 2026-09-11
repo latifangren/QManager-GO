@@ -35,6 +35,7 @@ func (h *NetworkPriorityHandler) GetPriority(w http.ResponseWriter, r *http.Requ
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success":       true,
+		"order":         order,
 		"rat_acq_order": order,
 	})
 }
@@ -75,7 +76,7 @@ func parseRatAcqOrder(raw string) string {
 	lines := strings.Split(raw, "\n")
 	for _, l := range lines {
 		l = strings.TrimSpace(l)
-		if strings.HasPrefix(l, "+QNWPREFCFG:") && strings.Contains(l, "rat_acq_order") {
+		if strings.HasPrefix(l, "+QNWPREFCFG:") && (strings.Contains(l, "rat_acq_order") || strings.Contains(l, "rat_order_pref")) {
 			parts := strings.Split(l, ",")
 			if len(parts) >= 2 {
 				return strings.Trim(parts[1], "\" \r\n")

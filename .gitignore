@@ -25,6 +25,8 @@ frontend/next-env.d.ts
 # production & dist
 /build/
 /dist/
+/backend/build/
+backend/build/
 
 # misc
 .DS_Store
@@ -58,7 +60,7 @@ qmanager-armv7*
 /qmanager-armv7
 /backend/qmanager*
 /backend/cmd/qmanager/dist/*
-!/backend/cmd/qmanager/dist/.gitkeep
+!/backend/cmd/qmanager/dist/index.html
 backend/*.exe
 *.exe
 *.test
@@ -69,6 +71,7 @@ backend/*.exe
 /.claude
 /.vscode/
 /.idea/
+/.slim/deepwork/
 
 # simpleadmin source & scratch
 /simpleadmin-source
@@ -77,3 +80,4 @@ backend/*.exe
 /scratch/
 /reimagine/
 /scripts-dev/rescue/
+/.playwright-mcp

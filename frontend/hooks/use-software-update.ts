@@ -46,6 +46,9 @@ export interface UpdateInfo {
   auto_update_enabled: boolean;
   auto_update_time: string;
   check_error: string | null;
+  /** A `VERSION.pending` marker survived a reboot — the tree may be mixed. */
+  previous_install_failed: boolean;
+  pending_version: string | null;
 }
 
 export interface UpdateStatus {
@@ -55,6 +58,9 @@ export interface UpdateStatus {
   size?: string;
 }
 
+/** Which operation produced `error`. Seven call sites write one shared string. */
+export type UpdateErrorKind = "check" | "download" | "install";
+
 export interface UseSoftwareUpdateReturn {
   updateInfo: UpdateInfo | null;
   updateStatus: UpdateStatus;
@@ -63,15 +69,22 @@ export interface UseSoftwareUpdateReturn {
   isChecking: boolean;
   isUpdating: boolean;
   isDownloading: boolean;
+  /** The device's own sentence, or `null`. Never English written here. */
   error: string | null;
+  errorKind: UpdateErrorKind | null;
   lastChecked: string | null;
   checkForUpdates: () => Promise<void>;
   downloadUpdate: (version?: string) => Promise<void>;
   installStaged: () => Promise<void>;
   installUpdate: () => Promise<void>;
   installVersion: (version: string) => Promise<void>;
-  togglePrerelease: (enabled: boolean) => Promise<void>;
-  saveAutoUpdate: (enabled: boolean, time: string) => Promise<void>;
+  // Both RETURN the failure instead of raising it into `error`: the shared
+  // error resolves the whole surface to `check_failed`, and a preference that
+  // failed to save is not a failed GitHub check. `null` is success; a string is
+  // the DEVICE'S own words, and `""` means it failed without saying why — the
+  // caller owns the sentence, because it knows which row it saved.
+  togglePrerelease: (enabled: boolean) => Promise<string | null>;
+  saveAutoUpdate: (enabled: boolean, time: string) => Promise<string | null>;
 }
 
 // ─── Hook ───────────────────────────────────────────────────────────────────
@@ -83,12 +96,29 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
   const [isChecking, setIsChecking] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<UpdateErrorKind | null>(null);
   const [downloadState, setDownloadState] = useState<DownloadState | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [lastChecked, setLastChecked] = useState<string | null>(null);
 
   const mountedRef = useRef(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // The message alone has no provenance, so it is never written without the
+  // operation that produced it. It carries the DEVICE'S OWN words or nothing —
+  // the human sentence is the render site's, translated from `errorKind`.
+  const fail = useCallback(
+    (kind: UpdateErrorKind, message?: string | null) => {
+      setErrorKind(kind);
+      setError(message?.trim() ? message.trim() : null);
+    },
+    [],
+  );
+
+  const clearFailure = useCallback(() => {
+    setErrorKind(null);
+    setError(null);
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -127,20 +157,20 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
           setIsDownloading(false);
-          setError(json.message || "Download failed");
+          fail("download", json.message);
         }
       } catch {
         // Silently retry on next interval
       }
     }, POLL_INTERVAL);
-  }, []);
+  }, [fail]);
 
   // ---------------------------------------------------------------------------
   // Fetch update info from CGI
   // ---------------------------------------------------------------------------
   const fetchUpdateInfo = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
-    setError(null);
+    clearFailure();
 
     try {
       const resp = await authFetch(CGI_ENDPOINT);
@@ -150,7 +180,7 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
       if (!mountedRef.current) return;
 
       if (!json.success) {
-        setError(json.detail || json.error || "Failed to check for updates");
+        fail("check", json.detail || json.error);
         return;
       }
 
@@ -172,11 +202,11 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
       setLastChecked(now);
     } catch (err) {
       if (!mountedRef.current) return;
-      setError(err instanceof Error ? err.message : "Failed to check for updates");
+      fail("check", err instanceof Error ? err.message : null);
     } finally {
       if (mountedRef.current && !silent) setIsLoading(false);
     }
-  }, [startDownloadPolling]);
+  }, [startDownloadPolling, fail, clearFailure]);
 
   // Fetch on mount
   useEffect(() => {
@@ -215,7 +245,7 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
           setIsUpdating(false);
-          setError(json.message || "Update failed");
+          fail("install", json.message);
         }
       } catch {
         // Fetch failed — device is likely rebooting already. Navigate
@@ -229,7 +259,7 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
         window.location.href = "/reboot/";
       }
     }, POLL_INTERVAL);
-  }, []);
+  }, [fail]);
 
   // ---------------------------------------------------------------------------
   // Actions
@@ -244,7 +274,7 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
     const targetVersion = version || updateInfo?.latest_version;
     if (!targetVersion) return;
 
-    setError(null);
+    clearFailure();
     setIsDownloading(true);
     setDownloadState({ status: "downloading", version: targetVersion });
 
@@ -257,7 +287,7 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
 
       const json = await resp.json();
       if (!json.success) {
-        setError(json.detail || json.error || "Failed to start download");
+        fail("download", json.detail || json.error);
         setIsDownloading(false);
         setDownloadState(null);
         return;
@@ -266,16 +296,16 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
       startDownloadPolling();
     } catch (err) {
       if (!mountedRef.current) return;
-      setError(err instanceof Error ? err.message : "Failed to start download");
+      fail("download", err instanceof Error ? err.message : null);
       setIsDownloading(false);
       setDownloadState(null);
     }
-  }, [updateInfo, startDownloadPolling]);
+  }, [updateInfo, startDownloadPolling, fail, clearFailure]);
 
   const installStaged = useCallback(async () => {
-    setError(null);
+    clearFailure();
     setIsUpdating(true);
-    setUpdateStatus({ status: "installing", message: "Installing update..." });
+    setUpdateStatus({ status: "installing" });
 
     try {
       const resp = await authFetch(CGI_ENDPOINT, {
@@ -286,18 +316,21 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
 
       const json = await resp.json();
       if (!json.success) {
-        setError(json.detail || json.error || "Failed to start installation");
+        fail("install", json.detail || json.error);
         setIsUpdating(false);
+        // A status left at "installing" after the request failed is a lie.
+        setUpdateStatus({ status: "idle" });
         return;
       }
 
       startPolling();
     } catch (err) {
       if (!mountedRef.current) return;
-      setError(err instanceof Error ? err.message : "Failed to start installation");
+      fail("install", err instanceof Error ? err.message : null);
       setIsUpdating(false);
+      setUpdateStatus({ status: "idle" });
     }
-  }, [startPolling]);
+  }, [startPolling, fail, clearFailure]);
 
   // ---------------------------------------------------------------------------
   // Chained poller — used by installVersion to fuse the two-step flow into one
@@ -330,7 +363,7 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
         // Chain step: when the download reports ready, fire install_staged once.
         if (json.status === "ready" && !installPosted) {
           installPosted = true;
-          setUpdateStatus({ status: "installing", message: "Installing update...", version });
+          setUpdateStatus({ status: "installing", version });
           await authFetch(CGI_ENDPOINT, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -351,7 +384,7 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
           setIsUpdating(false);
-          setError(json.message || "Install failed");
+          fail("install", json.message);
         }
       } catch {
         // Network blink — if we've already posted install_staged, the device is
@@ -365,7 +398,7 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
         }
       }
     }, POLL_INTERVAL);
-  }, []);
+  }, [fail]);
 
   // ---------------------------------------------------------------------------
   // installVersion — one-click chained install for a specific version. Used by
@@ -375,7 +408,7 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
   const installVersion = useCallback(async (version: string) => {
     if (!version) return;
 
-    setError(null);
+    clearFailure();
     setIsUpdating(true);
     setUpdateStatus({ status: "downloading", version });
 
@@ -388,23 +421,26 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
 
       const json = await resp.json();
       if (!json.success) {
-        setError(json.detail || json.error || "Failed to start install");
+        fail("install", json.detail || json.error);
         setIsUpdating(false);
+        // A status left at "downloading" after the request failed is a lie.
+        setUpdateStatus({ status: "idle" });
         return;
       }
 
       startChainedPolling(version);
     } catch (err) {
       if (!mountedRef.current) return;
-      setError(err instanceof Error ? err.message : "Failed to start install");
+      fail("install", err instanceof Error ? err.message : null);
       setIsUpdating(false);
+      setUpdateStatus({ status: "idle" });
     }
-  }, [startChainedPolling]);
+  }, [startChainedPolling, fail, clearFailure]);
 
   const installUpdate = useCallback(async () => {
     if (!updateInfo?.download_url || !updateInfo?.latest_version) return;
 
-    setError(null);
+    clearFailure();
     setIsUpdating(true);
     setUpdateStatus({ status: "downloading", version: updateInfo.latest_version });
 
@@ -422,7 +458,7 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
 
       const json = await resp.json();
       if (!json.success) {
-        setError(json.detail || json.error || "Failed to start update");
+        fail("install", json.detail || json.error);
         setIsUpdating(false);
         return;
       }
@@ -430,12 +466,12 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
       startPolling();
     } catch (err) {
       if (!mountedRef.current) return;
-      setError(err instanceof Error ? err.message : "Failed to start update");
+      fail("install", err instanceof Error ? err.message : null);
       setIsUpdating(false);
     }
-  }, [updateInfo, startPolling]);
+  }, [updateInfo, startPolling, fail, clearFailure]);
 
-  const togglePrerelease = useCallback(async (enabled: boolean) => {
+  const togglePrerelease = useCallback(async (enabled: boolean): Promise<string | null> => {
     try {
       const resp = await authFetch(CGI_ENDPOINT, {
         method: "POST",
@@ -445,19 +481,19 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
 
       const json = await resp.json();
       if (!json.success) {
-        setError(json.detail || json.error || "Failed to save preference");
-        return;
+        return json.detail || json.error || "";
       }
 
       // Re-check with new preference
       await fetchUpdateInfo(true);
+      return null;
     } catch (err) {
-      if (!mountedRef.current) return;
-      setError(err instanceof Error ? err.message : "Failed to save preference");
+      if (!mountedRef.current) return null;
+      return err instanceof Error ? err.message : "";
     }
   }, [fetchUpdateInfo]);
 
-  const saveAutoUpdate = useCallback(async (enabled: boolean, time: string) => {
+  const saveAutoUpdate = useCallback(async (enabled: boolean, time: string): Promise<string | null> => {
     try {
       const resp = await authFetch(CGI_ENDPOINT, {
         method: "POST",
@@ -467,14 +503,14 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
 
       const json = await resp.json();
       if (!json.success) {
-        setError(json.detail || json.error || "Failed to save auto-update preference");
-        return;
+        return json.detail || json.error || "";
       }
 
       await fetchUpdateInfo(true);
+      return null;
     } catch (err) {
-      if (!mountedRef.current) return;
-      setError(err instanceof Error ? err.message : "Failed to save auto-update preference");
+      if (!mountedRef.current) return null;
+      return err instanceof Error ? err.message : "";
     }
   }, [fetchUpdateInfo]);
 
@@ -487,6 +523,7 @@ export function useSoftwareUpdate(): UseSoftwareUpdateReturn {
     isUpdating,
     isDownloading,
     error,
+    errorKind,
     lastChecked,
     checkForUpdates,
     downloadUpdate,

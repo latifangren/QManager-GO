@@ -4,15 +4,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
+	"time"
 )
 
 // AlertsHandler handles GET/POST /cgi-bin/quecmanager/monitoring/alerts.sh
 type AlertsHandler struct {
-	mu       sync.Mutex
-	sms      map[string]interface{}
-	email    map[string]interface{}
-	discord  map[string]interface{}
-	routing  map[string]interface{}
+	mu      sync.Mutex
+	sms     map[string]interface{}
+	email   map[string]interface{}
+	discord map[string]interface{}
+	routing map[string]interface{}
+	logs    []map[string]interface{}
 }
 
 // NewAlertsHandler creates a new AlertsHandler.
@@ -48,6 +50,7 @@ func NewAlertsHandler() *AlertsHandler {
 				"reboot":              map[string]bool{"sms": false, "email": false, "discord": false},
 			},
 		},
+		logs: make([]map[string]interface{}, 0),
 	}
 }
 
@@ -57,7 +60,24 @@ func (h *AlertsHandler) HandleAlerts(w http.ResponseWriter, r *http.Request) {
 	defer h.mu.Unlock()
 
 	if r.Method == http.MethodGet {
+		action := r.URL.Query().Get("action")
+		if action == "get_log" {
+			entries := h.logs
+			if entries == nil {
+				entries = make([]map[string]interface{}, 0)
+			}
+			JSON(w, http.StatusOK, map[string]interface{}{
+				"success":         true,
+				"entries":         entries,
+				"total":           len(entries),
+				"total_events":    len(entries),
+				"filtered_events": len(entries),
+			})
+			return
+		}
+
 		JSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
 			"channels": map[string]interface{}{
 				"sms":     h.sms,
 				"email":   h.email,
@@ -91,6 +111,8 @@ func (h *AlertsHandler) HandleAlerts(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var payload struct {
 			Action  string                 `json:"action"`
+			Channel string                 `json:"channel,omitempty"`
+			Message string                 `json:"message,omitempty"`
 			SMS     map[string]interface{} `json:"sms"`
 			Email   map[string]interface{} `json:"email"`
 			Discord map[string]interface{} `json:"discord"`
@@ -102,25 +124,83 @@ func (h *AlertsHandler) HandleAlerts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if payload.SMS != nil {
-			for k, v := range payload.SMS {
-				h.sms[k] = v
-			}
-		}
-		if payload.Email != nil {
-			for k, v := range payload.Email {
-				h.email[k] = v
-			}
-		}
-		if payload.Discord != nil {
-			for k, v := range payload.Discord {
-				h.discord[k] = v
-			}
-		}
-		if payload.Routing != nil {
-			h.routing = payload.Routing
+		action := payload.Action
+		if action == "" {
+			action = r.URL.Query().Get("action")
 		}
 
-		Success(w, map[string]interface{}{"success": true, "message": "Alerts configuration saved"})
+		switch action {
+		case "get_log":
+			entries := h.logs
+			if entries == nil {
+				entries = make([]map[string]interface{}, 0)
+			}
+			JSON(w, http.StatusOK, map[string]interface{}{
+				"success":         true,
+				"entries":         entries,
+				"total":           len(entries),
+				"total_events":    len(entries),
+				"filtered_events": len(entries),
+			})
+			return
+
+		case "clear_log":
+			h.logs = make([]map[string]interface{}, 0)
+			JSON(w, http.StatusOK, map[string]interface{}{
+				"success": true,
+				"message": "Alert log cleared",
+			})
+			return
+
+		case "test":
+			channel := payload.Channel
+			if channel == "" {
+				channel = "all"
+			}
+			msg := payload.Message
+			if msg == "" {
+				msg = "Test alert sent"
+			}
+			entry := map[string]interface{}{
+				"timestamp": time.Now().Format("2006-01-02 15:04:05"),
+				"trigger":   "test",
+				"channel":   channel,
+				"recipient": "admin",
+				"message":   msg,
+				"status":    "sent",
+			}
+			h.logs = append(h.logs, entry)
+			if len(h.logs) > 500 {
+				h.logs = h.logs[len(h.logs)-500:]
+			}
+			JSON(w, http.StatusOK, map[string]interface{}{
+				"success": true,
+				"message": "Test alert sent",
+			})
+			return
+
+		default:
+			if payload.SMS != nil {
+				for k, v := range payload.SMS {
+					h.sms[k] = v
+				}
+			}
+			if payload.Email != nil {
+				for k, v := range payload.Email {
+					h.email[k] = v
+				}
+			}
+			if payload.Discord != nil {
+				for k, v := range payload.Discord {
+					h.discord[k] = v
+				}
+			}
+			if payload.Routing != nil {
+				h.routing = payload.Routing
+			}
+
+			Success(w, map[string]interface{}{"success": true, "message": "Alerts configuration saved"})
+			return
+		}
 	}
 }

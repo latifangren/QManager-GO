@@ -4,7 +4,12 @@ import React, { useCallback, useState } from "react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { MetricBar } from "@/components/ui/metric-bar";
 import {
   Tooltip,
@@ -40,6 +45,16 @@ import { useUnitPreferences } from "@/hooks/use-system-settings";
 import { useDataUsed } from "@/hooks/use-data-used";
 import { useModemSubsys } from "@/hooks/use-modem-subsys";
 import { DUR, staggerRows, staggerRowItem } from "@/lib/motion";
+import {
+  ABSENT,
+  CARD_DESC,
+  CARD_SHELL,
+  CARD_TITLE,
+  FOCUS_RING,
+  METER_H,
+  VALUE_CLASS,
+} from "./shapes";
+import { PillRow } from "./pill-row";
 import { MaterialSymbol } from "@/components/ui/material-symbol";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +63,16 @@ interface DeviceMetricsComponentProps {
   lteData: LteStatus | null;
   nrData: NrStatus | null;
   isLoading: boolean;
+  /**
+   * Whether the last poll actually reached the modem.
+   *
+   * Spelled exactly as device-status.tsx and network-status.tsx spell it, and
+   * for the same reason: the status hook deliberately keeps the previous
+   * snapshot on a failed fetch, so a card reading only `deviceData` sees a
+   * full, plausible payload during an outage and cannot tell it is looking at
+   * a photograph.
+   */
+  modemReachable: boolean;
 }
 
 // --- Warning thresholds ---
@@ -55,36 +80,6 @@ const TEMP_WARN = 60; // °C
 const TEMP_DANGER = 75; // °C
 const CPU_WARN = 70; // percentage
 const CPU_DANGER = 90; // percentage
-
-/** Card shell, identical to its two grid siblings so the row reads as one
- *  object. No fixed height: the dashboard grid stretches all three via
- *  `h-full *:data-[slot=card]:h-full`, which requires the Card to stay the
- *  DIRECT child of its wrapper — hence the skeleton overlay lives inside the
- *  card rather than around it. */
-const CARD_SHELL =
-  // gap-4, not the mock's literal 14px. This is the gap between the card's
-  // title and its body, and it is the one measurement that reads ACROSS the
-  // three cards sharing this grid row — recent-activities.tsx already ships
-  // gap-4, so 14px here would set this card 2px out of step with the card
-  // beside it to gain fidelity nobody can see. The 14px inner rhythm between
-  // metric groups is kept below, where the mock's value is doing real work.
-  "@container/card h-full gap-4 rounded-card border-0 px-6 py-6 shadow-[var(--shadow-whisper)]";
-
-/** Meter track height, shared by the loaded bar and its skeleton slot so the
- *  handoff moves nothing. Mirrors `MetricBar size="md"`. */
-const METER_H = "h-2";
-
-/**
- * Recipe 12, the focus ring, for the two bare tooltip triggers (the reset
- * control is a `Button`, which already carries the project ring).
- *
- * `focus-visible:transition-shadow` rather than a base `transition-shadow` is
- * the guide's "focus is never animated AWAY" clause spelled in CSS: a
- * transition is read off the state being moved TO, so on blur the element
- * reverts to a base with no transition and the ring simply stops existing.
- */
-const FOCUS_RING =
-  "rounded-pill outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:transition-shadow focus-visible:duration-(--duration-quick) focus-visible:ease-quick";
 
 /** One meter group: a label/value row over an 8px track. */
 function MeterRow({
@@ -95,7 +90,16 @@ function MeterRow({
   label: string;
   /** The value cell — already wrapped in its own `TickingValue`. */
   children: React.ReactNode;
-  /** `null` when the datum is absent; the slot still reserves its height. */
+  /**
+   * The track. ALWAYS a `MetricBar`, never `null` — a bar with no reading
+   * takes `value={null}` and draws the empty track (DESIGN.md > Quality bars).
+   *
+   * This prop used to accept `null` and fall back to an invisible spacer that
+   * held the height and drew nothing. That is a THIRD spelling of absence: an
+   * empty track says "no reading", a blank gap says "no meter". Introducing
+   * the canonical one for the unreachable branch and leaving the old one
+   * beside it would have put both in the same slot on the same card.
+   */
   bar: React.ReactNode;
 }) {
   return (
@@ -106,38 +110,10 @@ function MeterRow({
         </span>
         <div className="flex items-center gap-1.5">{children}</div>
       </div>
-      {/* An absent bar leaves its track height behind rather than collapsing
-          the group, so a modem that reports no temperature does not shorten
-          the card — and does not desync it from the skeleton above. */}
-      {bar ?? <div className={METER_H} aria-hidden />}
+      {bar}
     </motion.div>
   );
 }
-
-/** One pill row: label left, machine-voice value right, on a tonal container. */
-function PillRow({
-  label,
-  children,
-}: {
-  label: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <motion.div
-      variants={staggerRowItem}
-      className="flex items-center justify-between gap-3 rounded-pill bg-surface-container px-4 py-2.5"
-    >
-      {/* Container-Pair Rule: text on `surface-container` takes that
-          container's own ink, never a solid role colour. */}
-      <div className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-on-surface-variant">
-        {label}
-      </div>
-      <div className="flex shrink-0 items-center gap-3">{children}</div>
-    </motion.div>
-  );
-}
-
-const VALUE_CLASS = "text-sm font-semibold text-on-surface";
 
 /**
  * Skeleton (Skeleton-Mirror Rule): four meter groups and three pills, i.e. the
@@ -170,6 +146,7 @@ const DeviceMetricsComponent = ({
   lteData,
   nrData,
   isLoading,
+  modemReachable,
 }: DeviceMetricsComponentProps) => {
   const { t } = useTranslation("dashboard");
   const { t: tc } = useTranslation("common");
@@ -179,7 +156,15 @@ const DeviceMetricsComponent = ({
   const memUsed = deviceData?.memory_used_mb ?? 0;
   const memTotal = deviceData?.memory_total_mb ?? 0;
 
-  const isTempHigh = temp !== null && temp >= TEMP_WARN;
+  // Same spelling as device-status.tsx and network-status.tsx, so the cards on
+  // this surface cannot disagree about what "unreachable" means.
+  const unreachable = !modemReachable;
+
+  // The chip may not fire off a photograph: a temperature we cannot re-read is
+  // not evidence the modem is still hot, and a warning nobody can refresh is
+  // worse than no warning at all.
+  const isTempHigh = !unreachable && temp !== null && temp >= TEMP_WARN;
+  // CPU is /proc/stat on the box serving this page, so its chip is not gated.
   const isCpuHigh = cpu !== null && cpu >= CPU_WARN;
   const memPct = memTotal > 0 ? (memUsed / memTotal) * 100 : 0;
 
@@ -220,21 +205,51 @@ const DeviceMetricsComponent = ({
     return () => window.clearTimeout(id);
   }, [isLoading]);
 
-  const tempValue = formatTemperature(temp, unitPrefs?.tempUnit);
-  const cpuValue = cpu !== null ? `${cpu}%` : "-";
-  const memValue = memTotal > 0 ? `${memUsed} MB / ${memTotal} MB` : "-";
+  // WHERE THE UNREACHABLE GATE STOPS, and it stops in the middle of this card
+  // because `modem_reachable` means exactly one thing: the last AT command
+  // timed out. It is not a verdict on the machine serving the page.
+  //
+  // GATED — read over AT, and free to have changed since. Temperature is
+  // AT+QTEMP; both distances derive from the serving cell's timing advance.
+  // When the poll fails the poller parses nothing and the PREVIOUS value
+  // survives, so what is on screen is a photograph. Step 03 made this same
+  // call for the two uptimes.
+  //
+  // NOT GATED — CPU (/proc/stat), memory (/proc/meminfo) and storage (a
+  // different hook against a different endpoint) are measured locally and are
+  // still fresh; the poller reads the first two unconditionally, before it
+  // ever talks to the modem. Blanking them would be inventing an outage this
+  // box is not having. The data counter below is cumulative and monotone: a
+  // byte total cannot become WRONG while we are not looking, only incomplete.
+  //
+  // ABSENT rather than the formatters' own "-": both return a hyphen-minus for
+  // a null reading, which beside a column of figures reads as a minus sign
+  // with its digits missing. The formatters are shared with other routes, so
+  // the sentinel is chosen here rather than changed there.
+  const tempValue =
+    unreachable || temp === null
+      ? ABSENT
+      : formatTemperature(temp, unitPrefs?.tempUnit);
+  const cpuValue = cpu !== null ? `${Math.round(cpu)}%` : ABSENT;
+  const memValue =
+    memTotal > 0
+      ? `${Math.round(memUsed)} MB / ${Math.round(memTotal)} MB`
+      : ABSENT;
   const storageValue =
     storageTotalKb > 0
       ? `${formatBytes(storageUsedKb * 1024)} / ${formatBytes(storageTotalKb * 1024)}`
-      : "-";
-  const lteDistance = formatDistance(
-    calculateLteDistance(lteData?.ta ?? null),
-    unitPrefs?.distanceUnit,
-  );
-  const nrDistance = formatDistance(
-    calculateNrDistance(nrData?.ta ?? null),
-    unitPrefs?.distanceUnit,
-  );
+      : ABSENT;
+
+  const lteKm = calculateLteDistance(lteData?.ta ?? null);
+  const nrKm = calculateNrDistance(nrData?.ta ?? null);
+  const lteDistance =
+    unreachable || lteKm === null
+      ? ABSENT
+      : formatDistance(lteKm, unitPrefs?.distanceUnit);
+  const nrDistance =
+    unreachable || nrKm === null
+      ? ABSENT
+      : formatDistance(nrKm, unitPrefs?.distanceUnit);
 
   const body = isLoading ? (
     <MetricsSkeleton />
@@ -255,29 +270,28 @@ const DeviceMetricsComponent = ({
     <TickGroup>
       <motion.div
         className="flex flex-col gap-3.5"
+        // Variants only, no initial/animate: this cascade INHERITS the
+        // page-wide clock in home-component.tsx. Declaring its own would
+        // detach it and start a second clock, which is the defect the
+        // single-cascade step retired.
         variants={staggerRows}
-        initial="hidden"
-        animate="visible"
       >
         {/* ── Modem Temperature ─────────────────────────────────────────── */}
         <MeterRow
           label={t("metrics.modem_temperature")}
           bar={
-            temp !== null ? (
-              <MetricBar
-                value={temp}
-                max={100}
-                warnAt={TEMP_WARN}
-                dangerAt={TEMP_DANGER}
-                // A cool modem is good news, not merely not-yet-bad — so the
-                // meter reads green below the warn line and still escalates to
-                // amber and red above it.
-                baseTone="success"
-                size="md"
-                track="surface-container-high"
-                index={0}
-              />
-            ) : null
+            <MetricBar
+              value={unreachable ? null : temp}
+              max={100}
+              warnAt={TEMP_WARN}
+              dangerAt={TEMP_DANGER}
+              // A cool modem is good news, not merely not-yet-bad — so the
+              // meter reads green below the warn line and still escalates to
+              // amber and red above it.
+              baseTone="success"
+              track="surface-container-high"
+              index={0}
+            />
           }
         >
           {isTempHigh && (
@@ -300,17 +314,14 @@ const DeviceMetricsComponent = ({
         <MeterRow
           label={t("metrics.cpu_usage")}
           bar={
-            cpu !== null ? (
-              <MetricBar
-                value={cpu}
-                max={100}
-                warnAt={CPU_WARN}
-                dangerAt={CPU_DANGER}
-                size="md"
-                track="surface-container-high"
-                index={1}
-              />
-            ) : null
+            <MetricBar
+              value={cpu}
+              max={100}
+              warnAt={CPU_WARN}
+              dangerAt={CPU_DANGER}
+              track="surface-container-high"
+              index={1}
+            />
           }
         >
           {isCpuHigh && (
@@ -328,17 +339,14 @@ const DeviceMetricsComponent = ({
         <MeterRow
           label={t("metrics.memory_usage")}
           bar={
-            memTotal > 0 ? (
-              <MetricBar
-                value={memPct}
-                max={100}
-                warnAt={70}
-                dangerAt={90}
-                size="md"
-                track="surface-container-high"
-                index={2}
-              />
-            ) : null
+            <MetricBar
+              value={memTotal > 0 ? memPct : null}
+              max={100}
+              warnAt={70}
+              dangerAt={90}
+              track="surface-container-high"
+              index={2}
+            />
           }
         >
           <span className={VALUE_CLASS}>
@@ -350,17 +358,14 @@ const DeviceMetricsComponent = ({
         <MeterRow
           label={t("metrics.storage_label")}
           bar={
-            storageTotalKb > 0 ? (
-              <MetricBar
-                value={storagePct}
-                max={100}
-                warnAt={80}
-                dangerAt={95}
-                size="md"
-                track="surface-container-high"
-                index={3}
-              />
-            ) : null
+            <MetricBar
+              value={storageTotalKb > 0 ? storagePct : null}
+              max={100}
+              warnAt={80}
+              dangerAt={95}
+              track="surface-container-high"
+              index={3}
+            />
           }
         >
           <span className={VALUE_CLASS}>
@@ -427,6 +432,7 @@ const DeviceMetricsComponent = ({
               {formatBytes(dataUsed?.accumulated_rx_bytes ?? 0)}
             </TickingValue>
           </span>
+          <span className="text-on-surface-variant/40 select-none">/</span>
           <span className={cn(VALUE_CLASS, "flex items-center gap-1")}>
             <MaterialSymbol
               name="arrow_circle_up"
@@ -456,7 +462,7 @@ const DeviceMetricsComponent = ({
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {lteData?.ta ? (
+                  {!unreachable && lteData?.ta ? (
                     <p>{t("metrics.lte_distance_tooltip", { ta: lteData.ta })}</p>
                   ) : (
                     <p>{t("metrics.ta_unavailable")}</p>
@@ -487,7 +493,7 @@ const DeviceMetricsComponent = ({
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {nrData?.ta ? (
+                  {!unreachable && nrData?.ta ? (
                     <p>{t("metrics.nr_distance_tooltip", { ta: nrData.ta })}</p>
                   ) : (
                     <p>{t("metrics.ta_unavailable")}</p>
@@ -514,9 +520,16 @@ const DeviceMetricsComponent = ({
           for one is already reserved, and a reviewer diffing the dashboard
           cards does not find this one built differently for no reason. */}
       <CardHeader className="px-0">
-        <CardTitle className="text-lg font-semibold tabular-nums">
+        <CardTitle className={cn(CARD_TITLE, "tabular-nums")}>
           {t("metrics.title")}
         </CardTitle>
+        {/* An explicit ink class because the primitive hardcodes a retired
+            one. Not skeletoned: both lines are constants and neither was ever
+            unknown, so a placeholder here would withhold the one thing that
+            could orient a reader while the rows fill in. */}
+        <CardDescription className={CARD_DESC}>
+          {t("metrics.description")}
+        </CardDescription>
       </CardHeader>
 
       {/* Recipe 11's overlay construction: the skeleton fades out ON TOP of the

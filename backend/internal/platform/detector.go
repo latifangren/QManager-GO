@@ -9,13 +9,14 @@ import (
 
 // Identity holds parsed hardware profile matching hw_profile.sh spec.
 type Identity struct {
-	Model      string `json:"model"`       // e.g. "RG501QEU_VD" or "RM520NGL_VC"
-	Revision   string `json:"revision"`    // e.g. "RG501QEUAAR12A08M4G"
-	SoC        string `json:"soc"`         // e.g. "SDX55" or "SDX6X"
-	CustomName string `json:"custom_name"` // e.g. "STD"
-	Serial     string `json:"serial"`      // From /proc/cmdline androidboot.serialno
-	IsSDX55    bool   `json:"is_sdx55"`    // True on RG501Q-EU
-	IsSDX65    bool   `json:"is_sdx65"`    // True on RM520N-GL
+	Model       string `json:"model"`        // e.g. "RG501QEU_VD" or "RM520NGL_VC"
+	Revision    string `json:"revision"`     // e.g. "RG501QEUAAR12A08M4G"
+	SoC         string `json:"soc"`          // e.g. "SDX55" or "SDX6X"
+	CustomName  string `json:"custom_name"`  // e.g. "STD"
+	PackageTime string `json:"package_time"` // e.g. "2023-05-29,14:23"
+	Serial      string `json:"serial"`       // From /proc/cmdline androidboot.serialno
+	IsSDX55     bool   `json:"is_sdx55"`     // True on RG501Q-EU
+	IsSDX65     bool   `json:"is_sdx65"`     // True on RM520N-GL
 }
 
 const (
@@ -65,6 +66,8 @@ func DetectIdentity(versionFile, cmdlineFile string) Identity {
 					id.SoC = val
 				} else if w1 == "custom" && w2 == "name" {
 					id.CustomName = val
+				} else if w1 == "package" && w2 == "time" {
+					id.PackageTime = val
 				}
 			}
 		}

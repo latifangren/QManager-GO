@@ -51,7 +51,14 @@
     "header": {
       "refresh": "Refresh"
     },
-    "loading_sr": "Loading ethernet status",
+    "strip": {
+      "label": "Link state",
+      "unresponsive": "Not responding",
+      "unavailable_title": "Couldn't read the ethernet port",
+      "unavailable_body": "Retrying every 10 seconds. Nothing has been changed.",
+      "absent_title": "No ethernet controller",
+      "absent_body": "This device has no eth0 port, so there is nothing to report or configure."
+    },
     "tiles": {
       "link": {
         "label": "Link state",
@@ -63,30 +70,28 @@
         "caption_unknown": "Waiting for link state"
       },
       "speed": {
-        "label": "Active speed",
-        "value_na": "N/A",
+        "label": "Negotiated rate",
         "caption": "Negotiated with the peer",
+        "caption_ceiling": "Of {{ceiling}} the port supports",
         "caption_down": "Needs an active link"
       },
       "duplex": {
         "label": "Duplex",
-        "value_na": "N/A",
-        "caption": "Transmit and receive mode",
+        "caption": "Transmit and receive at once",
         "caption_down": "Needs an active link"
       },
       "negotiation": {
         "label": "Negotiation",
         "value_auto": "Automatic",
-        "value_manual": "Manual",
-        "value_na": "N/A",
-        "caption_auto": "Speed decided with the peer",
-        "caption_manual": "Forced by the speed limit",
-        "caption_na": "No speed data yet"
+        "value_forced": "Forced",
+        "value_unknown": "Unknown",
+        "caption_auto": "No speed limit set",
+        "caption_limited": "Limited to {{speed}}"
       }
     },
     "settings": {
       "title": "Link speed limit",
-      "description": "Force the host port to a fixed speed. The link drops briefly while it renegotiates.",
+      "description": "Force the host port to a fixed speed instead of letting it negotiate one.",
       "row_label": "Speed limit",
       "placeholder": "Select speed",
       "applying": "Applying…",
@@ -97,13 +102,15 @@
       "option_100": "100 Mbps",
       "option_1000": "1 Gbps",
       "option_2500": "2.5 Gbps",
+      "consequence": "Applying drops the link for about 8 seconds while the PHY renegotiates. You are on that link.",
+      "consequence_applying": "The link is down while the PHY renegotiates. This page will confirm the new rate itself.",
+      "consequence_unresponsive": "The modem stopped answering, so this control is held until the next successful read.",
+      "consequence_unread": "The modem hasn't answered yet, so there is nothing to change until the first read lands.",
+      "consequence_absent": "There is no ethernet port to configure on this device.",
+      "provenance": "Saved to the modem. Read back from:",
       "toast_success": "Link speed updated",
       "toast_error": "Failed to set link speed",
       "toast_confirm_error": "Couldn't confirm the new speed. Check the link."
-    },
-    "error": {
-      "title": "Unable to reach the modem",
-      "body": "Couldn't load ethernet status. Try refreshing."
     }
   },
   "profile_override": {
@@ -122,11 +129,7 @@
   },
   "language": {
     "label": "Language",
-    "switch_aria": "Switch language",
-    "page_title": "Language",
-    "page_description": "Choose the display language for QManager. Your selection is saved on this device.",
-    "active": "Active",
-    "select_prompt": "Select a language"
+    "switch_aria": "Switch language"
   },
   "login": {
     "brand_label": "QManager · Quectel Modem Management",
@@ -135,15 +138,17 @@
     "submit": "Log in",
     "signing_in": "Signing in…",
     "locked": "Locked ({{seconds}})",
+    "lockout_seconds": "{{seconds}}s",
     "show_password": "Show password",
     "hide_password": "Hide password",
     "session_expired": "The device was unreachable for too long. Log in again to continue.",
     "signing_in_to": "Signing in to {{hostname}}",
+    "sign_in_to_label": "Sign in to",
     "signing_in_as": "Sign in as {{hostname}}",
     "recovery": {
       "toggle": "Can't sign in?",
       "intro": "If you've lost the admin password, you have two recovery paths:",
-      "option_reset": "Open an SSH session to the device and run <code>qmanager_reset_password</code> to set a new admin password. (Requires SSH access to be enabled.)",
+      "option_reset": "Open an SSH session to the device and run {{command}} to set a new admin password. (Requires SSH access to be enabled.)",
       "option_backup": "If you saved a .qmbackup file, re-flash the device firmware and restore from it."
     },
     "session_expired_title": "Session ended",
@@ -198,8 +203,8 @@
       "count_other": "{{count}} active",
       "bandwidth": "{{bandwidth}} MHz",
       "rsrp_unit": "{{rsrp}} dBm",
-      "section_count_one": "Carrier · {{count}} aggregated",
-      "section_count_other": "Carriers · {{count}} aggregated"
+      "section_count_one": "Carrier",
+      "section_count_other": "Carriers"
     },
     "metrics": {
       "rsrp": "RSRP",
@@ -283,37 +288,482 @@
       "dismissing": "Turning off…"
     }
   },
+  "ttlMtu": {
+    "page": {
+      "title": "TTL & MTU",
+      "description": "Rewrite the hop count and packet size the modem puts on the cellular interface."
+    },
+    "header": {
+      "refresh": "Refresh"
+    },
+    "strip": {
+      "label": "In force on rmnet",
+      "chip_custom": "Custom",
+      "chip_default": "Carrier defaults",
+      "retry": "Retry",
+      "unavailable_title": "Couldn't read TTL or MTU",
+      "unavailable_body": "Neither endpoint answered. Nothing on the modem has been changed.",
+      "idle_title": "No overrides in force",
+      "idle_body": "The modem is using the carrier's TTL and MTU exactly as negotiated. Turn one on below to change that."
+    },
+    "tiles": {
+      "shared": {
+        "caption_pending": "Still reading",
+        "caption_unread": "This endpoint didn't answer"
+      },
+      "ttl": {
+        "label": "TTL — IPv4",
+        "caption_active": "Rewritten on every packet",
+        "caption_idle": "Not rewritten"
+      },
+      "hl": {
+        "label": "Hop limit — IPv6",
+        "caption_active": "Rewritten on every packet",
+        "caption_idle": "Not rewritten"
+      },
+      "mtu": {
+        "label": "MTU",
+        "unit": "bytes",
+        "caption_active": "Carrier default is {{carrier}}",
+        "caption_idle": "Carrier-negotiated"
+      }
+    },
+    "banner": {
+      "title": "TTL and hop limit come from the {{profile}} profile",
+      "body": "Activating that profile writes both values, so this card is held to stop the two writers fighting. Change them in the profile, or activate a profile that leaves TTL unset."
+    },
+    "cards": {
+      "ttl": {
+        "title": "TTL & Hop Limit",
+        "description": "Applied to outbound packets on the cellular interface.",
+        "provenance": "Read from the live packet rules, replayed at boot from"
+      },
+      "mtu": {
+        "title": "Maximum transmission unit",
+        "description": "The largest packet the cellular interface will send without fragmenting.",
+        "provenance": "Applied to every interface matching"
+      }
+    },
+    "rows": {
+      "shared": {
+        "consequence_off": "Turn the rewrite on to set a value.",
+        "consequence_unread": "The modem hasn't answered, so there is nothing to change yet."
+      },
+      "rewrite": {
+        "label": "Rewrite the hop count",
+        "consequence": "Off means the modem forwards whatever hop count the client sent. Some carriers count hops to detect tethering."
+      },
+      "ttl_value": {
+        "label": "TTL value",
+        "tag": "IPv4",
+        "placeholder": "64",
+        "consequence": "{{min}}–{{max}}. A device one hop behind the modem usually wants 64."
+      },
+      "hl_value": {
+        "label": "Hop limit value",
+        "tag": "IPv6",
+        "placeholder": "64",
+        "consequence": "The IPv6 equivalent. Set both unless you know the client is single-stack."
+      },
+      "mtu_toggle": {
+        "label": "Override the MTU",
+        "consequence": "Off restores the carrier-negotiated value on every rmnet_data interface."
+      },
+      "mtu_value": {
+        "label": "MTU value",
+        "placeholder": "1500",
+        "consequence": "{{min}}–{{max}}. Below roughly 1400 can break path-MTU discovery on sites that drop ICMP.",
+        "consequence_off": "Turn the override on to set a value."
+      }
+    },
+    "values": {
+      "on": "On",
+      "off": "Off"
+    },
+    "footer": {
+      "discard": "Discard",
+      "unsaved": "{{count}} unsaved change(s)"
+    },
+    "errors": {
+      "value_range": "TTL and hop limit must each be between {{min}} and {{max}}.",
+      "no_value": "Enter a TTL or a hop limit before applying.",
+      "mtu_range": "MTU must be between {{min}} and {{max}}."
+    },
+    "toast_ttl_applied": "Applied — TTL {{ttl}}, hop limit {{hl}}.",
+    "toast_ttl_cleared": "The modem is back on the carrier's own hop count.",
+    "toast_ttl_error": "Couldn't apply the TTL and hop limit.",
+    "toast_mtu_applied": "MTU set to {{mtu}} on every rmnet_data interface.",
+    "toast_mtu_cleared": "MTU is back to the carrier-negotiated value.",
+    "toast_mtu_error": "Couldn't apply the MTU."
+  },
+  "customDns": {
+    "page": {
+      "title": "Custom DNS",
+      "description": "Choose which resolver the modem forwards LAN queries to. Clients keep querying the modem; only the upstream changes."
+    },
+    "header": {
+      "refresh": "Refresh"
+    },
+    "strip": {
+      "label": "Currently forwarding",
+      "state_custom": "Your resolvers",
+      "state_carrier": "Carrier-assigned",
+      "state_corrupt": "Config damaged",
+      "state_unavailable": "Not in use",
+      "unavailable_title": "dnsmasq is not in the path",
+      "unavailable_body": "DNS mode is {{mode}}, so LAN clients resolve directly against the carrier and nothing on this page can change that.",
+      "read_failed_title": "Couldn't read the DNS configuration",
+      "read_failed_body": "The modem did not answer the last read. Nothing on the device has changed — use Refresh to try again."
+    },
+    "tiles": {
+      "upstream": {
+        "label_one": "Upstream 1",
+        "label_two": "Upstream 2",
+        "caption_attach": "From the last attach",
+        "caption_yours": "You set this one",
+        "caption_absent_carrier": "Carrier sent one resolver",
+        "caption_absent_custom": "You set one resolver",
+        "caption_none": "Nothing is configured",
+        "caption_untrusted": "May not be what dnsmasq is using"
+      },
+      "source": {
+        "label": "Source",
+        "value_custom": "Custom",
+        "value_carrier": "Carrier",
+        "value_unknown": "Unknown",
+        "caption": "dnsmasq, {{mode}} mode",
+        "caption_implicit": "dnsmasq, proxy mode"
+      },
+      "fallback": {
+        "label": "Carrier fallback",
+        "value_on": "On",
+        "value_off": "Off",
+        "caption_on": "Default behaviour",
+        "caption_off": "No fallback if yours fail"
+      }
+    },
+    "corrupt": {
+      "title": "QManager's block in dnsmasq.conf looks malformed",
+      "body": "A begin marker without its end, or the reverse. The upstream list below may not reflect what dnsmasq is actually using. Check /etc/data/dnsmasq.conf over SSH before saving."
+    },
+    "unavailable": {
+      "title": "DNS mode is {{mode}}, not PROXY",
+      "body": "The mode lives in /etc/data/mobileap_cfg.xml and has to be changed outside QManager. Until it reads PROXY, saving here would have no effect."
+    },
+    "card": {
+      "title": "Upstream resolvers",
+      "description": "Up to four. dnsmasq is reloaded in place — no reboot, no dropped link.",
+      "save": "Save and apply",
+      "add": "Add resolver",
+      "provenance": "{{used}} of {{max}} used · read back from",
+      "provenance_corrupt": "{{used}} of {{max}} used · could not be read cleanly from",
+      "blocked_unavailable": "dnsmasq is not in the path, so this would have no effect."
+    },
+    "presets": {
+      "label": "Popular DNS presets",
+      "hint": "One-click switch to trusted public resolvers. You can still edit them manually.",
+      "applied": "Preset applied: {{name}}"
+    },
+    "rows": {
+      "enabled": {
+        "label": "Use my own resolvers",
+        "consequence": "Off returns dnsmasq to whatever the carrier handed out on the last attach."
+      },
+      "resolver": {
+        "label": "Resolver {{n}}",
+        "consequence": "IPv4 or IPv6. Paste a comma-separated list to fill several rows at once.",
+        "consequence_off": "Turn custom resolvers on to add one.",
+        "placeholder": "1.1.1.1",
+        "remove": "Remove resolver {{n}}"
+      },
+      "ignore_carrier": {
+        "label": "Never fall back to carrier DNS",
+        "consequence": "On, a lookup fails outright when your resolvers are unreachable rather than leaking to the carrier."
+      }
+    },
+    "delta": {
+      "unsaved": "Unsaved"
+    },
+    "errors": {
+      "invalid_address": "Not a valid IPv4 or IPv6 address.",
+      "fix_rows": "Fix the highlighted resolvers before saving.",
+      "empty_when_enabled": "Add a resolver, or turn custom resolvers off."
+    },
+    "toast_saved": "Custom DNS applied. LAN clients may see a brief pause as caches refresh.",
+    "toast_error": "Couldn't apply the DNS change."
+  },
+  "ipPassthrough": {
+    "page": {
+      "title": "IP Passthrough",
+      "description": "Hand the modem's public IP straight to one connected device instead of routing for the whole LAN."
+    },
+    "header": {
+      "refresh": "Refresh"
+    },
+    "strip": {
+      "label": "Last applied",
+      "state_router": "Router mode",
+      "state_passthrough": "Passing through"
+    },
+    "tiles": {
+      "mode": {
+        "label": "Mode",
+        "value_disabled": "Disabled",
+        "value_eth": "Ethernet",
+        "value_usb": "USB",
+        "caption_disabled": "Modem routes for the LAN",
+        "caption_eth": "Set to hand the WAN IP to eth0",
+        "caption_usb": "Set to hand the WAN IP to the USB device"
+      },
+      "target": {
+        "label": "Target device",
+        "caption_manual": "Pinned by MAC",
+        "caption_automatic": "First device to connect",
+        "caption_none": "No device selected"
+      },
+      "nat": {
+        "label": "NAT",
+        "value_on": "On",
+        "value_off": "Off",
+        "caption_on": "Saved as recommended",
+        "caption_off": "The target device handles its own public addressing"
+      },
+      "dns": {
+        "label": "DNS proxy",
+        "value_on": "On",
+        "value_off": "Off",
+        "caption_on": "The modem answers DHCP DNS for the target device",
+        "caption_off": "The target device uses its own resolver"
+      }
+    },
+    "card": {
+      "title": "Passthrough configuration",
+      "description": "Every setting here takes effect on the next boot. Applying reboots the modem.",
+      "apply": "Apply and reboot",
+      "discard": "Discard changes",
+      "provenance": "Read back from:",
+      "provenance_dirty": "{{count}} unsaved changes",
+      "delta_automatic": "Automatic",
+      "delta_unset": "Not set",
+      "mac_label": "Target MAC address",
+      "mac_placeholder": "XX:XX:XX:XX:XX:XX"
+    },
+    "rows": {
+      "mode": {
+        "label": "Mode",
+        "consequence": "Ethernet or USB hands the WAN IP to one device. In either, the modem stops being reachable at its LAN gateway address — keep Tailscale or another way in."
+      },
+      "target": {
+        "label": "Target device",
+        "consequence": "Automatic takes the first device that connects; manual pins one MAC address.",
+        "consequence_disabled": "Pick a mode first."
+      },
+      "nat": {
+        "label": "NAT",
+        "consequence": "With NAT is right for almost every setup. Without it the target device must handle its own public addressing."
+      },
+      "usb": {
+        "label": "USB connection mode",
+        "consequence": "Only used by USB passthrough. ECM works everywhere; RNDIS is for older Windows."
+      },
+      "dns": {
+        "label": "DNS proxy",
+        "consequence": "On, the modem answers DHCP DNS queries for the target device. Leave off unless the device cannot reach a resolver itself."
+      }
+    },
+    "options": {
+      "placeholder": "Not read yet",
+      "mode_disabled": "Disabled — router mode",
+      "mode_eth": "Ethernet passthrough",
+      "mode_usb": "USB passthrough",
+      "target_automatic": "Automatic — first device to connect",
+      "target_manual": "Enter a MAC address",
+      "nat_on": "With NAT (recommended)",
+      "nat_off": "Without NAT",
+      "usb_rmnet": "RMNET (QMI)",
+      "usb_ecm": "ECM (universal)",
+      "usb_mbim": "MBIM (Windows)",
+      "usb_rndis": "RNDIS (legacy)",
+      "dns_off": "Off — the device uses its own resolver",
+      "dns_on": "On — the modem answers DHCP DNS"
+    },
+    "banners": {
+      "reboot": {
+        "title": "Applying reboots the modem, and this browser tab will lose it",
+        "body": "After the reboot the LAN gateway stops answering. Reach the modem over Tailscale, from the passthrough device itself, or over serial. The setting persists across further reboots."
+      },
+      "active": {
+        "title": "This page is reachable because you are not the passthrough device",
+        "body": "The modem's LAN gateway address is no longer served to {{mac}}. If you lose your current route in, Tailscale or a serial console is the way back."
+      }
+    },
+    "dialog": {
+      "title": "Apply and reboot now?",
+      "body": "The settings are written and the modem reboots immediately. This page hands off to the reboot countdown and signs you out.",
+      "body_gateway": "Once passthrough is active the modem stops answering at its LAN gateway address. Make sure you have Tailscale, the passthrough device itself, or a serial console to get back in.",
+      "body_persist": "The setting persists across further reboots.",
+      "cancel": "Cancel",
+      "confirm": "Apply and reboot"
+    },
+    "toast_apply_error": "Couldn't apply the IP Passthrough settings",
+    "errors": {
+      "read_title": "Couldn't read the passthrough configuration",
+      "read_body": "Nothing has been changed. Try again, or check that the modem is answering.",
+      "retry": "Retry",
+      "card_unread": "The modem hasn't answered yet, so there is nothing to change until the first read lands.",
+      "mac_invalid": "Enter a full MAC address — six pairs of hex digits.",
+      "no_changes": "Nothing has changed yet."
+    }
+  },
   "trafficEngine": {
     "page": {
       "title": "Traffic Engine",
       "description": "Bypass ISP DPI throttling of video streaming and other traffic with the built-in bypass engine."
     },
-    "load_error": "Failed to load the engine status.",
     "binary_op_failed": "Engine binary operation failed",
-    "tabs": {
-      "video_optimizer": "Video Optimizer",
-      "masquerade": "Traffic Masquerade"
-    },
     "status": {
-      "title": "Engine Status",
-      "description": "Live state of the traffic bypass engine.",
-      "state": "Engine state",
       "running": "Running",
       "stopped": "Stopped",
       "restarting": "Restarting",
-      "error": "Error",
-      "uptime": "Uptime",
-      "packets": "Packets processed",
-      "packets_per_sec": "{{n}} pkt/s",
-      "domains": "Domains loaded",
-      "sni": "Spoofed SNI",
-      "rule": "Redirect rule",
-      "rule_active": "Active",
-      "rule_inactive": "Not applied",
-      "binary_installed": "Engine binary installed",
-      "binary_missing": "Engine binary not installed",
-      "masq_scope": "Scope",
-      "masq_all": "Every TCP 80/443 connection"
+      "error": "Error"
+    },
+    "strip": {
+      "label": "Live state",
+      "stale_title": "Not responding",
+      "stale_body": "The last poll didn't answer. The figures below are held from the previous read, and the engine keeps doing whatever it was doing.",
+      "unavailable_title": "Couldn't read the engine state",
+      "unavailable_body": "The modem didn't answer. The engine keeps running whatever it was doing. This is a reporting failure, not an outage."
+    },
+    "tiles": {
+      "engine": {
+        "label": "Engine",
+        "caption_uptime": "Up {{uptime}}",
+        "caption_stopped": "No traffic redirected",
+        "caption_restarting": "Applying the mode change",
+        "caption_error": "The engine could not start"
+      },
+      "packets": {
+        "label": "Processed",
+        "caption_rate": "{{n}} pkt/s",
+        "caption_idle": "Engine not running"
+      },
+      "scope": {
+        "label": "Scope",
+        "value_domains": "{{count}} domains",
+        "value_all": "Everything",
+        "value_none": "Nothing",
+        "caption_list": "From the target list",
+        "caption_all": "All TCP 80/443",
+        "caption_saved": "{{count}} domains saved"
+      },
+      "rule": {
+        "label": "Redirect rule",
+        "value_active": "Active",
+        "value_removed": "Removed",
+        "caption": "tcp 80,443 → port 989"
+      }
+    },
+    "mode": {
+      "title": "Bypass mode",
+      "description": "One mode owns the engine at a time. Switching restarts it.",
+      "aria": "Bypass mode",
+      "off": "Off",
+      "off_hint": "No traffic is redirected. The engine stops and the rule is removed.",
+      "video_optimizer": "Video Optimizer",
+      "video_optimizer_hint": "Only connections matching your target list. Subdomains match too.",
+      "full_bypass": "Full Bypass",
+      "full_bypass_hint": "Every TCP 80/443 connection. No target list, so nothing to configure.",
+      "toast_off": "Bypass engine stopped",
+      "toast_video_optimizer": "Video Optimizer is handling traffic",
+      "toast_full_bypass": "Full Bypass is handling traffic",
+      "toast_error": "Couldn't change the bypass mode"
+    },
+    "takeover": {
+      "title": "Switch to {{mode}}?",
+      "description": "Switching modes restarts the engine, which briefly drops every connection going through it.",
+      "confirm": "Switch",
+      "cancel": "Cancel"
+    },
+    "targets": {
+      "title": "Optimizer targets",
+      "description": "Domains the engine desyncs. Saved changes apply immediately, with no restart.",
+      "count": "{{count}} of {{max}}",
+      "count_saved": "{{count}} saved",
+      "idle_title": "Not in use while Full Bypass is on",
+      "idle_body": "Full Bypass desyncs every connection, so there is no list to match against. Your {{count}} saved domains are kept and apply again the moment you switch back to Video Optimizer.",
+      "idle_body_empty": "Full Bypass desyncs every connection, so there is no list to match against. Anything you add here applies again the moment you switch back to Video Optimizer."
+    },
+    "hostlist": {
+      "empty": "No domains yet. Add one to get started.",
+      "invalid": "Enter a valid domain (letters, digits, dots, dashes).",
+      "duplicate": "This domain is already in the list.",
+      "limit": "The list can hold at most 300 domains.",
+      "add": "Add domain",
+      "remove": "Remove {{domain}}",
+      "saved": "Hostlist saved",
+      "save_failed": "Couldn't save the hostlist",
+      "too_long": "A domain can be at most {{max}} characters.",
+      "import_action": "Import targets from a .txt file",
+      "export_action": "Export targets to a .txt file",
+      "import_too_large": "That file is too large. Pick a target list under {{limit}} KB.",
+      "import_unreadable": "That file could not be read.",
+      "import_empty": "No domains in that file",
+      "import_none": "No domains were imported",
+      "import_added_one": "1 domain imported",
+      "import_added_other": "{{count}} domains imported",
+      "import_invalid_one": "1 line was not a valid domain.",
+      "import_invalid_other": "{{count}} lines were not valid domains.",
+      "import_duplicate_one": "1 was already in the list.",
+      "import_duplicate_other": "{{count}} were already in the list.",
+      "import_dropped_one": "1 did not fit under the {{max}} domain limit.",
+      "import_dropped_other": "{{count}} did not fit under the {{max}} domain limit.",
+      "restore_action": "Restore the factory target list",
+      "restore_title": "Restore the factory target list?",
+      "restore_body_one": "This replaces the 1 domain you have saved. Export the list first if you want to keep it.",
+      "restore_body_other": "This replaces the {{count}} domains you have saved. Export the list first if you want to keep them.",
+      "restore_body_empty": "The target list is empty, so nothing of yours is replaced.",
+      "restore_body_defaults_one": "The factory list holds 1 domain.",
+      "restore_body_defaults_other": "The factory list holds {{count}} domains.",
+      "restore_confirm": "Restore defaults",
+      "restore_cancel": "Cancel",
+      "restore_done": "Factory target list restored",
+      "restore_failed": "Couldn't restore the factory list"
+    },
+    "verify": {
+      "title": "Test bypass",
+      "description": "Run a two-phase speed test (without the engine, then with it) plus a speedtest.net reference, to separate CDN throttling from a slow connection.",
+      "run": "Run test",
+      "run_again": "Run test again",
+      "idle_heading": "No test run yet",
+      "needs_binary_heading": "Engine not installed",
+      "running": "Testing…",
+      "progress": "Downloading the same file twice: once direct, once through the engine. This takes a few minutes.",
+      "timeout": "The test did not finish in time.",
+      "error": "The test could not be started",
+      "needs_binary": "Install the engine binary first.",
+      "headline_sub": "faster with the bypass on",
+      "without": "Without bypass",
+      "with": "With bypass",
+      "line_speed": "Line speed",
+      "unit": "Mbps",
+      "source_speedtest": "speedtest.net",
+      "source_cloudflare": "Cloudflare",
+      "throttled": "throttled",
+      "unthrottled": "not throttled",
+      "footnote": "Line speed is the reference: a slow result on all three is a slow connection, not throttling."
+    },
+    "forceTcp": {
+      "title": "QUIC → Force TCP",
+      "description": "Blocks QUIC (UDP 443) so apps like YouTube and Discord fall back to HTTPS over TCP, where the engine's bypass can apply.",
+      "independent": "Independent of the Traffic Engine",
+      "label": "Force QUIC over TCP",
+      "hint": "Applies immediately. Works with either mode, and with neither.",
+      "switch_aria": "Toggle QUIC Force-TCP",
+      "caveat_title": "Can stream slower",
+      "caveat": "Can stream slower: if your network already delivers QUIC at full speed, forcing it to TCP adds latency (plus the bypass hop). Enable when QUIC video is throttled or unreliable.",
+      "read_error": "Couldn't read the QUIC rule",
+      "toast_enabled": "QUIC Force-TCP enabled",
+      "toast_disabled": "QUIC Force-TCP disabled"
     },
     "uninstall": {
       "button": "Uninstall engine binary",
@@ -322,57 +772,827 @@
       "confirm": "Uninstall",
       "cancel": "Cancel"
     },
-    "enable": {
-      "video_optimizer": "Enable Video Optimizer",
-      "masquerade": "Enable Traffic Masquerade",
-      "description_vo": "Desynchronizes connections to streaming and video domains in the hostlist, defeating ISP deep-packet-inspection throttling.",
-      "description_masq": "Sends a fake TLS ClientHello with a spoofed SNI for every connection, hiding the real destination from DPI.",
-      "toast_enabled_vo": "Video Optimizer enabled",
-      "toast_disabled_vo": "Video Optimizer disabled",
-      "toast_enabled_masq": "Traffic Masquerade enabled",
-      "toast_disabled_masq": "Traffic Masquerade disabled",
-      "toast_error": "Failed to save engine settings"
-    },
-    "masquerade": {},
-    "hostlist": {
-      "title": "Video domains",
-      "description": "Domains that receive desync treatment. Subdomains of a listed domain match automatically. The engine hot-reloads this list, so changes apply immediately.",
-      "empty": "No domains yet — add one to get started.",
-      "invalid": "Enter a valid domain (letters, digits, dots, dashes).",
-      "duplicate": "This domain is already in the list.",
-      "limit": "The list can hold at most 300 domains.",
-      "add": "Add domain",
-      "remove": "Remove {{domain}}",
-      "saved": "Hostlist saved",
-      "save_failed": "Couldn't save the hostlist"
-    },
-    "verify": {
-      "title": "Test bypass",
-      "description": "Run a two-phase speed test — without the engine, then with it — to measure the bypass improvement.",
-      "run": "Run test",
-      "running": "Testing…",
-      "timeout": "The test did not finish in time.",
-      "error": "The test could not be started",
-      "needs_binary": "Install the engine binary first.",
-      "improvement": "Improvement",
-      "without": "Without bypass",
-      "with": "With bypass",
-      "throttled": "throttled",
-      "unthrottled": "not throttled"
-    },
-    "takeover": {
-      "title": "Switch to {{mode}}?",
-      "description": "Only one mode can run at a time. Enabling this mode disables the other.",
-      "confirm": "Switch",
-      "cancel": "Cancel"
-    },
     "onboarding": {
-      "title": "Install engine binary",
-      "description": "The traffic engine needs its tpws binary, downloaded from the official zapret release and verified by checksum.",
-      "install": "Download & install",
-      "installing": "Downloading…",
-      "done": "Engine ready",
-      "error": "Install failed: {{detail}}"
+      "heading": "The bypass engine isn't installed yet",
+      "body": "QManager downloads a small engine binary and verifies it against a pinned checksum before installing. It starts on its own once installed.",
+      "installing_heading": "Installing the bypass engine",
+      "installing_body": "Verifying the download against the release manifest and the pinned checksum. This takes about a minute on a normal connection.",
+      "failed_heading": "The install didn't finish",
+      "install": "Download & install"
+    }
+  },
+  "networkEvents": {
+    "page": {
+      "title": "Network Events",
+      "description": "Everything the poller noticed about the radio and the link, newest first."
+    },
+    "actions": {
+      "auto_refresh_on": "Auto refresh on",
+      "auto_refresh_off": "Auto refresh off",
+      "refresh": "Refresh"
+    },
+    "band": {
+      "ongoing": {
+        "eyebrow": "Ongoing",
+        "caption_clear": "Nothing is still standing",
+        "caption_oldest": "Oldest {{label}}, {{age}}"
+      },
+      "last24": {
+        "eyebrow": "Last 24 h",
+        "caption": "{{loud}} needed attention"
+      },
+      "retained": {
+        "eyebrow": "Retained",
+        "caption": "Oldest {{age}}, device keeps {{cap}}",
+        "caption_empty": "Device keeps up to {{cap}}"
+      }
+    },
+    "log": {
+      "title": "Event log",
+      "description_loading": "Reading the modem's event ring.",
+      "description_unreadable": "No counts to show while the log cannot be read.",
+      "description": "Showing {{shown}} of the {{held}} events served, out of the {{cap}} the modem holds in memory."
+    },
+    "filters": {
+      "all": "All",
+      "radio": "Radio",
+      "connectivity": "Connectivity",
+      "mode": "Mode"
+    },
+    "sort": {
+      "label": "Sort by",
+      "newest": "Newest first",
+      "oldest": "Oldest first"
+    },
+    "row": {
+      "ongoing": "Ongoing"
+    },
+    "day": {
+      "today": "Today",
+      "yesterday": "Yesterday"
+    },
+    "empty": {
+      "title": "No events yet",
+      "description": "The log lives in memory and starts over when the modem reboots. Entries appear here as the poller notices them.",
+      "filtered_title": "Nothing in this view",
+      "filtered_description": "No events of this kind are in the log right now. Pick All to see everything the poller recorded."
+    },
+    "error": {
+      "title": "Could not load events",
+      "description": "{{message}}",
+      "retry": "Try again"
+    },
+    "notice": {
+      "stale": "Showing the last events we managed to read. {{message}}"
+    }
+  },
+  "alerts": {
+    "band": {
+      "armedEyebrow": "Armed",
+      "armedValue": "{{covered}} of {{total}}",
+      "armedSilent": "No channel can send anything",
+      "armedGap": "Not every event is covered",
+      "armedIncomplete": "{{channels}} still needs setup",
+      "armedAll": "Every event has a channel",
+      "outageEyebrow": "Outage cover",
+      "outageNone": "None",
+      "outageCovered": "Reaches you while the internet is down",
+      "outageGap": "An outage will pass silently",
+      "lastEyebrow": "Last alert",
+      "lastNever": "Never",
+      "lastNeverCaption": "Nothing has been sent",
+      "lastSentCaption": "{{trigger}}, by {{channel}}",
+      "lastFailedCaption": "{{trigger}} failed on {{channel}}",
+      "justNow": "Just now",
+      "minutesAgo": "{{n}} min ago",
+      "hoursAgo": "{{n}} h ago",
+      "daysAgo": "{{n}} d ago",
+      "lastUnknown": "Unknown",
+      "lastUnknownCaption": "Could not read activity",
+      "lastLoading": "Loading the last alert"
+    },
+    "coverage": {
+      "title": "Coverage",
+      "description": "What actually fires. A cell is live only when the channel is on, set up, and able to send that event.",
+      "loading": "Loading coverage",
+      "channel": {
+        "sms": "SMS",
+        "email": "Email",
+        "discord": "Discord"
+      },
+      "channelStatus": {
+        "ready": "Ready",
+        "incomplete": "Needs setup",
+        "unused": "Not used",
+        "off": "Off"
+      },
+      "event": {
+        "connection_lost": {
+          "name": "Connection lost",
+          "desc": "While the internet is down"
+        },
+        "connection_restored": {
+          "name": "Connection restored",
+          "desc": "Once the link is back"
+        },
+        "reboot": {
+          "name": "Modem rebooted",
+          "desc": "Sent once it is back, with the cause"
+        }
+      },
+      "cell": {
+        "fires": "Sends",
+        "quiet": "Silenced",
+        "quietNote": "Channel is off",
+        "unrouted": "Not sending",
+        "incapable": "Can't send",
+        "pendingNote": "Pending save",
+        "attempt": "Will try",
+        "attemptNote": "Channel is not set up yet",
+        "unroutedNote": "Not ticked for this event"
+      },
+      "cellAction": "{{event}} by {{channel}}: {{state}}",
+      "reason": {
+        "email_needs_internet": "Needs the internet",
+        "discord_needs_internet": "Needs the internet",
+        "not_supported": "This channel cannot send this event"
+      },
+      "silentNotice": "Nothing will be sent. No cell on this matrix is live.",
+      "outageNoticeWith": "An outage would pass silently. Make {{channels}} live to be told.",
+      "outageNoticeNone": "An outage would pass silently. No channel on this device can report one.",
+      "staleNotice": "Showing the settings we last read from the device.",
+      "errorTitle": "Could not load coverage",
+      "errorDesc": "The device did not answer, so we cannot show what will fire.",
+      "errorRetry": "Try again",
+      "emptyTitle": "Nothing can be routed",
+      "emptyDesc": "The device did not report any alert capabilities, so there is nothing to switch on here.",
+      "unsavedNotice": "These ticks are not saved yet. Save them in Channels below.",
+      "blockedNotice": "Nothing here can be saved until the errors in {{channels}} are fixed."
+    },
+    "channels": {
+      "title": "Channels",
+      "description": "Set up how each one reaches you.",
+      "rail_label": "Alert channel",
+      "loading": "Loading alert channels",
+      "secret_saved": "Saved",
+      "name": {
+        "sms": "SMS",
+        "email": "Email",
+        "discord": "Discord"
+      },
+      "status": {
+        "ready": "Ready",
+        "incomplete": "Needs setup",
+        "unused": "No events routed",
+        "off": "Off",
+        "needs_fixing": "Has unsaved errors"
+      },
+      "sms": {
+        "switch_title": "Send SMS alerts",
+        "switch_on": "Texted over the cellular network, so they still arrive during an outage.",
+        "switch_off": "SMS alerts are off.",
+        "phone_label": "Recipient phone",
+        "phone_hint": "Include the country code with a leading plus.",
+        "phone_error": "Enter a number with its country code, like +14155551234.",
+        "phone_missing": "A recipient phone number is required.",
+        "test": "Send a test SMS"
+      },
+      "email": {
+        "switch_title": "Send email alerts",
+        "switch_on": "Emailed through Gmail once the connection is back.",
+        "switch_off": "Email alerts are off.",
+        "sender_label": "Sender email",
+        "sender_hint": "The Gmail account that sends the alert.",
+        "sender_missing": "A sender address is required.",
+        "recipient_label": "Recipient email",
+        "recipient_hint": "Where alerts are delivered.",
+        "recipient_missing": "A recipient address is required.",
+        "address_error": "Enter a valid email address.",
+        "password_label": "Gmail app password",
+        "password_hint": "Generate an app password for this device in your Google Account.",
+        "password_link": "Open Google app passwords",
+        "password_placeholder": "xxxx xxxx xxxx xxxx",
+        "password_keep": "Leave blank to keep the saved password",
+        "password_missing": "An app password is required to send email.",
+        "password_show": "Show app password",
+        "password_hide": "Hide app password",
+        "mailer_missing": "The msmtp mailer is not installed, so email cannot be sent yet. SMS and Discord still save.",
+        "mailer_install": "Install msmtp",
+        "mailer_installing": "Installing",
+        "mailer_recheck": "Check again",
+        "test": "Send a test email"
+      },
+      "discord": {
+        "switch_title": "Send Discord alerts",
+        "switch_on": "Sent as a direct message from your bot once the connection is back.",
+        "switch_off": "Discord alerts are off.",
+        "id_label": "Owner Discord ID",
+        "id_hint": "Turn on Developer Mode, right-click your name, then choose Copy User ID.",
+        "id_error": "Enter a numeric Discord user ID of 17 to 20 digits.",
+        "id_missing": "An owner Discord ID is required.",
+        "token_label": "Bot token",
+        "token_hint": "Create a bot and copy its token in the Discord Developer Portal.",
+        "token_link": "Open the Discord Developer Portal",
+        "token_placeholder": "Paste your bot token",
+        "token_keep": "Leave blank to keep the saved token",
+        "token_missing": "A bot token is required to send Discord alerts.",
+        "token_show": "Show bot token",
+        "token_hide": "Hide bot token",
+        "test": "Send a test message"
+      },
+      "threshold_label": "Wait before alerting",
+      "threshold_hint": "This channel sends only when the whole outage lasted at least this long. Every channel measures the same outage against its own wait.",
+      "threshold_error": "Enter a whole number of minutes from 1 to 60.",
+      "threshold_unit": "minutes",
+      "test": {
+        "sending": "Sending",
+        "sent": "Sent",
+        "succeeded": "Test {{channel}} sent",
+        "failed": "The test could not be sent.",
+        "blocked_off": "Turn this channel on, then save, to send a test.",
+        "blocked_incomplete": "Finish setting this channel up, then save, to send a test.",
+        "blocked_mailer": "Install the msmtp mailer to send a test email.",
+        "blocked_offline": "The Discord bot is not connected yet.",
+        "blocked_dirty": "Save your changes first. A test runs against the saved settings.",
+        "blocked_busy": "Another test is still running."
+      },
+      "save": {
+        "clean": "All changes saved",
+        "dirty": "Unsaved changes",
+        "saved": "Saved",
+        "blocked": "Fix the highlighted fields",
+        "blocked_in": "Fix the errors in {{channels}}",
+        "discard": "Discard",
+        "action": "Save settings",
+        "succeeded": "Alert settings saved",
+        "failed": "The settings could not be saved."
+      },
+      "empty": {
+        "title": "No channels reported",
+        "description": "This device did not return any alert channels, so there is nothing to configure yet."
+      },
+      "error": {
+        "title": "Channels could not be loaded",
+        "retry": "Try again"
+      }
+    },
+    "activity": {
+      "title": "Activity",
+      "description": "Alerts sent and reboots recorded, newest first.",
+      "refresh": "Refresh activity",
+      "event": {
+        "reboot": "Modem rebooted"
+      },
+      "cause": {
+        "unexpected": "Unexpected",
+        "watchdog": "Watchdog",
+        "planned": "Planned",
+        "scheduled": "Scheduled"
+      },
+      "channel": {
+        "sms": "SMS",
+        "email": "Email",
+        "discord": "Discord"
+      },
+      "sr": {
+        "sent": "Alert sent",
+        "failed": "Alert failed",
+        "reboot": "Reboot recorded"
+      },
+      "day": {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "undated": "No recorded time"
+      },
+      "time": {
+        "just_now": "Just now",
+        "unknown": "Unknown",
+        "minutes_one": "{{count}}m ago",
+        "minutes_other": "{{count}}m ago",
+        "hours_one": "{{count}}h ago",
+        "hours_other": "{{count}}h ago",
+        "days_one": "{{count}}d ago",
+        "days_other": "{{count}}d ago"
+      },
+      "empty": {
+        "title": "Nothing has happened yet",
+        "description": "Alerts appear here once a channel sends one, and reboots are recorded automatically with their cause."
+      },
+      "error": {
+        "title": "Could not load activity",
+        "retry": "Try again"
+      },
+      "notice": {
+        "stale": "Showing the last activity we managed to read. {{message}}"
+      },
+      "transcript_label": "Alert and reboot history"
+    },
+    "page": {
+      "title": "Alerts",
+      "description": "Who gets told when the connection drops, comes back, or the modem restarts.",
+      "refresh": "Refresh",
+      "unreadable": "The device did not answer."
+    }
+  },
+  "tailscale": {
+    "actions": {
+      "cancel": "Cancel",
+      "retry": "Try again"
+    },
+    "page": {
+      "title": "Tailscale VPN",
+      "description": "Your mesh VPN: what this modem is doing on the tailnet, and who else is on it.",
+      "refresh": "Refresh",
+      "stale": "Showing the last status we managed to read. {{message}}",
+      "unreadableTitle": "Could not read Tailscale status",
+      "unreadable": "The device did not answer."
+    },
+    "status": {
+      "aria": "Tailscale status",
+      "running": "Connected",
+      "needsLogin": "Needs login",
+      "disconnected": "Disconnected",
+      "serviceStopped": "Service stopped",
+      "notInstalled": "Not installed",
+      "unknown": "Unknown"
+    },
+    "band": {
+      "dash": "—",
+      "connectionEyebrow": "Connection",
+      "version": "Version {{version}}",
+      "versionUnknown": "Version unknown",
+      "deviceEyebrow": "This device",
+      "deviceUnknown": "No tailnet address yet",
+      "tailnetEyebrow": "Tailnet",
+      "magicDnsOn": "MagicDNS is on",
+      "magicDnsOff": "MagicDNS is off",
+      "peersEyebrow": "Peers online",
+      "exitNodes_one": "{{count}} exit node",
+      "exitNodes_other": "{{count}} exit nodes",
+      "noExitNode": "No exit node"
+    },
+    "connection": {
+      "title": "Connection",
+      "description": "Whether this modem joins the tailnet, and how it behaves once it does.",
+      "version": "v{{version}}",
+      "connect": "Connect",
+      "connecting": "Connecting…",
+      "disconnect": "Disconnect",
+      "disconnecting": "Disconnecting…",
+      "startService": "Start service",
+      "starting": "Starting…",
+      "stopService": "Stop service",
+      "stopping": "Stopping…",
+      "logout": "Log out",
+      "logoutDialogTitle": "Log out of Tailscale?",
+      "logoutDialogDescription": "This removes the modem from your tailnet. You will need to sign in again before it can reconnect.",
+      "authTitle": "Sign in to finish connecting",
+      "authDescription": "Open the login page and authenticate with your Tailscale account. The modem joins the tailnet as soon as you approve it.",
+      "openLogin": "Open login page",
+      "authWaiting": "Waiting for you to sign in",
+      "bootTitle": "Start on boot",
+      "bootDescription": "Bring Tailscale up automatically after the modem restarts.",
+      "sshTitle": "Tailscale SSH",
+      "sshDescription": "Let tailnet members open an SSH session to this modem, subject to your admin-panel ACLs.",
+      "sshPending": "Pending — this applies the next time the modem connects.",
+      "sshLocked": "Connect to Tailscale to change this.",
+      "sshDialogTitle": "Turn on Tailscale SSH?",
+      "sshDialogDescription": "Tailnet members will be able to SSH into this modem based on your Tailscale admin-panel ACLs. Review that policy first, so only the people you intend can reach the device.",
+      "sshConfirm": "Turn on SSH"
+    },
+    "device": {
+      "title": "This device",
+      "description": "How the modem identifies itself on the tailnet.",
+      "hostname": "Hostname",
+      "ipv4": "IPv4",
+      "ipv6": "IPv6",
+      "dnsName": "DNS name",
+      "tailnet": "Tailnet",
+      "magicDns": "MagicDNS",
+      "relay": "DERP relay",
+      "emptyTitle": "Not on the tailnet",
+      "emptyDescription": "Connect Tailscale and this modem's address, DNS name and relay appear here."
+    },
+    "peers": {
+      "title": "Network peers",
+      "description": "The other devices on your tailnet, and whether they are reachable.",
+      "dash": "—",
+      "unnamed": "Unnamed device",
+      "exitNode": "Exit node",
+      "colDevice": "Device",
+      "colAddress": "Address",
+      "colOs": "OS",
+      "colStatus": "Status",
+      "colLastSeen": "Last seen",
+      "online": "Online",
+      "offline": "Offline",
+      "seenNow": "Now",
+      "seenUnknown": "Unknown",
+      "seenJustNow": "Just now",
+      "seenMinutes": "{{n}} min ago",
+      "seenHours": "{{n}} h ago",
+      "seenDays": "{{n}} d ago",
+      "countOnline": "{{online}} of {{total}} online",
+      "countExitNodes_one": "{{count}} exit node",
+      "countExitNodes_other": "{{count}} exit nodes",
+      "errorTitle": "Could not load peers",
+      "emptyTitle": "No other devices",
+      "emptyDescription": "Nothing else has joined this tailnet yet. Add a device from the Tailscale admin console and it shows up here.",
+      "offlineTitle": "Not connected",
+      "offlineDescription": "Connect Tailscale to see the other devices on your tailnet."
+    },
+    "install": {
+      "title": "Tailscale",
+      "description": "A mesh VPN for reaching this modem from anywhere, without opening a port.",
+      "conditionTitle": "Tailscale is not installed",
+      "conditionDescription": "Installing downloads the Tailscale packages over the same cellular link this session is running on, so it uses your data allowance and the connection will be slower while it runs.",
+      "install": "Install Tailscale",
+      "installing": "Installing…",
+      "checkAgain": "Check again",
+      "done": "Tailscale installed.",
+      "failed": "The install did not finish.",
+      "manualLabel": "Or install from a shell",
+      "copyCommand": "Copy the install command",
+      "logTitle": "Install log",
+      "logWaiting": "Waiting for output…"
+    },
+    "danger": {
+      "title": "Remove Tailscale",
+      "description": "Uninstalls the Tailscale packages and firewall rules from this modem.",
+      "uninstall": "Uninstall",
+      "removing": "Removing…",
+      "dialogTitle": "Uninstall Tailscale?",
+      "dialogDescription": "This removes the Tailscale packages, its firewall rules, and all connection state from this modem. A reboot afterwards clears anything left behind.",
+      "rebootTitle": "Reboot recommended",
+      "rebootDescription": "Tailscale has been removed. Rebooting clears the leftover firewall rules and other artifacts. Reboot now?",
+      "rebootLater": "Reboot later",
+      "rebootNow": "Reboot now",
+      "rebooting": "Rebooting…"
+    },
+    "toast": {
+      "bootEnabled": "Tailscale will start on boot",
+      "bootDisabled": "Tailscale will not start on boot",
+      "bootFailed": "Could not change the boot setting",
+      "sshEnabled": "Tailscale SSH is on",
+      "sshEnableFailed": "Could not turn on Tailscale SSH",
+      "sshDisabled": "Tailscale SSH is off",
+      "sshDisableFailed": "Could not turn off Tailscale SSH",
+      "connected": "Connecting to Tailscale",
+      "connectFailed": "Could not start the connection",
+      "disconnected": "Tailscale disconnected",
+      "disconnectFailed": "Could not disconnect",
+      "loggedOut": "Logged out of Tailscale",
+      "logoutFailed": "Could not log out",
+      "serviceStarted": "Tailscale service started",
+      "serviceStartFailed": "Could not start the Tailscale service",
+      "serviceStopped": "Tailscale service stopped",
+      "serviceStopFailed": "Could not stop the Tailscale service",
+      "uninstalled": "Tailscale uninstalled",
+      "uninstallFailed": "Could not uninstall Tailscale",
+      "copied": "Command copied",
+      "copyFailed": "Could not copy the command"
+    }
+  },
+  "watchdog": {
+    "page": {
+      "title": "Watchdog",
+      "description": "Watches the internet link and climbs a recovery ladder when it goes down.",
+      "refresh": "Refresh",
+      "unreadableTitle": "Could not read the watchdog settings",
+      "unreadable": "The modem did not answer.",
+      "retry": "Try again"
+    },
+    "band": {
+      "state": "State",
+      "checks": "Failed checks",
+      "recoveries": "Recoveries",
+      "reboots": "Reboots",
+      "absent": "Not reported",
+      "checksCaption": "Before recovery starts",
+      "cooldownCaption": "Rechecking in {{seconds}}s",
+      "recoveriesLast": "Last: {{tier}}, {{ago}}",
+      "recoveriesNone": "None yet",
+      "rebootsCaption": "Safety cap, counted since the watchdog started",
+      "rebootsOff": "The reboot step is off, so the cap cannot fire"
+    },
+    "phase": {
+      "off": {
+        "label": "Off",
+        "blurb": "The watchdog is not watching the connection."
+      },
+      "unknown": {
+        "label": "Unknown",
+        "blurb": "The modem is not answering, so we cannot say what the watchdog is doing."
+      },
+      "starting": {
+        "label": "Starting",
+        "blurb": "The service was just enabled and has not reported yet."
+      },
+      "not_running": {
+        "label": "Not reporting",
+        "blurb": "Enabled, but the service has not reported since boot."
+      },
+      "auto_disabled": {
+        "label": "Turned itself off",
+        "blurb": "The reboot limit was reached, so the watchdog switched itself off."
+      },
+      "monitor": {
+        "label": "Monitoring",
+        "blurb": "The connection is healthy. Watching for outages."
+      },
+      "suspect": {
+        "label": "Checking",
+        "blurb": "A connectivity check just failed. Confirming before acting."
+      },
+      "recovery": {
+        "label": "Recovering",
+        "blurb": "Working through the recovery ladder to restore the connection."
+      },
+      "cooldown": {
+        "label": "Cooling down",
+        "blurb": "Waiting for the last recovery step to settle before rechecking."
+      },
+      "locked": {
+        "label": "Paused",
+        "blurb": "Maintenance is in progress, so the watchdog is holding off."
+      },
+      "disabled": {
+        "label": "Disabled",
+        "blurb": "The service is running but switched off."
+      }
+    },
+    "master": {
+      "title": "Connection watchdog",
+      "description": "Watch the link and recover it automatically. Applies when you save.",
+      "aria": "Enable the connection watchdog"
+    },
+    "ladder": {
+      "title": "Recovery ladder",
+      "description": "Tried in order, gentlest first. Each step runs only if the one before it did not bring the link back.",
+      "aria": "Recovery ladder",
+      "status": {
+        "on": "On",
+        "off": "Off",
+        "blocked": "Needs a slot",
+        "running": "Running now",
+        "inactive": "Watchdog off"
+      },
+      "tier1": {
+        "name": "Re-register to the network",
+        "effect": "Detaches from the carrier and attaches again.",
+        "consequence": "The link drops for a few seconds. Nothing else is affected."
+      },
+      "tier2": {
+        "name": "Restart the radio",
+        "effect": "Turns the radio off and back on.",
+        "consequence": "Skipped automatically while a tower lock is active, so your locked cells survive."
+      },
+      "tier3": {
+        "name": "Switch to the backup SIM",
+        "effect": "Fails over to the other SIM slot and rides on it.",
+        "consequence": "Without a backup slot the ladder stops here and never reaches the reboot step.",
+        "slotLabel": "Backup SIM slot",
+        "slotPlaceholder": "Choose a slot",
+        "slot": "Slot {{slot}}",
+        "slotHint": "The slot the watchdog switches to. Your primary SIM stays in the other one."
+      },
+      "tier4": {
+        "name": "Reboot the device",
+        "effect": "Restarts the modem as a last resort.",
+        "consequence": "This page goes away for about a minute while the modem comes back.",
+        "capLabel": "Maximum reboots per hour",
+        "capHint": "How many reboots are allowed in an hour. At the cap the watchdog switches itself off."
+      },
+      "unsaved": "Unsaved",
+      "tierAria": "Arm this recovery step: {{name}}"
+    },
+    "detection": {
+      "title": "Detection",
+      "description": "How quickly a quiet link counts as an outage.",
+      "probe": {
+        "label": "Probe interval",
+        "placeholder": "Choose an interval",
+        "option_one": "{{count}} second",
+        "option_other": "{{count}} seconds",
+        "hint": "How often the modem probes the internet to confirm it is reachable."
+      },
+      "threshold": {
+        "label": "Failure threshold",
+        "hint": "How many probes in a row must fail before recovery begins."
+      },
+      "cooldown": {
+        "label": "Cooldown (seconds)",
+        "hint": "How long to wait after each recovery step before checking the connection again."
+      },
+      "derived": {
+        "ready": "Declares the connection down after about {{seconds}}s of failed probes.",
+        "unavailable": "Enter valid detection values to preview when the connection is declared down."
+      }
+    },
+    "activity": {
+      "title": "Recovery activity",
+      "description": "What the watchdog has done, newest first.",
+      "refresh": "Refresh",
+      "type": {
+        "recovery": "Recovery",
+        "failover": "SIM failover"
+      },
+      "day": {
+        "today": "Today",
+        "yesterday": "Yesterday"
+      },
+      "time": {
+        "just_now": "Just now",
+        "minutes_one": "{{count}}m ago",
+        "minutes_other": "{{count}}m ago",
+        "hours_one": "{{count}}h ago",
+        "hours_other": "{{count}}h ago",
+        "days_one": "{{count}}d ago",
+        "days_other": "{{count}}d ago"
+      },
+      "empty": {
+        "title": "No recovery activity yet",
+        "description": "Recovery steps and SIM failovers appear here when the watchdog acts on an outage. Older activity ages out of the modem event log."
+      },
+      "error": {
+        "title": "Could not load recovery activity",
+        "retry": "Try again"
+      },
+      "refreshAria": "Refresh recovery activity"
+    },
+    "save": {
+      "discard": "Discard",
+      "action": "Save",
+      "clean": "All changes saved",
+      "dirty": "You have unsaved changes",
+      "saved": "Saved",
+      "blockedIn": "Check {{fields}} before saving",
+      "toastOk": "Watchdog settings saved",
+      "toastFail": "Could not save the watchdog settings",
+      "confirmReboot": {
+        "title": "Let the watchdog reboot the modem?",
+        "body": "Saving this lets the watchdog restart the modem on its own when every gentler step has failed.",
+        "cap": "Reboots are capped at {{cap}} per hour. If it reaches that cap it switches the whole watchdog off — monitoring included — until you turn it back on.",
+        "cancel": "Cancel",
+        "action": "Allow reboots"
+      }
+    },
+    "errors": {
+      "failThreshold": "Must be between 1 and 20",
+      "probeInterval": "Must be between 1 and 60 seconds",
+      "cooldown": "Must be between 10 and 300 seconds",
+      "maxReboots": "Must be between 1 and 10",
+      "backupSim": "Choose a backup SIM slot to enable failover"
+    },
+    "autoDisabled": {
+      "title": "The watchdog turned itself off",
+      "description": "It reached the reboot limit for this hour. Re-enable it once the connection is stable."
+    },
+    "failover": {
+      "title": "Running on the backup SIM",
+      "body": "Switched to slot {{current}} {{since}}. The original SIM is in slot {{original}}.",
+      "recently": "recently",
+      "revert": "Revert to the original SIM",
+      "reverting": "Reverting…",
+      "confirmTitle": "Revert to the original SIM?",
+      "confirmBody": "This switches back to SIM slot {{original}}. Your internet will briefly disconnect while the modem reconnects.",
+      "cancel": "Cancel",
+      "confirm": "Revert SIM",
+      "requested": "SIM revert requested. The watchdog will process it shortly.",
+      "failed": "Could not request the SIM revert"
+    }
+  },
+  "aboutDevice": {
+    "page": {
+      "title": "About Device",
+      "description": "Device identity, addresses, and the software running on it."
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "refreshing": "Refreshing…",
+      "retry": "Retry"
+    },
+    "band": {
+      "label": "Identity",
+      "not_responding": "Not responding",
+      "unreachable": {
+        "title": "The device did not answer",
+        "detail": "{{reason}} from {{endpoint}}. Nothing below was read.",
+        "no_reason": "No response"
+      }
+    },
+    "tiles": {
+      "model": {
+        "eyebrow": "Model"
+      },
+      "firmware": {
+        "eyebrow": "Modem firmware",
+        "caption": "Built {{date}}"
+      },
+      "host": {
+        "eyebrow": "Host system",
+        "caption": "Linux {{kernel}}"
+      },
+      "internet": {
+        "eyebrow": "Internet",
+        "reachable": "Reachable",
+        "not_reachable": "Not reachable",
+        "caption_reachable": "Public {{address}}",
+        "caption_unreachable": "No answer from {{probe}}"
+      }
+    },
+    "modem": {
+      "title": "Modem",
+      "description": "Hardware identity and the 3GPP release each radio implements."
+    },
+    "addresses": {
+      "title": "Addresses",
+      "description": "Where this device sits on the LAN and on the carrier network.",
+      "provenance": "Public addresses are resolved through {{probe}}. An em dash means the device reports none."
+    },
+    "groups": {
+      "three_gpp": "3GPP release",
+      "local": "Local",
+      "wwan": "WWAN",
+      "public": "Public"
+    },
+    "rows": {
+      "manufacturer": "Manufacturer",
+      "model": "Model",
+      "firmware": "Firmware",
+      "firmware_revision": "Firmware revision",
+      "build_date": "Build date",
+      "imei": "IMEI",
+      "lte": "LTE",
+      "nr5g": "NR5G",
+      "device_ip": "Device IP",
+      "lan_gateway": "LAN gateway",
+      "ipv4": "IPv4",
+      "ipv6": "IPv6"
+    },
+    "empty": {
+      "title": "Nothing read",
+      "modem": "These figures come from the device, and the device did not answer.",
+      "addresses": "Addresses are read from the same request."
+    },
+    "qmanager": {
+      "title": "About QManager",
+      "note": "QManager-GO: Single-binary Golang backend by @latifangren, based on original frontend by @dr-dolomite (QManager-RM520N). Special thanks to iamromulan, clndwhr, and Wutang Clan!",
+      "copyright": "© {{year}} QManager. All rights reserved.",
+      "repository": "GitHub repository",
+      "release_notes": "Release notes",
+      "upstream_frontend": "Upstream repository",
+      "support": "Support the project"
+    }
+  },
+  "support": {
+    "page": {
+      "title": "Support",
+      "description": "Report a bug, ask the community, or view project sources."
+    },
+    "help": {
+      "title": "Get help",
+      "description": "Four routes, in the order most people need them.",
+      "bug": {
+        "label": "Report a bug"
+      },
+      "upstream": {
+        "label": "Upstream project (dr-dolomite)"
+      },
+      "community": {
+        "label": "Ask the community"
+      },
+      "email": {
+        "label": "Email the maintainer"
+      },
+      "release_notes": {
+        "label": "Read the release notes",
+        "dest": "Latest: {{version}}"
+      }
+    },
+    "community": {
+      "title": "Community",
+      "description": "Cellular Modem Talk/Development on Discord.",
+      "body": "Users share configurations, troubleshoot together, and talk cellular networking. Scan or open the invite.",
+      "open_invite": "Open the invite",
+      "qr_alt": "QR code for the QManager Discord server invite"
+    },
+    "opens_new_tab": "opens in a new tab"
+  },
+  "donate": {
+    "dialog": {
+      "title": "Support the project",
+      "description": "Keep QManager going.",
+      "body": "Hi, I’m Rus. QManager is a side project I maintain for free. If you’ve found it useful, a small tip means a lot and keeps me going.",
+      "thanks": "Thanks for being awesome. 💙"
+    },
+    "links": {
+      "group_label": "Donation channels",
+      "opens_new_tab": "opens in a new tab"
+    },
+    "band": {
+      "title": "Support the project",
+      "body": "QManager is a side project, maintained for free. If it has been useful on your setup, a tip keeps it going — and there is no paywall coming either way."
     }
   }
 }

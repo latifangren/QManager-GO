@@ -17,7 +17,7 @@ import (
 	"qmanager/internal/telemetry"
 )
 
-const (
+var (
 	imeiBackupPath        = "/etc/qmanager/imei_backup.json"
 	imeiRebootPendingFlag = "/tmp/qm_imei_reboot_pending"
 )
@@ -30,18 +30,29 @@ type BackupImeiConfig struct {
 
 // CellularImeiHandler handles IMEI settings and Luhn validation.
 type CellularImeiHandler struct {
-	engine    *atengine.Engine
-	poller    *telemetry.Poller
-	configMgr *config.Manager
+	engine         *atengine.Engine
+	poller         *telemetry.Poller
+	configMgr      *config.Manager
+	imeiBackupPath string
 }
 
 // NewCellularImeiHandler creates a new CellularImeiHandler.
-func NewCellularImeiHandler(engine *atengine.Engine, poller *telemetry.Poller, configMgr *config.Manager) *CellularImeiHandler {
-	return &CellularImeiHandler{
-		engine:    engine,
-		poller:    poller,
-		configMgr: configMgr,
+func NewCellularImeiHandler(engine *atengine.Engine, poller *telemetry.Poller, configMgr *config.Manager, optionalConfigDir ...string) *CellularImeiHandler {
+	backupP := imeiBackupPath
+	if len(optionalConfigDir) > 0 && optionalConfigDir[0] != "" {
+		backupP = filepath.Join(optionalConfigDir[0], "imei_backup.json")
 	}
+	return &CellularImeiHandler{
+		engine:         engine,
+		poller:         poller,
+		configMgr:      configMgr,
+		imeiBackupPath: backupP,
+	}
+}
+
+// SetStoragePath sets custom backup file path for testing.
+func (h *CellularImeiHandler) SetStoragePath(path string) {
+	h.imeiBackupPath = path
 }
 
 // GetIMEI handles GET /api/v1/cellular/imei and GET /cgi-bin/quecmanager/cellular/imei.sh
@@ -107,6 +118,12 @@ func (h *CellularImeiHandler) handleSetIMEI(w http.ResponseWriter, newImei strin
 		return
 	}
 
+	if len(newImei) == 14 && isDigitsOnly(newImei) {
+		if cd, ok := CalculateLuhnCheckDigit(newImei); ok {
+			newImei = newImei + string('0'+byte(cd))
+		}
+	}
+
 	if !ValidateLuhnIMEI(newImei) {
 		Error(w, http.StatusBadRequest, "Invalid IMEI (fails 15-digit format or Luhn checksum)")
 		return
@@ -125,6 +142,7 @@ func (h *CellularImeiHandler) handleSetIMEI(w http.ResponseWriter, newImei strin
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success":         true,
+		"imei":            newImei,
 		"detail":          "IMEI written to modem NVM. Reboot required to take effect.",
 		"reboot_required": true,
 	})

@@ -66,6 +66,11 @@ export interface FailoverState {
 export interface BandCurrentResponse {
   success: boolean;
   current?: CurrentBands;
+  supported?: {
+    lte_bands?: string[];
+    nsa_nr5g_bands?: string[];
+    sa_nr5g_bands?: string[];
+  };
   failover?: FailoverState;
   error?: string;
   detail?: string;
@@ -110,7 +115,7 @@ export function parseBandString(bands: string | undefined | null): number[] {
   return bands
     .split(":")
     .map((b) => parseInt(b.trim(), 10))
-    .filter((n) => !isNaN(n))
+    .filter((n) => !isNaN(n) && n > 0)
     .sort((a, b) => a - b);
 }
 

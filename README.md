@@ -113,6 +113,44 @@ make test
 
 ## Installation & Deployment
 
+### 🔄 Removing Legacy QManager / SimpleAdmin (Full Migration)
+
+If your modem previously ran **legacy QManager (PHP/Bash/Lighttpd)** or **SimpleAdmin**, clean it up completely so **QManager-Go** runs with zero port or serial device contention (`/dev/smd11`).
+
+> 🛡️ **Configuration Preserved**:  
+> The directory `/etc/qmanager/` is **strictly preserved**. It holds your saved SIM profiles, APN, band locks, and authentication (`auth.json`). Do not delete `/etc/qmanager/`.
+
+#### Quick Cleanup Script (Run on Modem over SSH or ADB)
+
+```bash
+# 1. Stop & kill all legacy daemons and pollers
+systemctl stop lighttpd qmanager-poller qmanager-ping qmanager-watchcat \
+  qmanager-firewall qmanager-setup qmanager-cfun-fix qmanager-console \
+  qmanager-ethernet qmanager-imei-check qmanager-mtu qmanager-tower-failover \
+  qmanager-ttl qmanager_tailscale_install qmanager-auto-update.timer 2>/dev/null
+killall -9 lighttpd qmanager_poller qmanager_ping ttyd 2>/dev/null
+
+# 2. Remove legacy systemd units and wants symlinks (Quectel rootfs)
+mount -o remount,rw /
+rm -f /lib/systemd/system/multi-user.target.wants/qmanager-* \
+      /lib/systemd/system/multi-user.target.wants/lighttpd.service \
+      /etc/systemd/system/multi-user.target.wants/qmanager-* \
+      /etc/systemd/system/multi-user.target.wants/lighttpd.service 2>/dev/null
+rm -f /lib/systemd/system/qmanager-* /lib/systemd/system/lighttpd.service 2>/dev/null
+rm -f /etc/systemd/system/qmanager-* /etc/systemd/system/lighttpd.service 2>/dev/null
+systemctl daemon-reload
+
+# 3. Remove legacy bash scripts and old web assets
+rm -f /usr/bin/qmanager_*
+rm -f /opt/etc/init.d/S80lighttpd
+rm -rf /opt/etc/lighttpd
+rm -rf /usrdata/qmanager/console /usrdata/qmanager/lighttpd.conf* /usrdata/qmanager/locales-* /usrdata/qmanager/www /usrdata/qmanager/data_used.json /usrdata/www /www
+rm -f /tmp/qmanager*
+mount -o remount,ro / 2>/dev/null || true
+```
+
+---
+
 ### Quick Install to Device
 
 1. Download or package `qmanager-armv7.tar.gz`.

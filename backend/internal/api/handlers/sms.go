@@ -67,6 +67,10 @@ func (h *SMSHandler) GetSMSCenter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if messages == nil {
+		messages = []telemetry.SMSMessage{}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(SMSCenterResponse{
 		Success:  true,

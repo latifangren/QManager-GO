@@ -162,7 +162,6 @@ function PortMetric({
           warnAt={101}
           dangerAt={101}
           colorOverride={tone}
-          size="sm"
           /* The block is already `surface-container`, so the track takes the
              step above it or it vanishes into its own background. */
           track="surface-container-high"
@@ -387,7 +386,7 @@ export function PortStripCard({
           {t("antenna_alignment.ports.twin_hint")}{" "}
           <Link
             href="/cellular/antenna-statistics"
-            className="font-semibold text-primary underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            className="font-semibold text-primary underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
           >
             {t("antenna_alignment.ports.twin_link")}
           </Link>

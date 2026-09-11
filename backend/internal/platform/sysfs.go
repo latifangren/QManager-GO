@@ -3,13 +3,59 @@ package platform
 import (
 	"bufio"
 	"fmt"
+	"math"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 )
 
-// NetworkStats holds interface transfer counters from /proc/net/dev.
+var (
+	thermalPattern = "/sys/class/thermal/thermal_zone*/temp"
+	hwmonPattern   = "/sys/class/hwmon/hwmon*/temp1_input"
+)
+
+// StorageStats holds filesystem mount usage.
+type StorageStats struct {
+	Mount       string `json:"mount"`
+	TotalKB     uint64 `json:"total_kb"`
+	UsedKB      uint64 `json:"used_kb"`
+	AvailableKB uint64 `json:"available_kb"`
+}
+
+// GetStorageStats reads filesystem usage for the specified mount path.
+func GetStorageStats(mountPath string) *StorageStats {
+	if mountPath == "" {
+		mountPath = "/usrdata"
+	}
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(mountPath, &stat); err != nil {
+		if err := syscall.Statfs("/", &stat); err != nil {
+			return nil
+		}
+		mountPath = "/"
+	}
+
+	bsize := uint64(stat.Bsize)
+	totalKB := (stat.Blocks * bsize) / 1024
+	freeKB := (stat.Bfree * bsize) / 1024
+	availKB := (stat.Bavail * bsize) / 1024
+	usedKB := uint64(0)
+	if totalKB > freeKB {
+		usedKB = totalKB - freeKB
+	}
+
+	return &StorageStats{
+		Mount:       mountPath,
+		TotalKB:     totalKB,
+		UsedKB:      usedKB,
+		AvailableKB: availKB,
+	}
+}
 type NetworkStats struct {
 	Interface string `json:"interface"`
 	RxBytes   uint64 `json:"rx_bytes"`
@@ -23,6 +69,7 @@ type NetworkStats struct {
 // SystemMetrics holds memory, CPU temperature, and uptime metrics.
 type SystemMetrics struct {
 	UptimeSeconds float64                 `json:"uptime_seconds"`
+	CPUUsage      float64                 `json:"cpu_usage"`
 	MemTotalKB    uint64                  `json:"mem_total_kb"`
 	MemFreeKB     uint64                  `json:"mem_free_kb"`
 	MemAvailKB    uint64                  `json:"mem_available_kb"`
@@ -90,9 +137,12 @@ func ReadMemInfo(path string) (total, free, avail uint64, err error) {
 // ReadCpuTemp searches /sys/class/thermal or hwmon for modem CPU temperature.
 func ReadCpuTemp() float64 {
 	// 1. Check thermal_zone
-	zones, err := filepath.Glob("/sys/class/thermal/thermal_zone*/temp")
+	zones, err := filepath.Glob(thermalPattern)
 	if err == nil {
 		for _, z := range zones {
+			if strings.Contains(z, "cooling_device") {
+				continue
+			}
 			if data, err := os.ReadFile(z); err == nil {
 				val, err := strconv.ParseFloat(strings.TrimSpace(string(data)), 64)
 				if err == nil && val > 0 {
@@ -106,7 +156,7 @@ func ReadCpuTemp() float64 {
 	}
 
 	// 2. Check hwmon
-	hwmon, err := filepath.Glob("/sys/class/hwmon/hwmon*/temp1_input")
+	hwmon, err := filepath.Glob(hwmonPattern)
 	if err == nil {
 		for _, h := range hwmon {
 			if data, err := os.ReadFile(h); err == nil {
@@ -176,6 +226,81 @@ func ReadNetworkStats(path string) (map[string]NetworkStats, error) {
 	return stats, nil
 }
 
+var (
+	prevCPUTotal uint64
+	prevCPUIdle  uint64
+	cpuMu        sync.Mutex
+)
+
+// ReadCPUUsage calculates CPU usage percentage from /proc/stat.
+func ReadCPUUsage(path string) float64 {
+	if path == "" {
+		path = "/proc/stat"
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	if !scanner.Scan() {
+		return 0
+	}
+	fields := strings.Fields(scanner.Text())
+	if len(fields) < 5 || fields[0] != "cpu" {
+		return 0
+	}
+
+	var user, nice, system, idle, iowait, irq, softirq, steal uint64
+	user, _ = strconv.ParseUint(fields[1], 10, 64)
+	nice, _ = strconv.ParseUint(fields[2], 10, 64)
+	system, _ = strconv.ParseUint(fields[3], 10, 64)
+	idle, _ = strconv.ParseUint(fields[4], 10, 64)
+	if len(fields) > 5 {
+		iowait, _ = strconv.ParseUint(fields[5], 10, 64)
+	}
+	if len(fields) > 6 {
+		irq, _ = strconv.ParseUint(fields[6], 10, 64)
+	}
+	if len(fields) > 7 {
+		softirq, _ = strconv.ParseUint(fields[7], 10, 64)
+	}
+	if len(fields) > 8 {
+		steal, _ = strconv.ParseUint(fields[8], 10, 64)
+	}
+
+	total := user + nice + system + idle + iowait + irq + softirq + steal
+	idleAll := idle + iowait
+
+	cpuMu.Lock()
+	defer cpuMu.Unlock()
+
+	if prevCPUTotal == 0 {
+		prevCPUTotal = total
+		prevCPUIdle = idleAll
+		return 0
+	}
+
+	diffTotal := total - prevCPUTotal
+	diffIdle := idleAll - prevCPUIdle
+
+	prevCPUTotal = total
+	prevCPUIdle = idleAll
+
+	if diffTotal == 0 {
+		return 0
+	}
+
+	usage := float64(diffTotal-diffIdle) * 100.0 / float64(diffTotal)
+	if usage < 0 {
+		usage = 0
+	} else if usage > 100 {
+		usage = 100
+	}
+	return math.Round(usage)
+}
+
 // GetSystemMetrics compiles all system status counters into one object.
 func GetSystemMetrics() SystemMetrics {
 	m := SystemMetrics{
@@ -183,10 +308,11 @@ func GetSystemMetrics() SystemMetrics {
 	}
 
 	m.UptimeSeconds, _ = ReadUptime("")
+	m.CPUUsage = ReadCPUUsage("")
 	m.MemTotalKB, m.MemFreeKB, m.MemAvailKB, _ = ReadMemInfo("")
 	if m.MemTotalKB > 0 {
 		used := m.MemTotalKB - m.MemAvailKB
-		m.MemUsagePct = (float64(used) / float64(m.MemTotalKB)) * 100.0
+		m.MemUsagePct = math.Round((float64(used)/float64(m.MemTotalKB))*1000.0) / 10.0
 	}
 	m.CpuTempC = ReadCpuTemp()
 	if net, err := ReadNetworkStats(""); err == nil {
@@ -194,4 +320,130 @@ func GetSystemMetrics() SystemMetrics {
 	}
 
 	return m
+}
+
+// GetInterfaceIP returns the first valid IPv4 and IPv6 addresses for a given interface name.
+func GetInterfaceIP(ifaceName string) (ipv4, ipv6 string) {
+	iface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		return "", ""
+	}
+
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return "", ""
+	}
+
+	for _, addr := range addrs {
+		var ip net.IP
+		switch v := addr.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+
+		if ip == nil || ip.IsLoopback() {
+			continue
+		}
+
+		if ip4 := ip.To4(); ip4 != nil {
+			if ipv4 == "" {
+				ipv4 = ip4.String()
+			}
+		} else if ip.To16() != nil {
+			if ipv6 == "" && !ip.IsLinkLocalUnicast() {
+				ipv6 = ip.String()
+			}
+		}
+	}
+
+	return ipv4, ipv6
+}
+
+// GetDefaultGatewayIP scans active local interfaces (bridge0, eth0, ecm0, rndis0) for an IP address.
+func GetDefaultGatewayIP() string {
+	candidates := []string{"bridge0", "br0", "eth0", "ecm0", "rndis0", "usb0"}
+	for _, name := range candidates {
+		ip4, _ := GetInterfaceIP(name)
+		if ip4 != "" {
+			return ip4
+		}
+	}
+
+	// Fallback to iterating all non-loopback interfaces
+	ifaces, err := net.Interfaces()
+	if err == nil {
+		for _, iface := range ifaces {
+			if (iface.Flags&net.FlagUp) == 0 || (iface.Flags&net.FlagLoopback) != 0 {
+				continue
+			}
+			ip4, _ := GetInterfaceIP(iface.Name)
+			if ip4 != "" && !strings.HasPrefix(iface.Name, "rmnet") {
+				return ip4
+			}
+		}
+	}
+
+	return "192.168.225.1"
+}
+
+// GetKernelVersion reads the active Linux kernel release version.
+func GetKernelVersion() string {
+	if data, err := os.ReadFile("/proc/sys/kernel/osrelease"); err == nil {
+		ver := strings.TrimSpace(string(data))
+		if ver != "" {
+			return ver
+		}
+	}
+	if out, err := exec.Command("uname", "-r").Output(); err == nil {
+		ver := strings.TrimSpace(string(out))
+		if ver != "" {
+			return ver
+		}
+	}
+	return "4.14.206"
+}
+
+// GetHostname returns the machine hostname from OS or /proc.
+func GetHostname() string {
+	if hn, err := os.Hostname(); err == nil && hn != "" {
+		return hn
+	}
+	if data, err := os.ReadFile("/proc/sys/kernel/hostname"); err == nil {
+		hn := strings.TrimSpace(string(data))
+		if hn != "" {
+			return hn
+		}
+	}
+	return "sdxprairie"
+}
+
+// GetOSVersion extracts the OS or OpenWrt/Yocto distribution version.
+func GetOSVersion() string {
+	// 1. Check /etc/openwrt_release
+	if file, err := os.Open("/etc/openwrt_release"); err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.HasPrefix(line, "DISTRIB_DESCRIPTION=") {
+				return strings.Trim(strings.TrimPrefix(line, "DISTRIB_DESCRIPTION="), "\"'")
+			}
+		}
+	}
+
+	// 2. Check /etc/os-release
+	if file, err := os.Open("/etc/os-release"); err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.HasPrefix(line, "PRETTY_NAME=") {
+				return strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"'")
+			}
+		}
+	}
+
+	return "QManager Embedded Linux"
 }

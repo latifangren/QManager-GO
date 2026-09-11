@@ -14,18 +14,21 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+
 jobs:
   test-backend:
     name: Backend Tests & Vet
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Set up Go 1.23
-        uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.23'
+          go-version-file: 'backend/go.mod'
           cache: true
           cache-dependency-path: backend/go.sum
 
@@ -40,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -51,12 +54,20 @@ jobs:
         working-directory: frontend
         run: bun install
 
+      - name: Restore Next.js build cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/frontend/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('frontend/bun.lock') }}-${{ hashFiles('frontend/**.[jt]s', 'frontend/**.[jt]sx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('frontend/bun.lock') }}-
+
       - name: Build Next.js Static Export
         working-directory: frontend
         run: bun run build
 
       - name: Upload frontend static artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: frontend/out/
@@ -83,18 +94,18 @@ jobs:
             goarm: ""
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download frontend static export
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: backend/cmd/qmanager/dist
 
-      - name: Set up Go 1.23
-        uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.23'
+          go-version-file: 'backend/go.mod'
           cache: true
           cache-dependency-path: backend/go.sum
 
