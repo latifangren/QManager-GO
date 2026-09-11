@@ -271,5 +271,12 @@ export function formatRelativeTime(
 export function channelKey(
   info: UpdateInfo | null,
 ): "prerelease" | "stable" {
-  return info?.include_prerelease === true ? "prerelease" : "stable";
+  if (
+    info?.include_prerelease === true ||
+    info?.current_version?.includes("-") ||
+    info?.current_version?.toLowerCase().includes("beta")
+  ) {
+    return "prerelease";
+  }
+  return "stable";
 }

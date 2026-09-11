@@ -81,6 +81,7 @@ jobs:
             cp "dist/${bin_file}" "${staging_dir}/qmanager"
             cp deploy/systemd/qmanager.service "${staging_dir}/"
             cp deploy/install.sh "${staging_dir}/"
+            cp deploy/README.md "${staging_dir}/"
             chmod +x "${staging_dir}/qmanager" "${staging_dir}/install.sh"
 
             tar -czf "release-artifacts/${tarball_name}" -C "${staging_dir}" .
@@ -103,6 +104,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: release-artifacts/*
-          generate_release_notes: true
+          generate_release_notes: false
+          body_path: RELEASE_NOTES.md
           draft: false
-          prerelease: false
+          prerelease: true
