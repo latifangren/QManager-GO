@@ -42,9 +42,13 @@ type LanguagePacksHandler struct {
 }
 
 // NewLanguagePacksHandler creates a new LanguagePacksHandler.
-func NewLanguagePacksHandler() *LanguagePacksHandler {
+func NewLanguagePacksHandler(optionalDir ...string) *LanguagePacksHandler {
+	dir := DefaultLanguagePacksDir
+	if len(optionalDir) > 0 && optionalDir[0] != "" {
+		dir = optionalDir[0]
+	}
 	return &LanguagePacksHandler{
-		packsDir: DefaultLanguagePacksDir,
+		packsDir: dir,
 		installState: LanguagePackInstallState{
 			State:    "idle",
 			Progress: 0,

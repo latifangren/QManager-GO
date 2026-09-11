@@ -29,6 +29,7 @@ type AppServices struct {
 	Identity      platform.Identity
 	DistFS        embed.FS
 	ConfigDir     string
+	LocalesDir    string
 	CommandRunner handlers.CommandRunner
 }
 
@@ -38,6 +39,19 @@ func NewRouter(s AppServices) http.Handler {
 	if configDir == "" {
 		configDir = "/etc/qmanager"
 	}
+
+	localesPath := s.LocalesDir
+	if localesPath == "" {
+		if configDir != "" && configDir != "/etc/qmanager" {
+			localesPath = filepath.Join(configDir, "locales-packs")
+		} else {
+			localesPath = "/usrdata/qmanager/locales-packs"
+			if _, err := os.Stat(localesPath); os.IsNotExist(err) {
+				localesPath = filepath.Join(configDir, "locales-packs")
+			}
+		}
+	}
+	_ = os.MkdirAll(localesPath, 0755)
 
 	r := chi.NewRouter()
 
@@ -96,7 +110,7 @@ func NewRouter(s AppServices) http.Handler {
 	smsForwardH := handlers.NewSMSForwardingHandler(s.Engine, s.ConfigMgr)
 	updateH := handlers.NewUpdateHandler(s.ConfigMgr)
 	logsH := handlers.NewLogsHandler()
-	langPacksH := handlers.NewLanguagePacksHandler()
+	langPacksH := handlers.NewLanguagePacksHandler(localesPath)
 	healthCheckH := handlers.NewHealthCheckHandler(s.Engine, s.Poller, s.Identity)
 	historyH := handlers.NewHistoryHandler()
 	qualityH := handlers.NewQualityThresholdsHandler(filepath.Join(configDir, "quality_thresholds.json"))
@@ -407,11 +421,6 @@ func NewRouter(s AppServices) http.Handler {
 	})
 
 	// Static File Server (Locales Packs)
-	localesPath := "/usrdata/qmanager/locales-packs"
-	if err := os.MkdirAll(localesPath, 0755); err != nil {
-		localesPath = filepath.Join(configDir, "locales-packs")
-		_ = os.MkdirAll(localesPath, 0755)
-	}
 	localesServer := http.StripPrefix("/locales-packs/", http.FileServer(http.Dir(localesPath)))
 	r.Handle("/locales-packs/*", localesServer)
 	r.Handle("/locales-packs", localesServer)

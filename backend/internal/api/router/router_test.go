@@ -51,13 +51,15 @@ func TestRouter_MountsAndEndpoints(t *testing.T) {
 	watchdog := telemetry.NewWatchdog(eng, cfgMgr, prober)
 
 	services := AppServices{
-		Engine:    eng,
-		Poller:    poller,
-		Prober:    prober,
-		Watchdog:  watchdog,
-		ConfigMgr: cfgMgr,
-		Identity:  id,
-		DistFS:    testFS,
+		Engine:     eng,
+		Poller:     poller,
+		Prober:     prober,
+		Watchdog:   watchdog,
+		ConfigMgr:  cfgMgr,
+		Identity:   id,
+		DistFS:     testFS,
+		ConfigDir:  tempDir,
+		LocalesDir: filepath.Join(tempDir, "locales-packs"),
 		CommandRunner: func(name string, arg ...string) error {
 			return nil // Mock command runner to avoid iptables permission errors in CI
 		},
@@ -411,14 +413,6 @@ func TestRouter_MountsAndEndpoints(t *testing.T) {
 	testPackDir := filepath.Join(tempDir, "locales-packs", "zh")
 	_ = os.MkdirAll(testPackDir, 0755)
 	_ = os.WriteFile(filepath.Join(testPackDir, "common.json"), []byte(`{"hello":"world"}`), 0644)
-
-	usrDataPackDir := filepath.Join("/usrdata/qmanager/locales-packs", "zh")
-	if err := os.MkdirAll(usrDataPackDir, 0755); err == nil {
-		_ = os.WriteFile(filepath.Join(usrDataPackDir, "common.json"), []byte(`{"hello":"world"}`), 0644)
-		t.Cleanup(func() {
-			_ = os.RemoveAll("/usrdata/qmanager/locales-packs")
-		})
-	}
 
 	reqLocales := httptest.NewRequest("GET", "/locales-packs/zh/common.json", nil)
 	wLocales := httptest.NewRecorder()
