@@ -143,37 +143,29 @@
     "download_failed": "Couldn't download the bundle"
   },
   "category": {
-    "binaries": {
-      "label": "Binaries & Versions",
-      "description": "Required binaries and version checks"
-    },
-    "permissions": {
-      "label": "Filesystem & Permissions",
-      "description": "Filesystem ownership, modes, and group membership"
-    },
     "at_transport": {
-      "label": "AT Transport",
-      "description": "qcmd / atcli_smd11 round-trip checks against the modem"
+      "label": "AT Transport & Hardware",
+      "description": "Qualcomm SMD11 serial interface and modem identity"
     },
-    "sms": {
-      "label": "SMS Subsystem",
-      "description": "sms_tool readiness and SIM presence"
-    },
-    "sudoers": {
-      "label": "Sudoers",
-      "description": "www-data sudoers helper visibility"
+    "cellular": {
+      "label": "Cellular & SIM Subsystem",
+      "description": "SIM presence, registration, signal metrics, and CA status"
     },
     "services": {
-      "label": "Systemd Services",
-      "description": "Systemd unit presence, enablement, and active state"
+      "label": "Services & Runtime",
+      "description": "QManager Go daemon process, memory RSS, and thermal engine"
+    },
+    "filesystem": {
+      "label": "Storage & Flash Wear",
+      "description": "UBIFS persistent storage, RAM /tmp writeability, and zero-wear policy"
     },
     "network": {
-      "label": "Network",
-      "description": "DNS, IPv4, modem data path, lighttpd, firewall"
+      "label": "Network & Routing",
+      "description": "Cellular data interface, IPv4 reachability, DNS, and firewall"
     },
     "configuration": {
-      "label": "Configuration",
-      "description": "QManager config files and poller cache freshness"
+      "label": "Configuration & Database",
+      "description": "Atomic JSON configs, SIM registry, and in-memory telemetry freshness"
     }
   }
 }

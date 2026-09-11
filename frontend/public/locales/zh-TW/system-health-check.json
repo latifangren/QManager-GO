@@ -143,37 +143,29 @@
     "download_failed": "無法下載診斷包"
   },
   "category": {
-    "binaries": {
-      "label": "二進位檔案與版本",
-      "description": "必要的二進位檔案與版本檢查"
-    },
-    "permissions": {
-      "label": "檔案系統與權限",
-      "description": "檔案系統的擁有者、權限模式與群組成員資格"
-    },
     "at_transport": {
-      "label": "AT 傳輸",
-      "description": "qcmd / atcli_smd11 與數據機之間的往返檢查"
+      "label": "AT 傳輸與硬體",
+      "description": "Qualcomm SMD11 序列介面與數據機識別"
     },
-    "sms": {
-      "label": "SMS 子系統",
-      "description": "sms_tool 就緒狀態與 SIM 卡存在情況"
-    },
-    "sudoers": {
-      "label": "Sudoers",
-      "description": "www-data 的 sudoers 輔助程式可見性"
+    "cellular": {
+      "label": "蜂巢與 SIM 子系統",
+      "description": "SIM 卡就緒、網路註冊、訊號指標與載波聚合狀態"
     },
     "services": {
-      "label": "Systemd 服務",
-      "description": "Systemd 單元的存在、啟用狀態與運作狀態"
+      "label": "服務與執行階段",
+      "description": "QManager Go 守護程序、記憶體用量與溫度感測器"
+    },
+    "filesystem": {
+      "label": "儲存與快閃記憶體壽命",
+      "description": "UBIFS 持久儲存、RAM /tmp 寫入與零快閃記憶體磨損保護"
     },
     "network": {
-      "label": "網路",
-      "description": "DNS、IPv4、數據機資料路徑、lighttpd、防火牆"
+      "label": "網路與路由",
+      "description": "蜂巢資料介面、IPv4 連線能力、DNS 與防火牆規則"
     },
     "configuration": {
-      "label": "配置",
-      "description": "QManager 配置檔案與輪詢快取新鮮度"
+      "label": "設定與資料庫",
+      "description": "原子 JSON 設定、SIM 註冊表與記憶體遙測新鮮度"
     }
   }
 }

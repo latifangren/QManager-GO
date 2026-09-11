@@ -143,37 +143,29 @@
     "download_failed": "无法下载诊断包"
   },
   "category": {
-    "binaries": {
-      "label": "二进制文件与版本",
-      "description": "必需的二进制文件与版本检查"
-    },
-    "permissions": {
-      "label": "文件系统与权限",
-      "description": "文件系统的属主、权限模式与用户组归属"
-    },
     "at_transport": {
-      "label": "AT 传输",
-      "description": "qcmd / atcli_smd11 与调制解调器之间的往返检查"
+      "label": "AT 传输与硬件",
+      "description": "Qualcomm SMD11 串行接口与调制解调器身份"
     },
-    "sms": {
-      "label": "SMS 子系统",
-      "description": "sms_tool 就绪状态与 SIM 卡存在情况"
-    },
-    "sudoers": {
-      "label": "Sudoers",
-      "description": "www-data 的 sudoers 辅助程序可见性"
+    "cellular": {
+      "label": "蜂窝与 SIM 子系统",
+      "description": "SIM 卡就绪、网络注册、信号指标与载波聚合状态"
     },
     "services": {
-      "label": "Systemd 服务",
-      "description": "Systemd 单元的存在、启用状态与运行状态"
+      "label": "服务与运行时",
+      "description": "QManager Go 守护进程、内存占用与温度传感器"
+    },
+    "filesystem": {
+      "label": "存储与闪存寿命",
+      "description": "UBIFS 持久化存储、RAM /tmp 写入与零闪存磨损保护"
     },
     "network": {
-      "label": "网络",
-      "description": "DNS、IPv4、调制解调器数据通路、lighttpd、防火墙"
+      "label": "网络与路由",
+      "description": "蜂窝数据接口、IPv4 可达性、DNS 与防火墙规则"
     },
     "configuration": {
-      "label": "配置",
-      "description": "QManager 配置文件与轮询缓存的新鲜度"
+      "label": "配置与数据库",
+      "description": "原子 JSON 配置、SIM 注册表与内存遥测新鲜度"
     }
   }
 }

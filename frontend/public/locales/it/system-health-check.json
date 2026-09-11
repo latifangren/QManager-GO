@@ -143,37 +143,29 @@
     "download_failed": "Impossibile scaricare il pacchetto diagnostico"
   },
   "category": {
-    "binaries": {
-      "label": "Binari e versioni",
-      "description": "Controlli sui binari richiesti e sulle versioni"
-    },
-    "permissions": {
-      "label": "Filesystem e permessi",
-      "description": "Proprietà, modalità e appartenenza ai gruppi del filesystem"
-    },
     "at_transport": {
-      "label": "Trasporto AT",
-      "description": "Controlli di andata e ritorno qcmd / atcli_smd11 verso il modem"
+      "label": "Trasporto AT e Hardware",
+      "description": "Interfaccia seriale Qualcomm SMD11 e identità del modem"
     },
-    "sms": {
-      "label": "Sottosistema SMS",
-      "description": "Prontezza di sms_tool e presenza della SIM"
-    },
-    "sudoers": {
-      "label": "Sudoers",
-      "description": "Visibilità dell'helper sudoers per www-data"
+    "cellular": {
+      "label": "Sottosistema Cellulare e SIM",
+      "description": "Presenza SIM, registrazione, metriche segnale e stato CA"
     },
     "services": {
-      "label": "Servizi Systemd",
-      "description": "Presenza, abilitazione e stato attivo delle unit Systemd"
+      "label": "Servizi e Runtime",
+      "description": "Processo demone QManager Go, memoria RSS e sensore termico"
+    },
+    "filesystem": {
+      "label": "Archiviazione e Flash Wear",
+      "description": "Archiviazione persistente UBIFS, scrittura RAM /tmp e protezione usura flash"
     },
     "network": {
-      "label": "Rete",
-      "description": "DNS, IPv4, percorso dati del modem, lighttpd, firewall"
+      "label": "Rete e Routing",
+      "description": "Interfaccia dati cellulare, raggiungibilità IPv4, DNS e firewall"
     },
     "configuration": {
-      "label": "Configurazione",
-      "description": "File di configurazione di QManager e aggiornamento della cache del poller"
+      "label": "Configurazione e Database",
+      "description": "Configurazioni atomiche JSON, registro SIM e aggiornamento telemetria in memoria"
     }
   }
 }

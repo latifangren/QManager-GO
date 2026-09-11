@@ -385,18 +385,15 @@ export const TALLY_GLYPH = {
 } as const satisfies Record<keyof typeof TALLY_BADGE, LucideIcon>;
 
 /**
- * Static per-category cardinality, counted from `qmanager_health_check`'s
- * catalog — a fixed jq literal that seeds all 43 tests before the first runs.
+ * Static per-category cardinality for the QManager-GO single-binary appliance.
  */
 export const CATEGORY_TEST_COUNT: Record<TestCategory, number> = {
-  binaries: 10,
-  permissions: 5,
-  at_transport: 6,
-  sms: 3,
-  sudoers: 1,
-  services: 6,
-  network: 6,
-  configuration: 6,
+  at_transport: 5,
+  cellular: 4,
+  services: 4,
+  filesystem: 3,
+  network: 4,
+  configuration: 3,
 };
 
 /** The catalog's size, derived from the map above so the two cannot drift. */
@@ -407,12 +404,10 @@ export const TOTAL_TESTS = Object.values(CATEGORY_TEST_COUNT).reduce(
 
 /** The runner's own order. Stable — never re-sorted while a run is in flight. */
 export const CATEGORY_ORDER: TestCategory[] = [
-  "binaries",
-  "permissions",
   "at_transport",
-  "sms",
-  "sudoers",
+  "cellular",
   "services",
+  "filesystem",
   "network",
   "configuration",
 ];

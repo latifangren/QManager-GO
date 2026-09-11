@@ -6,12 +6,10 @@ export type TestStatus = "pending" | "running" | "pass" | "fail" | "warn" | "ski
 export type JobStatus = "running" | "complete" | "complete_no_bundle" | "error";
 
 export type TestCategory =
-  | "binaries"
-  | "permissions"
   | "at_transport"
-  | "sms"
-  | "sudoers"
+  | "cellular"
   | "services"
+  | "filesystem"
   | "network"
   | "configuration";
 
@@ -30,6 +28,7 @@ export interface HealthCheckSummary {
   warn: number;
   skip: number;
   total: number;
+  duration_ms?: number;
 }
 
 export interface HealthCheckJob {

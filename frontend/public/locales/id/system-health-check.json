@@ -143,37 +143,29 @@
     "download_failed": "Tidak dapat mengunduh paket diagnostik"
   },
   "category": {
-    "binaries": {
-      "label": "Biner & Versi",
-      "description": "Pemeriksaan biner yang diperlukan dan versinya"
-    },
-    "permissions": {
-      "label": "Filesystem & Izin",
-      "description": "Kepemilikan, mode, dan keanggotaan grup filesystem"
-    },
     "at_transport": {
-      "label": "Transport AT",
-      "description": "Pemeriksaan bolak-balik qcmd / atcli_smd11 terhadap modem"
+      "label": "Transport AT & Perangkat Keras",
+      "description": "Antarmuka serial Qualcomm SMD11 dan identitas modem"
     },
-    "sms": {
-      "label": "Subsistem SMS",
-      "description": "Kesiapan sms_tool dan keberadaan SIM"
-    },
-    "sudoers": {
-      "label": "Sudoers",
-      "description": "Visibilitas helper sudoers untuk www-data"
+    "cellular": {
+      "label": "Subsistem Seluler & SIM",
+      "description": "Keberadaan SIM, registrasi jaringan, metrik sinyal, dan status CA"
     },
     "services": {
-      "label": "Layanan Systemd",
-      "description": "Keberadaan unit Systemd, status pengaktifan, dan status aktif"
+      "label": "Layanan & Runtime",
+      "description": "Proses daemon QManager Go, memori RSS, dan thermal engine"
+    },
+    "filesystem": {
+      "label": "Penyimpanan & Flash Wear",
+      "description": "Penyimpanan persisten UBIFS, penulisan RAM /tmp, dan zero-wear policy"
     },
     "network": {
-      "label": "Jaringan",
-      "description": "DNS, IPv4, jalur data modem, lighttpd, firewall"
+      "label": "Jaringan & Perutean",
+      "description": "Antarmuka data seluler, keterjangkauan IPv4, DNS, dan firewall"
     },
     "configuration": {
-      "label": "Konfigurasi",
-      "description": "Berkas konfigurasi QManager dan kesegaran cache poller"
+      "label": "Konfigurasi & Database",
+      "description": "Konfigurasi atomik JSON, registry SIM, dan kesegaran telemetri memori"
     }
   }
 }
