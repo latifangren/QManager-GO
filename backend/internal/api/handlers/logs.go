@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -66,44 +65,25 @@ type CPUStats struct {
 
 // MemoryStats holds detailed memory metrics.
 type MemoryStats struct {
-	TotalMB        float64 `json:"total_mb"`
-	FreeMB         float64 `json:"free_mb"`
-	AvailableMB    float64 `json:"available_mb"`
-	UsagePercent   float64 `json:"usage_percent"`
-	ModemDDRPoolMB float64 `json:"modem_ddr_pool_mb"`
+	TotalMB     float64 `json:"total_mb"`
+	UsedMB      float64 `json:"used_mb"`
+	FreeMB      float64 `json:"free_mb"`
+	AvailableMB float64 `json:"available_mb"`
 }
 
-// StorageStats holds filesystem usage for partitions matching frontend ModemSubsysData.
-type StorageStats struct {
-	Mount       string  `json:"mount"`
-	TotalKB     int64   `json:"total_kb"`
-	UsedKB      int64   `json:"used_kb"`
-	AvailableKB int64   `json:"available_kb"`
-
-	RootfsUsedMB  float64 `json:"rootfs_used_mb,omitempty"`
-	RootfsTotalMB float64 `json:"rootfs_total_mb,omitempty"`
-	RootfsUsage   float64 `json:"rootfs_usage_percent,omitempty"`
-	TmpUsedMB     float64 `json:"tmp_used_mb,omitempty"`
-	TmpTotalMB    float64 `json:"tmp_total_mb,omitempty"`
-	UsrdataUsedMB float64 `json:"usrdata_used_mb,omitempty"`
-	UsrdataTotal  float64 `json:"usrdata_total_mb,omitempty"`
-}
-
-// ModemSubsysData mirrors frontend ModemSubsysData interface.
+// ModemSubsysData holds diagnostic status for modem hardware subsystem.
 type ModemSubsysData struct {
-	State              string        `json:"state"`
-	StateRaw           *string       `json:"state_raw"`
-	CrashCount         *int          `json:"crash_count"`
-	CoredumpPresent    bool          `json:"coredump_present"`
-	LastCrashAt        *int64        `json:"last_crash_at"`
-	TotalLoggedCrashes int           `json:"total_logged_crashes"`
-	UptimeSeconds      float64       `json:"uptime_seconds"`
-	CPU                *CPUStats     `json:"cpu"`
-	Memory             *MemoryStats  `json:"memory"`
-	Storage            *StorageStats `json:"storage"`
+	State              string      `json:"state"`
+	CrashCount         *int        `json:"crash_count"`
+	LastCrashTimestamp *int64      `json:"last_crash_timestamp"`
+	UptimeSecs         int64       `json:"uptime_secs"`
+	CPU                CPUStats    `json:"cpu"`
+	Memory             MemoryStats `json:"memory"`
+	SubsysName         string      `json:"subsys_name"`
+	FirmwareVersion    string      `json:"firmware_version"`
 }
 
-// LogsHandler manages system logs and modem subsystem health.
+// LogsHandler implements /system/logs and /system/modem-subsys.
 type LogsHandler struct {
 	ringLogger   *telemetry.RingBufferLogger
 	logFilePath  string
@@ -113,7 +93,7 @@ type LogsHandler struct {
 	mu           sync.Mutex
 }
 
-// NewLogsHandler creates a LogsHandler.
+// NewLogsHandler initializes a LogsHandler.
 func NewLogsHandler() *LogsHandler {
 	logPath := os.Getenv("QMANAGER_LOG_FILE")
 	if logPath == "" {
@@ -141,30 +121,82 @@ func NewLogsHandler() *LogsHandler {
 	}
 }
 
-// ParseLogLine parses a line from log format into LogEntry.
+var syslogRe = regexp.MustCompile(`^([A-Z][a-z]{2}\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?:[^\s]+\s+)?(?:([a-z]+\.[a-z]+)\s+)?([a-zA-Z0-9_.-]+)(?:\[(\d+)\])?:\s+(.*)$`)
+var bracketLogRe = regexp.MustCompile(`^(?:(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+)?\[(.*?)\]\s+\[(.*?)(?::(.*?))?\]\s+(.*)$`)
+
+// parseLogLine parses a line from log format into LogEntry.
 func parseLogLine(line string) (LogEntry, bool) {
-	re := regexp.MustCompile(`^(?:(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+)?\[(.*?)\]\s+\[(.*?)(?::(.*?))?\]\s+(.*)$`)
-	m := re.FindStringSubmatch(strings.TrimSpace(line))
-	if len(m) == 6 {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return LogEntry{}, false
+	}
+
+	// 1. Match bracket format: "2026-09-11 14:00:00 [INFO] [qmanager] Message"
+	if m := bracketLogRe.FindStringSubmatch(line); len(m) == 6 {
 		ts := m[1]
 		if ts == "" {
 			ts = time.Now().Format("2006-01-02 15:04:05")
 		}
+		pid := m[4]
+		if pid == "" {
+			pid = "-"
+		}
 		return LogEntry{
 			Timestamp: ts,
-			Level:     m[2],
+			Level:     strings.ToUpper(m[2]),
 			Component: m[3],
-			PID:       m[4],
+			PID:       pid,
 			Message:   m[5],
 		}, true
 	}
+
+	// 2. Match standard Linux /var/log/messages syslog format
+	if m := syslogRe.FindStringSubmatch(line); len(m) == 6 {
+		tsStr := m[1]
+		facLevel := m[2]
+		comp := m[3]
+		pid := m[4]
+		msg := m[5]
+
+		if pid == "" {
+			pid = "-"
+		}
+
+		// Normalize timestamp to YYYY-MM-DD HH:MM:SS
+		ts := time.Now().Format("2006-01-02 15:04:05")
+		if parsed, err := time.Parse("Jan 2 15:04:05", tsStr); err == nil {
+			now := time.Now()
+			fullTime := time.Date(now.Year(), parsed.Month(), parsed.Day(), parsed.Hour(), parsed.Minute(), parsed.Second(), 0, time.Local)
+			ts = fullTime.Format("2006-01-02 15:04:05")
+		}
+
+		level := "INFO"
+		lowerFac := strings.ToLower(facLevel)
+		lowerMsg := strings.ToLower(msg)
+		if strings.Contains(lowerFac, "err") || strings.Contains(lowerFac, "crit") || strings.Contains(lowerFac, "alert") || strings.Contains(lowerFac, "emerg") || strings.Contains(lowerMsg, "error") || strings.Contains(lowerMsg, "fatal") {
+			level = "ERROR"
+		} else if strings.Contains(lowerFac, "warn") || strings.Contains(lowerMsg, "warning") || strings.Contains(lowerMsg, "warn") {
+			level = "WARN"
+		} else if strings.Contains(lowerFac, "debug") || strings.Contains(lowerMsg, "debug") {
+			level = "DEBUG"
+		}
+
+		return LogEntry{
+			Timestamp: ts,
+			Level:     level,
+			Component: comp,
+			PID:       pid,
+			Message:   msg,
+		}, true
+	}
+
 	return LogEntry{
 		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
 		Level:     "INFO",
 		Component: "system",
 		PID:       "-",
 		Message:   line,
-	}, false
+	}, true
 }
 
 // GetLogs handles GET /api/v1/system/logs and GET /cgi-bin/quecmanager/system/logs.sh
@@ -173,9 +205,9 @@ func (h *LogsHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 	defer h.mu.Unlock()
 
 	linesParam := r.URL.Query().Get("lines")
-	levelParam := r.URL.Query().Get("level")
-	componentParam := r.URL.Query().Get("component")
-	searchParam := r.URL.Query().Get("search")
+	levelParam := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("level")))
+	componentParam := strings.TrimSpace(r.URL.Query().Get("component"))
+	searchParam := strings.TrimSpace(r.URL.Query().Get("search"))
 	includeRotated := r.URL.Query().Get("include_rotated") == "1"
 
 	maxLines := 100
@@ -183,61 +215,102 @@ func (h *LogsHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 		maxLines = l
 	}
 
-	var entries []LogEntry
-	var components []string
-	var stats LogStats
+	var allEntries []LogEntry
+	compMap := make(map[string]bool)
 
-	// 1. Primary: In-Memory Ring Buffer (RAM-First, Zero Flash Wear)
-	if h.ringLogger != nil && h.ringLogger.Count() > 0 {
-		records := h.ringLogger.GetRecords(maxLines, levelParam, componentParam, searchParam)
-		compMap := make(map[string]bool)
+	// 1. Gather all in-memory ring records (QManager Go daemon logs)
+	if h.ringLogger != nil {
 		allRecords := h.ringLogger.GetRecords(0, "", "", "")
 		for _, rec := range allRecords {
-			if rec.Source != "" {
-				compMap[rec.Source] = true
+			src := rec.Source
+			if src == "" {
+				src = "qmanager"
 			}
-		}
-		for k := range compMap {
-			components = append(components, k)
-		}
-		sort.Strings(components)
+			compMap[src] = true
 
-		for _, rec := range records {
-			entries = append(entries, LogEntry{
+			allEntries = append(allEntries, LogEntry{
 				Timestamp: rec.Timestamp.Format("2006-01-02 15:04:05"),
 				Level:     string(rec.Level),
-				Component: rec.Source,
+				Component: src,
 				PID:       "qmanager",
 				Message:   rec.Message,
 			})
 		}
+	}
 
-		stats = LogStats{
-			CurrentSizeKB: h.ringLogger.Count() * 128 / 1024,
-			CurrentLines:  h.ringLogger.Count(),
-			RotatedFiles:  0,
+	// 2. Gather system syslog files (/var/log/messages, /tmp/qmanager.log)
+	sources := h.getLogSources(includeRotated)
+	for _, src := range sources {
+		if f, err := os.Open(src); err == nil {
+			scanner := bufio.NewScanner(f)
+			// Read up to 2000 lines per file
+			count := 0
+			for scanner.Scan() && count < 2000 {
+				line := scanner.Text()
+				if entry, ok := parseLogLine(line); ok {
+					if entry.Component != "" {
+						compMap[entry.Component] = true
+					}
+					allEntries = append(allEntries, entry)
+				}
+				count++
+			}
+			_ = f.Close()
 		}
 	}
 
-	// 2. Secondary fallback if ring buffer is empty (e.g. legacy files in /tmp)
-	if len(entries) == 0 {
-		sources := h.getLogSources(includeRotated)
-		stats = h.getStats()
-		components = h.collectComponents(sources)
-
-		if len(sources) > 0 {
-			entries = h.parseLogFiles(sources, maxLines, levelParam, componentParam, searchParam)
-		} else {
-			// Fallback to journalctl or dmesg
-			entries = h.fallbackJournalctl(maxLines, levelParam, searchParam)
+	// 3. Fallback to dmesg if no file sources found and ring buffer empty
+	if len(allEntries) == 0 {
+		dmesgEntries := h.fallbackJournalctl(maxLines, levelParam, searchParam)
+		allEntries = append(allEntries, dmesgEntries...)
+		for _, e := range dmesgEntries {
+			compMap[e.Component] = true
 		}
+	}
+
+	// 4. Sort all entries by timestamp descending (newest first)
+	sort.SliceStable(allEntries, func(i, j int) bool {
+		return allEntries[i].Timestamp > allEntries[j].Timestamp
+	})
+
+	// 5. Apply filters
+	var filtered []LogEntry
+	for _, entry := range allEntries {
+		if levelParam != "" && levelParam != "ALL" && !strings.EqualFold(entry.Level, levelParam) {
+			continue
+		}
+		if componentParam != "" && componentParam != "all" && !strings.EqualFold(entry.Component, componentParam) {
+			continue
+		}
+		if searchParam != "" && !strings.Contains(strings.ToLower(entry.Message), strings.ToLower(searchParam)) &&
+			!strings.Contains(strings.ToLower(entry.Component), strings.ToLower(searchParam)) {
+			continue
+		}
+		filtered = append(filtered, entry)
+		if len(filtered) >= maxLines {
+			break
+		}
+	}
+
+	var components []string
+	for k := range compMap {
+		if k != "" {
+			components = append(components, k)
+		}
+	}
+	sort.Strings(components)
+
+	stats := h.getStats()
+	if h.ringLogger != nil {
+		stats.CurrentLines += h.ringLogger.Count()
+		stats.CurrentSizeKB += (h.ringLogger.Count() * 128) / 1024
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(LogsResponse{
 		Success:             true,
-		Entries:             entries,
-		Total:               len(entries),
+		Entries:             filtered,
+		Total:               len(filtered),
 		Stats:               stats,
 		AvailableComponents: components,
 	})
@@ -258,25 +331,22 @@ func (h *LogsHandler) HandleLogsAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch payload.Action {
-	case "clear":
-		// Clear RAM ring buffer
+	case "clear", "clear_logs":
 		if h.ringLogger != nil {
 			h.ringLogger.Clear()
 		}
-		// Truncate fallback log files if any
-		if _, err := os.Stat(h.logFilePath); err == nil {
-			_ = os.Truncate(h.logFilePath, 0)
-		}
-		for i := 1; i <= MaxRotatedLogFiles; i++ {
-			_ = os.Remove(fmt.Sprintf("%s.%d", h.logFilePath, i))
-		}
+		_ = os.Truncate(h.logFilePath, 0)
 		Success(w, map[string]interface{}{"success": true, "message": "Logs cleared"})
-	case "status":
+		return
+
+	case "rotate", "rotate_logs":
 		stats := h.getStats()
 		if h.ringLogger != nil {
 			stats.CurrentLines = h.ringLogger.Count()
 		}
-		Success(w, map[string]interface{}{"success": true, "stats": stats})
+		JSON(w, http.StatusOK, map[string]interface{}{"success": true, "stats": stats})
+		return
+
 	default:
 		Error(w, http.StatusBadRequest, fmt.Sprintf("Unknown action: %s", payload.Action))
 	}
@@ -299,36 +369,48 @@ func (h *LogsHandler) ModemSubsys(w http.ResponseWriter, r *http.Request) {
 
 func (h *LogsHandler) getLogSources(includeRotated bool) []string {
 	var sources []string
-	if includeRotated {
-		for i := MaxRotatedLogFiles; i >= 1; i-- {
-			p := fmt.Sprintf("%s.%d", h.logFilePath, i)
-			if _, err := os.Stat(p); err == nil {
-				sources = append(sources, p)
+	candidates := []string{
+		h.logFilePath,
+		"/var/log/messages",
+		"/tmp/messages",
+	}
+
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			sources = append(sources, p)
+		}
+		if includeRotated {
+			for i := 0; i <= MaxRotatedLogFiles; i++ {
+				rot := fmt.Sprintf("%s.%d", p, i)
+				if _, err := os.Stat(rot); err == nil {
+					sources = append(sources, rot)
+				}
 			}
 		}
-	}
-	if _, err := os.Stat(h.logFilePath); err == nil {
-		sources = append(sources, h.logFilePath)
 	}
 	return sources
 }
 
 func (h *LogsHandler) getStats() LogStats {
 	var sizeKB, lineCount, rotated int
-	if fi, err := os.Stat(h.logFilePath); err == nil {
-		sizeKB = int(fi.Size() / 1024)
-		if f, err := os.Open(h.logFilePath); err == nil {
-			scanner := bufio.NewScanner(f)
-			for scanner.Scan() {
-				lineCount++
+	for _, p := range []string{h.logFilePath, "/var/log/messages"} {
+		if fi, err := os.Stat(p); err == nil {
+			sizeKB += int(fi.Size() / 1024)
+			if f, err := os.Open(p); err == nil {
+				scanner := bufio.NewScanner(f)
+				for scanner.Scan() {
+					lineCount++
+				}
+				_ = f.Close()
 			}
-			f.Close()
 		}
 	}
-	for i := 1; i <= MaxRotatedLogFiles; i++ {
-		p := fmt.Sprintf("%s.%d", h.logFilePath, i)
-		if _, err := os.Stat(p); err == nil {
-			rotated++
+	for i := 0; i <= MaxRotatedLogFiles; i++ {
+		for _, p := range []string{h.logFilePath, "/var/log/messages"} {
+			rot := fmt.Sprintf("%s.%d", p, i)
+			if _, err := os.Stat(rot); err == nil {
+				rotated++
+			}
 		}
 	}
 	return LogStats{
@@ -336,70 +418,6 @@ func (h *LogsHandler) getStats() LogStats {
 		CurrentLines:  lineCount,
 		RotatedFiles:  rotated,
 	}
-}
-
-func (h *LogsHandler) collectComponents(sources []string) []string {
-	compMap := make(map[string]bool)
-	re := regexp.MustCompile(`\[([a-zA-Z0-9_-]+):`)
-
-	for _, src := range sources {
-		f, err := os.Open(src)
-		if err != nil {
-			continue
-		}
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			matches := re.FindStringSubmatch(scanner.Text())
-			if len(matches) > 1 {
-				compMap[matches[1]] = true
-			}
-		}
-		f.Close()
-	}
-
-	var list []string
-	for k := range compMap {
-		list = append(list, k)
-	}
-	sort.Strings(list)
-	return list
-}
-
-func (h *LogsHandler) parseLogFiles(sources []string, maxLines int, level, comp, search string) []LogEntry {
-	var allLines []string
-	for _, src := range sources {
-		f, err := os.Open(src)
-		if err != nil {
-			continue
-		}
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			allLines = append(allLines, scanner.Text())
-		}
-		f.Close()
-	}
-
-	var entries []LogEntry
-	for _, line := range allLines {
-		entry, _ := parseLogLine(line)
-
-		if level != "" && !strings.EqualFold(entry.Level, level) {
-			continue
-		}
-		if comp != "" && !strings.EqualFold(entry.Component, comp) {
-			continue
-		}
-		if search != "" && !strings.Contains(strings.ToLower(entry.Message), strings.ToLower(search)) {
-			continue
-		}
-
-		entries = append(entries, entry)
-	}
-
-	if len(entries) > maxLines {
-		return entries[len(entries)-maxLines:]
-	}
-	return entries
 }
 
 func (h *LogsHandler) fallbackJournalctl(maxLines int, level, search string) []LogEntry {
@@ -462,104 +480,66 @@ func (h *LogsHandler) readCachedSubsys() (*ModemSubsysData, bool) {
 	return &ModemSubsysData{
 		State:              "online",
 		CrashCount:         &crashes,
-		TotalLoggedCrashes: cached.Crashes,
-		UptimeSeconds:      cached.System.UptimeSeconds,
-		CPU: &CPUStats{
-			UsagePercent: 0,
+		LastCrashTimestamp: nil,
+		UptimeSecs:         int64(cached.System.UptimeSeconds),
+		CPU: CPUStats{
+			UsagePercent: cached.System.CPUUsage,
 			Cores:        runtime.NumCPU(),
-			ModelName:    cached.Model,
+			ModelName:    "ARM Cortex-A7 (SDX55)",
 			TemperatureC: cached.System.CpuTempC,
 		},
-		Memory: &MemoryStats{
-			TotalMB:        totalMB,
-			FreeMB:         freeMB,
-			AvailableMB:    availMB,
-			UsagePercent:   cached.System.MemUsagePct,
-			ModemDDRPoolMB: 64.0,
+		Memory: MemoryStats{
+			TotalMB:     totalMB,
+			UsedMB:      totalMB - freeMB,
+			FreeMB:      freeMB,
+			AvailableMB: availMB,
 		},
-		Storage: h.getStorageStats(),
+		SubsysName:      "modem",
+		FirmwareVersion: cached.Rev,
 	}, true
 }
 
 func (h *LogsHandler) queryLiveSubsys() *ModemSubsysData {
-	state := "online"
-	if data, err := os.ReadFile(filepath.Join(h.subsysPath, "state")); err == nil {
-		state = strings.TrimSpace(string(data))
-	}
-
-	var crashPtr *int
-	if data, err := os.ReadFile(filepath.Join(h.subsysPath, "crash_count")); err == nil {
-		if c, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
-			crashPtr = &c
-		}
-	}
-
 	metrics := platform.GetSystemMetrics()
+
 	totalMB := float64(metrics.MemTotalKB) / 1024.0
 	freeMB := float64(metrics.MemFreeKB) / 1024.0
 	availMB := float64(metrics.MemAvailKB) / 1024.0
 
-	totalCrashes := 0
-	if crashPtr != nil {
-		totalCrashes = *crashPtr
-	}
+	crashes := h.countCrashes()
 
 	return &ModemSubsysData{
-		State:              state,
-		CrashCount:         crashPtr,
-		TotalLoggedCrashes: totalCrashes,
-		UptimeSeconds:      metrics.UptimeSeconds,
-		CPU: &CPUStats{
-			UsagePercent: 0,
+		State:              "online",
+		CrashCount:         &crashes,
+		LastCrashTimestamp: nil,
+		UptimeSecs:         int64(metrics.UptimeSeconds),
+		CPU: CPUStats{
+			UsagePercent: metrics.CPUUsage,
 			Cores:        runtime.NumCPU(),
-			ModelName:    "ARM Cortex-A7",
+			ModelName:    "ARM Cortex-A7 (SDX55)",
 			TemperatureC: metrics.CpuTempC,
 		},
-		Memory: &MemoryStats{
-			TotalMB:        totalMB,
-			FreeMB:         freeMB,
-			AvailableMB:    availMB,
-			UsagePercent:   metrics.MemUsagePct,
-			ModemDDRPoolMB: 64.0,
+		Memory: MemoryStats{
+			TotalMB:     totalMB,
+			UsedMB:      totalMB - freeMB,
+			FreeMB:      freeMB,
+			AvailableMB: availMB,
 		},
-		Storage: h.getStorageStats(),
+		SubsysName:      "modem",
+		FirmwareVersion: "SDX55",
 	}
 }
 
-func (h *LogsHandler) getStorageStats() *StorageStats {
-	mountPath := "/usrdata"
-	if _, err := os.Stat(mountPath); err != nil {
-		mountPath = "/"
+func (h *LogsHandler) countCrashes() int {
+	files, err := os.ReadDir(h.ramdumpDir)
+	if err != nil {
+		return 0
 	}
-
-	var totalKB, usedKB, availKB int64
-	out, err := exec.Command("df", "-P", mountPath).Output()
-	if err == nil {
-		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-		if len(lines) >= 2 {
-			f := strings.Fields(lines[1])
-			if len(f) >= 4 {
-				totalKB, _ = strconv.ParseInt(f[1], 10, 64)
-				usedKB, _ = strconv.ParseInt(f[2], 10, 64)
-				availKB, _ = strconv.ParseInt(f[3], 10, 64)
-			}
+	count := 0
+	for _, f := range files {
+		if !f.IsDir() && strings.HasPrefix(f.Name(), "ramdump_") {
+			count++
 		}
 	}
-
-	if totalKB == 0 {
-		totalKB = 133852
-		usedKB = 77440
-		availKB = 56412
-	}
-
-	return &StorageStats{
-		Mount:         mountPath,
-		TotalKB:       totalKB,
-		UsedKB:        usedKB,
-		AvailableKB:   availKB,
-		RootfsUsedMB:  float64(usedKB) / 1024.0,
-		RootfsTotalMB: float64(totalKB) / 1024.0,
-		UsrdataUsedMB: float64(usedKB) / 1024.0,
-		UsrdataTotal:  float64(totalKB) / 1024.0,
-	}
+	return count
 }
