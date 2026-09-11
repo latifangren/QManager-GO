@@ -16,6 +16,7 @@ import (
 	"qmanager/internal/api/router"
 	"qmanager/internal/atengine"
 	"qmanager/internal/config"
+	"qmanager/internal/dpi"
 	"qmanager/internal/platform"
 	"qmanager/internal/telemetry"
 )
@@ -129,7 +130,11 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 	scheduler.Start()
 	defer scheduler.Stop()
 
-	// 5. Router & Server
+	// 5. DPI & Traffic Engine Lifecycle
+	dpi.SyncState()
+	defer dpi.GetManager().StopEngine()
+
+	// 6. Router & Server
 	appServices := router.AppServices{
 		Engine:    engine,
 		Poller:    poller,
