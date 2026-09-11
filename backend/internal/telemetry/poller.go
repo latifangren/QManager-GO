@@ -259,18 +259,26 @@ type Poller struct {
 	connStartTime time.Time
 
 	// Cached identities
-	imei        string
-	imsi        string
-	iccid       string
-	phoneNumber string
-	carrier     string
-	simStatus   string
-	cfun        int
-	lteTA       *int
-	nrTA        *int
+	imei              string
+	imsi              string
+	iccid             string
+	phoneNumber       string
+	carrier           string
+	simStatus         string
+	cfun              int
+	lteTA             *int
+	nrTA              *int
+	supportedLTEBands string
+	supportedNSABands string
+	supportedSABands  string
 
 	pollCount uint64
 }
+
+const (
+	DefaultSupportedLTEBands = "1:2:3:4:5:7:8:12:13:14:17:18:19:20:25:26:28:29:30:32:34:38:39:40:41:42:43:46:48:66:71"
+	DefaultSupportedNRBands  = "1:2:3:5:7:8:12:13:14:18:20:25:26:28:29:30:38:40:41:48:66:70:71:75:76:77:78:79"
+)
 
 // NewPoller initializes a new telemetry poller.
 func NewPoller(eng *atengine.Engine, id platform.Identity, interval time.Duration) *Poller {
@@ -278,13 +286,16 @@ func NewPoller(eng *atengine.Engine, id platform.Identity, interval time.Duratio
 		interval = 1 * time.Second
 	}
 	return &Poller{
-		engine:    eng,
-		identity:  id,
-		interval:  interval,
-		stopCh:    make(chan struct{}),
-		current:   newDefaultStatus(id),
-		simStatus: "ready",
-		cfun:      1,
+		engine:            eng,
+		identity:          id,
+		interval:          interval,
+		stopCh:            make(chan struct{}),
+		current:           newDefaultStatus(id),
+		simStatus:         "ready",
+		cfun:              1,
+		supportedLTEBands: DefaultSupportedLTEBands,
+		supportedNSABands: DefaultSupportedNRBands,
+		supportedSABands:  DefaultSupportedNRBands,
 	}
 }
 
@@ -300,9 +311,12 @@ func newDefaultStatus(id platform.Identity) *ModemStatus {
 		Revision:           id.Revision,
 		Serial:             id.Serial,
 		Device: DeviceObject{
-			Model:        id.Model,
-			Firmware:     id.Revision,
-			Manufacturer: "Quectel",
+			Model:             id.Model,
+			Firmware:          id.Revision,
+			Manufacturer:      "Quectel",
+			SupportedLTEBands: DefaultSupportedLTEBands,
+			SupportedNSABands: DefaultSupportedNRBands,
+			SupportedSABands:  DefaultSupportedNRBands,
 		},
 		Network: NetworkObject{
 			Type:              "LTE",
@@ -351,49 +365,52 @@ func (p *Poller) Start() {
 }
 
 func (p *Poller) queryIdentities(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
-	defer cancel()
+	runCmd := func(cmd string) (*atengine.Result, error) {
+		cmdCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		return p.engine.ExecContext(cmdCtx, cmd)
+	}
 
-	_, _ = p.engine.ExecContext(ctx, `AT+QNWCFG="lte_time_advance",1`)
-	_, _ = p.engine.ExecContext(ctx, `AT+QNWCFG="nr5g_time_advance",1`)
+	_, _ = runCmd(`AT+QNWCFG="lte_time_advance",1`)
+	_, _ = runCmd(`AT+QNWCFG="nr5g_time_advance",1`)
 
-	if res, err := p.engine.ExecContext(ctx, "AT+CFUN?"); err == nil {
+	if res, err := runCmd("AT+CFUN?"); err == nil {
 		p.cfun = atengine.ParseCFUN(res.Raw)
 	}
 
-	if res, err := p.engine.ExecContext(ctx, `AT+QNWCFG="lte_time_advance"`); err == nil {
+	if res, err := runCmd(`AT+QNWCFG="lte_time_advance"`); err == nil {
 		if ta := atengine.ParseTimeAdvance(res.Raw, false); ta != nil {
 			p.lteTA = ta
 		}
 	}
-	if res, err := p.engine.ExecContext(ctx, `AT+QNWCFG="nr5g_time_advance"`); err == nil {
+	if res, err := runCmd(`AT+QNWCFG="nr5g_time_advance"`); err == nil {
 		if nta := atengine.ParseTimeAdvance(res.Raw, true); nta != nil {
 			p.nrTA = nta
 		}
 	}
 
 	if p.imei == "" {
-		if res, err := p.engine.ExecContext(ctx, "AT+CGSN"); err == nil {
+		if res, err := runCmd("AT+CGSN"); err == nil {
 			if imei := atengine.ParseCGSN(res.Raw); imei != "" {
 				p.imei = imei
 			}
 		}
 	}
 	if p.imsi == "" {
-		if res, err := p.engine.ExecContext(ctx, "AT+CIMI"); err == nil {
+		if res, err := runCmd("AT+CIMI"); err == nil {
 			if imsi := atengine.ParseCIMI(res.Raw); imsi != "" {
 				p.imsi = imsi
 			}
 		}
 	}
 	if p.iccid == "" {
-		if res, err := p.engine.ExecContext(ctx, "AT+QCCID"); err == nil {
+		if res, err := runCmd("AT+QCCID"); err == nil {
 			if iccid := atengine.ParseQCCID(res.Raw); iccid != "" {
 				p.iccid = iccid
 			}
 		}
 	}
-	if res, err := p.engine.ExecContext(ctx, "AT+CPIN?"); err == nil {
+	if res, err := runCmd("AT+CPIN?"); err == nil {
 		pin := atengine.ParseCPIN(res.Raw)
 		if strings.EqualFold(pin, "READY") {
 			p.simStatus = "ready"
@@ -401,9 +418,23 @@ func (p *Poller) queryIdentities(ctx context.Context) {
 			p.simStatus = strings.ToLower(pin)
 		}
 	}
-	if res, err := p.engine.ExecContext(ctx, "AT+COPS?"); err == nil {
+	if res, err := runCmd("AT+COPS?"); err == nil {
 		if cops := atengine.ParseCOPS(res.Raw); cops != "" {
 			p.carrier = cops
+		}
+	}
+	if p.supportedLTEBands == "" || p.supportedLTEBands == DefaultSupportedLTEBands {
+		if res, err := runCmd(`AT+QNWPREFCFG="policy_band"`); err == nil {
+			info := atengine.ParsePolicyBand(res.Raw)
+			if info.LTEBands != "" {
+				p.supportedLTEBands = info.LTEBands
+			}
+			if info.NSANR5GBands != "" {
+				p.supportedNSABands = info.NSANR5GBands
+			}
+			if info.SANR5GBands != "" {
+				p.supportedSABands = info.SANR5GBands
+			}
 		}
 	}
 }
@@ -513,6 +544,9 @@ func (p *Poller) poll() {
 			MemoryUsedMB:  usedMB,
 			UptimeSeconds: metrics.UptimeSeconds,
 			Temperature:   &metrics.CpuTempC,
+			SupportedLTEBands: p.supportedLTEBands,
+			SupportedNSABands: p.supportedNSABands,
+			SupportedSABands:  p.supportedSABands,
 		},
 		System: SystemObject{
 			CPUUsagePct:   cpuUsage,

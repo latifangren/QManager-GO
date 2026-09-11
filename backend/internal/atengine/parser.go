@@ -827,3 +827,39 @@ func ParseTimeAdvance(raw string, isNR bool) *int {
 	}
 	return nil
 }
+
+// SupportedBandsInfo contains colon-delimited supported band strings.
+type SupportedBandsInfo struct {
+	LTEBands     string
+	NSANR5GBands string
+	SANR5GBands  string
+}
+
+// ParsePolicyBand parses AT+QNWPREFCFG="policy_band" output.
+func ParsePolicyBand(raw string) SupportedBandsInfo {
+	var info SupportedBandsInfo
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if !strings.HasPrefix(l, "+QNWPREFCFG:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(l, "+QNWPREFCFG:"))
+		parts := strings.SplitN(payload, ",", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.ToLower(strings.Trim(strings.TrimSpace(parts[0]), "\""))
+		val := strings.Trim(strings.TrimSpace(parts[1]), "\"")
+		switch key {
+		case "lte_band":
+			info.LTEBands = val
+		case "nsa_nr5g_band":
+			info.NSANR5GBands = val
+		case "nr5g_band", "sa_nr5g_band":
+			info.SANR5GBands = val
+		}
+	}
+	return info
+}
+

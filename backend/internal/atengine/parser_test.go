@@ -443,4 +443,22 @@ func TestParseHelperFunctions(t *testing.T) {
 	if len(nr) != 4 || *nr[0] != -98 || *nr[1] != -108 || *nr[2] != -115 || *nr[3] != -95 {
 		t.Errorf("ParseAntennaSignals NR failed: %+v", nr)
 	}
+
+	policyRaw := `+QNWPREFCFG: "gw_band",1:5:6:8
++QNWPREFCFG: "lte_band",1:3:5:7:8:20:28:32:38:40:41:42:43
++QNWPREFCFG: "nsa_nr5g_band",1:3:5:7:8:20:28:38:40:41:77:78
++QNWPREFCFG: "nr5g_band",1:3:5:7:8:20:28:38:40:41:77:78
+
+OK`
+	info := ParsePolicyBand(policyRaw)
+	if info.LTEBands != "1:3:5:7:8:20:28:32:38:40:41:42:43" {
+		t.Errorf("ParsePolicyBand LTE got %q", info.LTEBands)
+	}
+	if info.NSANR5GBands != "1:3:5:7:8:20:28:38:40:41:77:78" {
+		t.Errorf("ParsePolicyBand NSA got %q", info.NSANR5GBands)
+	}
+	if info.SANR5GBands != "1:3:5:7:8:20:28:38:40:41:77:78" {
+		t.Errorf("ParsePolicyBand SA got %q", info.SANR5GBands)
+	}
 }
+

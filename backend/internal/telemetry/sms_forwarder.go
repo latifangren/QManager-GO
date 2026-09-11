@@ -484,6 +484,25 @@ func (f *SMSForwarder) recordFailure(sender, errMsg string) {
 	log.Printf("[SMSForwarder] Failure recorded for %s: %s", sender, errMsg)
 }
 
+// ParseSmsToolOutput parses JSON output from `sms_tool -j recv`.
+// Handles both root array `[...]` and root envelope `{"msg": [...]}`.
+func ParseSmsToolOutput(out []byte) []RawSmsToolItem {
+	var raw []RawSmsToolItem
+	if err := json.Unmarshal(out, &raw); err == nil && len(raw) > 0 {
+		return raw
+	}
+	var envelope struct {
+		Msg []RawSmsToolItem `json:"msg"`
+	}
+	if err := json.Unmarshal(out, &envelope); err == nil {
+		return envelope.Msg
+	}
+	if raw != nil {
+		return raw
+	}
+	return nil
+}
+
 // FetchInboxAndStorage reads inbox messages and storage statistics across ME and SM storage pools.
 func FetchInboxAndStorage(ctx context.Context, smsToolPath, atDevice string, engine *atengine.Engine) ([]SMSMessage, SMSStorage, error) {
 	if _, err := os.Stat(smsToolPath); err == nil {
@@ -493,12 +512,12 @@ func FetchInboxAndStorage(ctx context.Context, smsToolPath, atDevice string, eng
 		var rawME, rawSM []RawSmsToolItem
 		cmdME := exec.CommandContext(ctx, smsToolPath, "-d", atDevice, "-s", "ME", "recv", "-j")
 		if out, err := cmdME.Output(); err == nil {
-			_ = json.Unmarshal(out, &rawME)
+			rawME = ParseSmsToolOutput(out)
 		}
 
 		cmdSM := exec.CommandContext(ctx, smsToolPath, "-d", atDevice, "-s", "SM", "recv", "-j")
 		if out, err := cmdSM.Output(); err == nil {
-			_ = json.Unmarshal(out, &rawSM)
+			rawSM = ParseSmsToolOutput(out)
 		}
 
 		meMsgs := ConvertRawSmsItems(rawME, "ME")
@@ -506,6 +525,9 @@ func FetchInboxAndStorage(ctx context.Context, smsToolPath, atDevice string, eng
 
 		merged := append(meMsgs, smMsgs...)
 		SortSMSMessages(merged)
+		if merged == nil {
+			merged = []SMSMessage{}
+		}
 
 		meStat := ReadSmsToolStatus(ctx, smsToolPath, atDevice, "ME")
 		smStat := ReadSmsToolStatus(ctx, smsToolPath, atDevice, "SM")

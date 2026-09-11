@@ -109,16 +109,16 @@ var defaultSupportedNRBands = []string{
 
 func cleanBandStr(s string) string {
 	s = strings.TrimSpace(s)
-	if s == "" {
+	if s == "" || s == "0" {
 		return ""
 	}
 	parts := strings.FieldsFunc(s, func(r rune) bool {
-		return r == ':' || r == ',' || r == ' ' || r == '\t' || r == ';'
+		return r == ':' || r == ',' || r == ' ' || r == '	' || r == ';'
 	})
 	var cleanParts []string
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
-		if p != "" {
+		if p != "" && p != "0" {
 			cleanParts = append(cleanParts, p)
 		}
 	}
@@ -127,16 +127,16 @@ func cleanBandStr(s string) string {
 
 func splitBandString(s string) []string {
 	s = strings.TrimSpace(s)
-	if s == "" {
+	if s == "" || s == "0" {
 		return []string{}
 	}
 	parts := strings.FieldsFunc(s, func(r rune) bool {
-		return r == ':' || r == ',' || r == ' ' || r == '\t' || r == ';'
+		return r == ':' || r == ',' || r == ' ' || r == '	' || r == ';'
 	})
 	res := make([]string, 0, len(parts))
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
-		if p != "" {
+		if p != "" && p != "0" {
 			res = append(res, p)
 		}
 	}

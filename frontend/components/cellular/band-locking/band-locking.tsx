@@ -106,6 +106,7 @@ const BandLockingComponent = () => {
     error,
     readError,
     isRefreshing,
+    supportedBands: fallbackSupportedBands,
     lockBands,
     unlockAll,
     toggleFailover,
@@ -177,18 +178,21 @@ const BandLockingComponent = () => {
   }, [activeScenarioId, isScenarioControlled, customScenarios]);
 
   // --- Band data --------------------------------------------------------------
-  const supportedBands = useMemo(
-    () => ({
-      lte: parseBandString(data?.device.supported_lte_bands),
-      nsa_nr5g: parseBandString(data?.device.supported_nsa_nr5g_bands),
-      sa_nr5g: parseBandString(data?.device.supported_sa_nr5g_bands),
-    }),
-    [
-      data?.device.supported_lte_bands,
-      data?.device.supported_nsa_nr5g_bands,
-      data?.device.supported_sa_nr5g_bands,
-    ],
-  );
+  const supportedBands = useMemo(() => {
+    const lte = parseBandString(data?.device.supported_lte_bands);
+    const nsa = parseBandString(data?.device.supported_nsa_nr5g_bands);
+    const sa = parseBandString(data?.device.supported_sa_nr5g_bands);
+    return {
+      lte: lte.length > 0 ? lte : (fallbackSupportedBands?.lte ?? []),
+      nsa_nr5g: nsa.length > 0 ? nsa : (fallbackSupportedBands?.nsa_nr5g ?? []),
+      sa_nr5g: sa.length > 0 ? sa : (fallbackSupportedBands?.sa_nr5g ?? []),
+    };
+  }, [
+    data?.device.supported_lte_bands,
+    data?.device.supported_nsa_nr5g_bands,
+    data?.device.supported_sa_nr5g_bands,
+    fallbackSupportedBands,
+  ]);
 
   const lockedBands = useMemo(
     () => ({
