@@ -166,16 +166,21 @@ func parseTowerLockLTE(raw string) bool {
 }
 
 func parseTowerLockNR(raw string) bool {
-	// Format: +QNWLOCK: "common/5g",<num_cells>,...
+	// Format:
+	// - Unlocked: +QNWLOCK: "common/5g",0
+	// - Locked:   +QNWLOCK: "common/5g",<pci>,<arfcn>,<scs>,<band>
 	lines := strings.Split(raw, "\n")
 	for _, l := range lines {
 		line := strings.TrimSpace(l)
 		if strings.HasPrefix(line, `+QNWLOCK: "common/5g"`) {
 			parts := strings.Split(line, ",")
-			if len(parts) >= 2 {
-				numCells, err := strconv.Atoi(strings.TrimSpace(parts[1]))
-				return err == nil && numCells > 0
+			if len(parts) == 2 && strings.TrimSpace(parts[1]) == "0" {
+				return false
 			}
+			if len(parts) >= 5 {
+				return true
+			}
+			return false
 		}
 	}
 	return false

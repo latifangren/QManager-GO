@@ -94,12 +94,13 @@ func TestCellular_LockTowerAndBands_Deep(t *testing.T) {
 	}
 
 	// 4. LockTower 5G mode with SCS
-	mock.SetResponse(`AT+QNWLOCK="common/5g",631000,200,30`, "OK")
+	mock.SetResponse(`AT+QNWLOCK="common/5g",200,631000,30,78`, "OK")
 	bodyLock5G, _ := json.Marshal(map[string]interface{}{
 		"mode":   "5g",
 		"earfcn": 631000,
 		"pcid":   200,
 		"scs":    30,
+		"band":   78,
 	})
 	wLock5G := httptest.NewRecorder()
 	h.LockTower(wLock5G, httptest.NewRequest(http.MethodPost, "/api/cellular/lock-tower", bytes.NewBuffer(bodyLock5G)))

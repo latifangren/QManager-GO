@@ -320,6 +320,7 @@
       "scanning_title": "正在逐一調諧頻段",
       "scanning_body": "請保持此分頁開啟——模組完成後結果會顯示在這裡。",
       "complete_title": "掃描完成",
+      "summary_total_cells": "小區總數",
       "failed_title": "掃描失敗",
       "failed_body": "模組可能正忙或無法連線。請檢查連線後重新掃描。"
     },
@@ -425,10 +426,8 @@
         "link_blocked": "本次讀取結束後可用。",
         "summary_empty": "本次讀取結束時未列出任何鄰區，因此沒有可分析的內容。",
         "summary_measured_label": "有測量值",
-        "summary_channels_one": "1 個通道",
-        "summary_channels_other": "{{count}} 個通道",
-        "summary_channel_only_one": "1 個僅通道",
-        "summary_channel_only_other": "{{count}} 個僅通道",
+        "available_bands_one": "1 個可用頻段",
+        "available_bands_other": "{{count}} 個可用頻段",
         "verdict_channel_only_one": "1 個鄰區僅回傳了通道：服務細胞知道它存在，但沒有對它的目前測量值，因此它不帶品質資訊，也無法鎖定。",
         "verdict_channel_only_other": "{{count}} 個鄰區僅回傳了通道：服務細胞知道它們存在，但沒有對它們的目前測量值，因此它們不帶品質資訊，也無法鎖定。",
         "idle_title": "尚未讀取",
@@ -451,7 +450,9 @@
         "tally_measured_one": "1 個有測量值",
         "tally_measured_other": "{{count}} 個有測量值",
         "tally_channel_only_one": "1 個僅通道",
-        "tally_channel_only_other": "{{count}} 個僅通道"
+        "tally_channel_only_other": "{{count}} 個僅通道",
+        "tally_bands_one": "1 個頻段",
+        "tally_bands_other": "{{count}} 個頻段"
       },
       "columns": {
         "cell_type": "關係",
@@ -587,12 +588,10 @@
         "title": "APN 設定",
         "description": "數據機用於建立資料連線的存取點名稱。"
       },
-      "status": {
-        "active": "已啟用",
-        "not_live": "未生效",
-        "carrier_default": "電信商預設"
+      "cards": {
+        "unread": "尚未從數據機讀取到任何資料，因此此卡片沒有可顯示的值。"
       },
-      "save_connection_notice": "儲存時數據機重新連線期間蜂窩連線會短暫中斷。",
+      "save_connection_notice": "儲存會讓數據機中斷並重新附著網路。行動數據會中斷約四秒——如果你是透過數據機的乙太網路埠連線的，此頁面也會隨之中斷，並會自動重新連線。",
       "carrier_default": {
         "button": "使用電信商預設",
         "dialog": {
@@ -606,7 +605,8 @@
         "saved": "APN 設定已儲存",
         "save_error": "儲存 APN 設定失敗",
         "deactivated": "已還原至電信商預設 APN",
-        "deactivate_error": "還原至電信商預設失敗"
+        "deactivate_error": "還原至電信商預設失敗",
+        "reconciling": "正在確認連線是否已恢復…"
       },
       "controls_label": "APN 配置",
       "managed_by_profile_fallback": "活動的自訂 SIM 設定",
@@ -643,6 +643,9 @@
           "description_sos": "CID {{cid}} 被保留用於緊急（SOS）呼叫。在此寫入資料 APN 可能會中斷緊急呼叫。仍要繼續嗎？",
           "confirm": "仍然使用",
           "cancel": "取消"
+        },
+        "reserved_dialog": {
+          "unverified_body": "該上下文通常保留用於 VoLTE 或緊急呼叫，但數據機未回報它的類型。在此寫入資料 APN 可能會中斷這些服務。"
         }
       },
       "rows": {
@@ -665,7 +668,6 @@
       "readout": {
         "title": "網路授予的內容",
         "description": "即時讀取自數據機，而非已儲存的設定。",
-        "serving_apn": "生效的 APN",
         "granted_ip": "已授予的 IP",
         "bearer_state": "承載狀態",
         "ipv4": "IPv4 位址",
@@ -677,7 +679,14 @@
         "ip_both": "IPv4 與 IPv6",
         "ip_none": "未指派",
         "error_title": "無法取得即時狀態",
-        "error_body": "數據機狀態來源未回應。下方的值可能缺失。"
+        "error_body": "數據機狀態來源未回應。下方的值可能缺失。",
+        "configured_label": "你設定的",
+        "granted_label": "網路授予的",
+        "source_stored": "來自已儲存的設定",
+        "source_negotiated": "與網路協商的結果",
+        "stale": "讀數已停止更新",
+        "stale_body": "數據機狀態來源近期沒有更新。上方的值可能已經不再準確。",
+        "reread": "從數據機重新讀取"
       },
       "mbn": {
         "title": "電信業者設定檔 (MBN)",
@@ -688,7 +697,6 @@
         },
         "list_label": "可用套件",
         "selected_caption": "已選擇，自上次開機起生效",
-        "reboot_notice": "套件需重新開機後才會生效。QManager 只會提示重新開機，絕不擅自執行。",
         "pending_note": "變更將在重新開機後生效。",
         "save": "套用設定檔",
         "empty": {
@@ -798,27 +806,34 @@
         "reread": "從數據機重新讀取",
         "in_sync": "已儲存的設定與數據機一致。"
       },
-      "hero": {
-        "title": "目前連線",
-        "description": "數據機目前連上的網路，以及該網路為它設定的速率上限。",
-        "params_heading": "目前參數",
-        "rates_note": "速率上限是網路授予的上限值，不是實測速度。它們在頁面開啟時讀取，每次儲存後再讀取一次。",
-        "sr_rate_block": "{{radio}}：{{state}}",
-        "live": "即時",
+      "strip": {
+        "label": "即時狀態",
         "stale": "已過時",
+        "network": "網路",
+        "sim": "SIM 卡",
+        "aggregation": "載波聚合",
+        "data_path": "資料通道",
         "carrier_none": "未回報電信業者",
+        "bands_none": "未回報頻段",
+        "ip_dual": "已指派 IPv4 與 IPv6",
+        "ip_v4": "僅 IPv4",
+        "ip_v6": "僅 IPv6",
+        "ip_none": "未指派位址",
         "unavailable_title": "無法讀取數據機",
-        "unavailable_retrying": "上次讀取失敗。QManager 仍在重試。",
-        "unavailable_static": "上次讀取失敗。請使用下方的「從數據機重新讀取」再試一次。"
+        "unavailable_retrying": "上次讀取失敗。QManager 仍在重試。"
+      },
+      "rate_ceiling": {
+        "eyebrow": "網路授予的速率上限",
+        "in_force": "{{radio}} AMBR 生效中",
+        "no_ceiling": "未讀到上限",
+        "sr_rate_block": "{{radio}}：{{state}}",
+        "provenance": "速率上限是網路授予的上限值，不是實測速度。它們在頁面開啟時讀取，每次儲存後再讀取一次。",
+        "unavailable": "上次讀取失敗。請使用下方的「從數據機重新讀取」再試一次。"
       },
       "readout": {
-        "active_slot": "使用中插槽",
         "slot_n": "SIM {{slot}}",
         "unknown": "未知",
-        "radio_power_label": "射頻狀態",
-        "apn_label": "目前 APN",
         "no_apn": "未回報",
-        "carrier_aggregation": "載波聚合",
         "ca_none": "未啟用",
         "ca_breakdown": "LTE {{lte}} + NR {{nr}}",
         "ca_lte_only": "LTE {{lte}}",
@@ -833,7 +848,6 @@
         "unknown": "未知"
       },
       "sim_slots": {
-        "label": "SIM 卡槽",
         "empty": "空",
         "sr_active": "SIM {{slot}}，使用中，卡號末四碼 {{last4}}",
         "sr_standby": "SIM {{slot}}，備用，卡號末四碼 {{last4}}",
@@ -845,13 +859,13 @@
         "governing": "生效中",
         "not_governing": "未生效",
         "nsa_note": "5G 非獨立組網走 LTE 資料工作階段，因此以這條上限為準。",
-        "lte_empty_title": "未回報 LTE 速率",
         "lte_empty_reason": "數據機僅在 LTE 資料工作階段建立期間才發布 LTE 上限。",
-        "nr_empty_title": "未回報 5G 速率",
         "nr_empty_reason": "數據機僅在 5G 資料工作階段建立期間才發布 5G 上限。",
         "download": "下載",
         "upload": "上傳",
-        "governing_unread": "您的連線正在使用此射頻。開啟本頁時未讀到它的上限。"
+        "governing_unread": "您的連線正在使用此射頻。開啟本頁時未讀到它的上限。",
+        "lte_short": "LTE",
+        "nr_short": "5G NR"
       }
     },
     "fplmn": {
@@ -1132,7 +1146,8 @@
         "imei_override": "IMEI 覆寫",
         "scenario": "生效中的場景",
         "scheduled": "已排定計劃",
-        "radio": "無線電，由場景掌管",
+        "not_scheduled": "未排程",
+        "radio": "無線電設定",
         "band_locking": "頻段鎖定",
         "network_mode": "網路模式",
         "lte_bands": "LTE 頻段",

@@ -106,9 +106,10 @@ type NrStatusObject struct {
 	Band     string `json:"band"`
 	ARFCN    *int   `json:"arfcn"`
 	PCI      *int   `json:"pci"`
-	CellID   *int   `json:"cell_id"`
-	ENodeBID *int   `json:"enodeb_id"`
-	SectorID *int   `json:"sector_id"`
+	CellID   *int64 `json:"cell_id"`
+	ENodeBID *int64 `json:"enodeb_id,omitempty"`
+	GNodeBID *int64 `json:"gnodeb_id,omitempty"`
+	SectorID *int64 `json:"sector_id"`
 	TAC      *int   `json:"tac"`
 	RSRP     *int   `json:"rsrp"`
 	RSRQ     *int   `json:"rsrq"`
@@ -450,23 +451,35 @@ func (p *Poller) poll() {
 			}
 
 			// Populate nested cell
-			cidInt, _ := strconv.Atoi(cell.CellID)
+			cid64, err := strconv.ParseInt(cell.CellID, 16, 64)
+			if err != nil {
+				cid64, _ = strconv.ParseInt(cell.CellID, 10, 64)
+			}
+			var nodeb64, sector64 int64
+			if strings.HasPrefix(cell.Mode, "NR5G") {
+				nodeb64 = cid64 >> 14     // 5G gNodeB: top 22-32 bits
+				sector64 = cid64 & 0x3FFF // 5G Sector: bottom 14 bits
+			} else {
+				nodeb64 = cid64 >> 8      // LTE eNodeB: top 20-28 bits
+				sector64 = cid64 & 0xFF   // LTE Sector: bottom 8 bits
+			}
+
 			status.Cell = CellObject{
 				CellID:    cell.CellID,
 				PCID:      cell.PCID,
 				EARFCN:    cell.EARFCN,
 				Band:      cell.Band,
 				Bandwidth: cell.Bandwidth,
-				ENodeBID:  cidInt >> 8,
-				SectorID:  cidInt & 0xFF,
+				ENodeBID:  int(nodeb64),
+				SectorID:  int(sector64),
 			}
 
 			// Populate LTE status object
 			pciVal := cell.PCID
 			earfcnVal := cell.EARFCN
-			cellIdVal := cidInt
-			enodebVal := cidInt >> 8
-			sectorVal := cidInt & 0xFF
+			cellIdInt := int(cid64)
+			enodebInt := int(nodeb64)
+			sectorInt := int(sector64)
 			rsrpVal := cell.RSRP
 			rsrqVal := cell.RSRQ
 			sinrVal := cell.SINR
@@ -477,13 +490,30 @@ func (p *Poller) poll() {
 				Band:     cell.Band,
 				EARFCN:   &earfcnVal,
 				PCI:      &pciVal,
-				CellID:   &cellIdVal,
-				ENodeBID: &enodebVal,
-				SectorID: &sectorVal,
+				CellID:   &cellIdInt,
+				ENodeBID: &enodebInt,
+				SectorID: &sectorInt,
 				RSRP:     &rsrpVal,
 				RSRQ:     &rsrqVal,
 				SINR:     &sinrVal,
 				RSSI:     &rssiVal,
+			}
+
+			// If NR mode, also populate NR status object
+			if strings.HasPrefix(cell.Mode, "NR5G") {
+				status.NR = NrStatusObject{
+					State:    cell.State,
+					Band:     cell.Band,
+					ARFCN:    &earfcnVal,
+					PCI:      &pciVal,
+					CellID:   &cid64,
+					ENodeBID: &nodeb64,
+					GNodeBID: &nodeb64,
+					SectorID: &sector64,
+					RSRP:     &rsrpVal,
+					RSRQ:     &rsrqVal,
+					SINR:     &sinrVal,
+				}
 			}
 
 			// Populate Network object
@@ -494,6 +524,12 @@ func (p *Poller) poll() {
 			status.Network.Registered = status.Online
 			if status.Online {
 				status.Network.ServiceStatus = "excellent"
+			} else if cell.State == "SEARCH" {
+				status.Network.ServiceStatus = "searching"
+			} else if cell.State == "LIMSRV" {
+				status.Network.ServiceStatus = "limited_service"
+			} else {
+				status.Network.ServiceStatus = "no_service"
 			}
 		}
 	}

@@ -1,9 +1,17 @@
 {
+  "page": {
+    "title": "Dasbor",
+    "description": "Tampilan langsung modem Anda: terhubung ke apa, seberapa kuat sinyalnya, dan apa yang berubah baru-baru ini."
+  },
   "alert": {
     "modem_unreachable": "Tidak dapat menjangkau modem. Data yang ditampilkan mungkin sudah usang."
   },
   "network": {
     "title": "Status Jaringan",
+    "description": "Jaringan yang saat ini terhubung ke modem.",
+    "description_unreachable": "Polling terakhir tidak memberikan hasil.",
+    "unreachable": "Modem tidak dapat dijangkau",
+    "sim_generic": "SIM",
     "signal_5g": "Sinyal 5G",
     "signal_5g_lte_nrca": "5G + LTE / NR-CA",
     "signal_5g_lte": "5G + LTE",
@@ -30,17 +38,23 @@
     "radio_unknown": "Radio Tidak Diketahui",
     "low_power": "Daya Rendah",
     "standby_label": "Siaga",
-    "internet_label": "Internet",
     "internet_online": "Online",
     "internet_unreachable": "Tanpa Respons",
+    "internet_degraded": "Tidak Stabil",
+    "internet_recovering": "Memulihkan",
+    "internet_unknown": "Belum Diukur",
     "sim_label": "SIM {{slot}}",
     "no_carrier": "Tidak Ada Operator",
     "internet_tooltip": {
-      "no_reply": "Tidak ada balasan untuk ping konektivitas. Sebagian operator memblokir probe semacam ini, sehingga koneksi mungkin masih berfungsi."
+      "no_reply": "Tidak ada balasan untuk ping konektivitas. Sebagian operator memblokir probe semacam ini, sehingga koneksi mungkin masih berfungsi.",
+      "degraded": "Ping tetap sampai, tetapi setidaknya satu dari sepuluh hilang. Koneksi aktif namun tidak dapat diandalkan.",
+      "recovery": "Watchdog koneksi sedang memulihkan tautan. Pembacaan tetap tidak dapat diandalkan sampai proses selesai.",
+      "unknown": "Probe konektivitas tidak melaporkan data, sehingga saat ini keterjangkauan internet tidak diketahui."
     }
   },
   "device_status": {
     "title": "Informasi Perangkat",
+    "description": "Identitas perangkat keras, firmware, dan waktu aktif.",
     "icon_alt": "Ikon Perangkat",
     "show_private": "Tampilkan detail pribadi",
     "hide_private": "Sembunyikan detail pribadi",
@@ -53,6 +67,10 @@
     "device_imei": "IMEI Perangkat",
     "conn_uptime_short": "Waktu Koneksi",
     "device_uptime_short": "Waktu Perangkat",
+    "conn_uptime_caption_up": "Tautan aktif",
+    "conn_uptime_caption_down": "Tautan terputus",
+    "device_uptime_caption": "Sejak boot terakhir",
+    "uptime_unknown": "Tidak terjangkau",
     "lte_category": "Kategori LTE",
     "active_mimo": "MIMO Aktif",
     "lan_gateway": "Gateway LAN",
@@ -60,6 +78,7 @@
   },
   "metrics": {
     "title": "Metrik Perangkat",
+    "description": "Kesehatan perangkat, penghitung data kumulatif, dan jarak ke setiap sel yang melayani.",
     "modem_temperature": "Suhu Modem",
     "high_temp_warning": "Suhu Tinggi",
     "cpu_usage": "Penggunaan CPU",
@@ -96,6 +115,7 @@
     "scs": "SCS"
   },
   "signal_card": {
+    "description": "Pembawa komponen utama",
     "strength_heading": "Kekuatan Sinyal",
     "connected": "Terhubung",
     "disconnected": "Terputus",
@@ -108,10 +128,11 @@
     "quality_fair": "Cukup",
     "quality_poor": "Buruk",
     "quality_bad": "Sangat lemah",
-    "quality_none": "Tidak Ada Sinyal"
+    "quality_none": "Tidak Ada Pembacaan"
   },
   "signal_history": {
     "title": "Monitor Kualitas Sinyal",
+    "description": "Bagaimana jalur 4G dan 5G bergerak belakangan ini — cukup riwayat untuk membedakan penurunan sesaat dari tren.",
     "rsrp_label": "RSRP",
     "rsrq_label": "RSRQ",
     "sinr_label": "SINR",
@@ -127,6 +148,7 @@
     "error_description": "Tidak dapat memuat riwayat sinyal: {{message}}"
   },
   "latency": {
+    "description": "Latensi bolak-balik dan kehilangan paket pada sepuluh probe terakhir, plus hasil uji kecepatan terbaru.",
     "title": "Latensi Langsung",
     "chart_latency": "Latensi",
     "chart_packetloss": "Packet Loss",
@@ -135,10 +157,91 @@
     "no_reading": "Tidak ada pembacaan",
     "empty_description": "Menunggu sampel latensi pertama."
   },
+  "latencyMonitor": {
+    "page": {
+      "title": "Monitor Latensi",
+      "description": "Round-trip time (RTT), jitter, dan packet loss, diukur langsung oleh probe modem."
+    },
+    "status": {
+      "aria": "Status koneksi",
+      "connected": "Terhubung",
+      "degraded": "Tidak Stabil",
+      "disconnected": "Terputus",
+      "recovery": "Memulihkan",
+      "unknown": "Tidak Melapor"
+    },
+    "band": {
+      "average_eyebrow": "RTT Rata-Rata",
+      "average_min": "Min {{value}}",
+      "average_max": "Maks {{value}}",
+      "average_unmeasured": "Tidak ada jendela untuk dirata-ratakan",
+      "jitter_eyebrow": "Jitter",
+      "jitter_samples_one": "{{count}} sampel dalam jendela ini",
+      "jitter_samples_other": "{{count}} sampel dalam jendela ini",
+      "jitter_unmeasured": "Jendela terlalu pendek",
+      "loss_eyebrow": "Packet Loss",
+      "loss_counted": "{{lost}} dari {{total}} hilang",
+      "loss_unmeasured": "Jendela terlalu pendek",
+      "target_eyebrow": "Target Probe",
+      "target_unknown": "Tidak ada target yang dilaporkan"
+    },
+    "range": {
+      "aria": "Rentang waktu",
+      "realtime": "Langsung",
+      "hourly": "Per Jam",
+      "twelvehour": "12 Jam",
+      "daily": "Harian"
+    },
+    "chart": {
+      "title": "Waktu Bolak-Balik",
+      "legend_latency": "Waktu Bolak-Balik",
+      "legend_loss": "Packet Loss",
+      "legend_spread": "Min ke Maks",
+      "legend_threshold": "Baik, hingga {{value}}",
+      "loss_label": "Packet Loss",
+      "description_realtime": "{{count}} probe terakhir, berjarak {{seconds}} dtk.",
+      "description_hourly": "Rata-rata per jam, {{count}} kelompok dari {{from}} hingga {{to}}.",
+      "description_twelvehour": "Rata-rata 12 jam, {{count}} kelompok dari {{from}} hingga {{to}}.",
+      "description_daily": "Rata-rata harian, {{count}} kelompok dari {{from}} hingga {{to}}.",
+      "description_loading": "Membaca riwayat probe.",
+      "description_unreadable": "Tidak ada jendela untuk dijelaskan selagi riwayat tidak dapat dibaca.",
+      "description_empty": "Belum ada yang terukur dalam rentang ini."
+    },
+    "samples": {
+      "title": "Sampel",
+      "description": "Menampilkan {{shown}} dari {{total}} dalam jendela ini.",
+      "description_loading": "Membaca riwayat probe.",
+      "description_unreadable": "Tidak ada sampel untuk dihitung selagi riwayat tidak dapat dibaca.",
+      "col_time": "Waktu",
+      "col_rtt": "RTT",
+      "col_jitter": "Jitter",
+      "col_loss": "Hilang",
+      "timeout": "Waktu Habis",
+      "sort_label": "Urutkan Berdasarkan",
+      "sort_newest": "Terbaru Dahulu",
+      "sort_oldest": "Terlama Dahulu",
+      "day_today": "Hari Ini",
+      "day_yesterday": "Kemarin"
+    },
+    "empty": {
+      "title": "Belum Ada Sampel",
+      "description": "Riwayat probe akan terisi seiring modem mengukur tautan. Belum ada yang tercatat untuk rentang ini."
+    },
+    "error": {
+      "title": "Riwayat Probe Tidak Dapat Dibaca",
+      "description": "{{message}}",
+      "retry": "Coba Lagi"
+    },
+    "notice": {
+      "stale": "Menampilkan sampel terakhir yang berhasil kami baca. {{message}}"
+    },
+    "unit_ms": "ms",
+    "unit_pct": "%",
+    "unmeasured": "—"
+  },
   "speedtest": {
     "section_label": "Tes Kecepatan",
     "start_button_aria": "Mulai tes kecepatan",
-    "idle_description": "Mulai tes kecepatan untuk mengukur kecepatan jaringan Anda saat ini.",
     "dialog_idle_description": "Ukur kecepatan unduh, kecepatan unggah, dan latensi Anda saat ini.",
     "result_label": "Hasil tes kecepatan:",
     "title": "Tes Kecepatan",
@@ -191,6 +294,7 @@
   },
   "ca": {
     "title": "Agregasi Carrier",
+    "description": "Carrier komponen yang aktif dan lebar pita kontribusi masing-masing.",
     "aggregated": "MHz teragregasi",
     "bandwidth": "MHz lebar pita",
     "bw_unknown": "— MHz",
@@ -219,6 +323,7 @@
   },
   "activities": {
     "title": "Aktivitas Terkini",
+    "description": "Apa yang dilakukan radio, terbaru dulu, dan apakah ada yang belum teratasi.",
     "empty_title": "Tidak Ada Peristiwa",
     "empty_description": "Tidak ada peristiwa jaringan terkini yang terdeteksi. Perangkat Anda kemungkinan stabil dan tidak mengalami perubahan signifikan pada kondisi jaringan.",
     "error_title": "Tidak dapat memuat peristiwa",

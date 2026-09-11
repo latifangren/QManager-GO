@@ -43,14 +43,20 @@ import type { MaterialSymbolName } from "@/components/ui/material-symbol";
 // -----------------------------------------------------------------------------
 // THE TONE RULE ON THIS SURFACE
 // -----------------------------------------------------------------------------
-// Rows are neutral at rest and PROMOTE to `primary-container` when dirty. That
-// promotion is the brand acting — a pending edit is an action awaiting commit,
-// which is precisely what `primary` means here. It is NOT a status; a dirty row
-// is not "good" or "warning". No functional role may be used for pendingness.
+// Rows stay NEUTRAL at rest and while dirty. The DELTA_CHIP ("SIM 1 -> SIM 2")
+// is the row's one indicator of an unsaved edit — a `bg-primary` pill is
+// already the brand acting, and repeating that signal as a full-row
+// `primary-container` fill restated the same fact twice on one row.
+//
+// This was a promote-on-dirty container fill until 2026-08-30: see
+// docs/reference/cellular-settings-family.md's "Rows are neutral..." section
+// for the retired rule and why it existed. Removing it also retired every
+// `_ON_FILL` control twin it required (`SEGMENTED.SEGMENT_ON_FILL` /
+// `.TRACK_ON_FILL`, `SELECT_TRIGGER_ON_FILL`, `FIELD_SHELL_ON_FILL`) — a
+// control never needs an ink pair for a container it can no longer sit on.
 //
 // No row carries a border. Separation between rows is a hairline DIVIDER inside
-// the group (`bg-surface-container-high`), and a promoted row drops the divider
-// by covering it — never by drawing an outline (The No-Hairline-On-Fill Rule).
+// the group (`bg-surface-container-high`).
 // =============================================================================
 
 // -----------------------------------------------------------------------------
@@ -61,18 +67,47 @@ import type { MaterialSymbolName } from "@/components/ui/material-symbol";
 export const PAGE_ROOT = "@container/main mx-auto flex flex-col gap-6 p-2";
 
 /**
- * The two-column body. The comp runs 1.35fr / 1fr; expressed here as a
- * container query so it responds to the content column rather than the window
- * (the sidebar expanding must not restack the page).
+ * A write column beside the read-only workbench that feeds it.
  *
- * NO `items-start`. CSS grid's default `align-items: stretch` is what we want
- * here (DESIGN.md's Equal Heights rule) — the right column (AMBR + modem
- * reports) should rise to match the settings card's height rather than
- * leaving it visibly taller. `CARD_CELL` below is what actually carries that
- * stretch down into each `Card`.
+ * The two columns sit side by side for a functional reason rather than a
+ * decorative one: the workbench generates an identifier the user then types into
+ * the write field, so both have to be on screen at once.
+ *
+ * -----------------------------------------------------------------------------
+ * THE ROW TEMPLATE IS THE FIX. `items-start` WAS NOT.
+ * -----------------------------------------------------------------------------
+ * This grid is two rows: the left column stacks the two write cards one per row
+ * and the workbench spans both. With both tracks left `auto`, a spanning item's
+ * height is distributed ACROSS the tracks it spans — so a workbench taller than
+ * the two write cards combined pushed the row-2 grid line down and opened a
+ * ~90px void between "Device IMEI" and "Backup IMEI". Nothing in this file
+ * declared that space and no gap value could remove it. Two sibling cards in one
+ * column drifting apart because a THIRD card in the next column got taller is
+ * the antipattern; the distance between them has to be the family's regular
+ * `gap-4` in every state.
+ *
+ * `grid-rows-[auto_1fr]` fixes it at the source. Row 1 sizes to the device card
+ * and nothing else, so the gap below it is exactly the grid gap. Row 2 is the
+ * flexible track, so all of the spanning card's surplus lands there, where the
+ * backup card absorbs it by STRETCHING rather than by being pushed.
+ *
+ * ON THE HEIGHT LOCK. `items-start` is gone by explicit request — the two
+ * columns now match. A height lock between cards is normally a split by
+ * SYMMETRY, which DESIGN.md > Layout names as a defect, and what makes it safe
+ * HERE is arithmetic rather than taste: with the workbench's redundant prefix
+ * row retired and its check field collapsed from two rows to one input group,
+ * the columns land within a few tens of pixels of each other at rest. The lock
+ * closes a rounding error; it is not pinning a static reference card to a live
+ * telemetry one. The workbench spends its residual slack on purpose — see
+ * `CARD_BODY_FILL` — rather than trailing it as a void. If a future row pushes
+ * either column materially past the other, revisit this rather than letting a
+ * card grow a hole.
+ *
+ * The template is scoped to `@4xl/main` alongside the spans it serves. Stacked,
+ * the three cards are three auto rows and there is nothing to distribute.
  */
-export const PAGE_GRID =
-  "grid grid-cols-1 gap-4 @4xl/main:grid-cols-[1.35fr_1fr]";
+export const WORKBENCH_SPLIT =
+  "grid grid-cols-1 gap-4 @4xl/main:grid-cols-[1.35fr_1fr] @4xl/main:grid-rows-[auto_1fr]";
 
 /**
  * Wraps a grid cell so the stretched row height reaches the `Card` inside it.
@@ -81,6 +116,26 @@ export const PAGE_GRID =
  * are explicit".
  */
 export const CARD_CELL = "h-full *:data-[slot=card]:h-full";
+
+/**
+ * The body of a card that is height-locked to a taller sibling, plus the anchor
+ * that gives its residual slack somewhere honest to go.
+ *
+ * A stretched card grows at the BOTTOM, so by default a lock hands the shorter
+ * card a hole under its last element. `Card` is already `flex flex-col`, so
+ * `BODY` (on `CardContent`) claims that growth, and `TAIL` pushes the card's
+ * standing footnote to the bottom edge — the one element on this surface that
+ * belongs there anyway, because a card-level caveat is a property of the card
+ * rather than of the block above it. The slack becomes the space between the
+ * work and its caveat instead of dead canvas below both.
+ *
+ * Only apply `TAIL` to a genuine card-level footnote. On any other element it
+ * is a hole with a paragraph pushed under it.
+ */
+export const CARD_BODY_FILL = {
+  BODY: "flex-1",
+  TAIL: "mt-auto",
+} as const;
 
 /** A card on this surface. Peer role — no hero anchor here. */
 export const CARD_SHELL =
@@ -107,218 +162,212 @@ export const CARD_PAD = "px-7";
 export const CARD_TITLE = "min-w-0 text-lg leading-tight";
 
 // -----------------------------------------------------------------------------
-// The read-only hero (modem reports + AMBR), basic settings page
+// Band A — the live-state strip
 // -----------------------------------------------------------------------------
 
 /**
- * The page's anchor card. `rounded-hero` (40px) — one per surface, under the
- * Consistent-Layout Rule's "a genuine glance surface may earn a hero card"
- * exception (same ruling as `band-locking/shapes.ts`). The merged reports +
- * rate-limits readout is exactly that glance surface: it answers "what is the
- * modem doing right now and what will the network let it do" before the user
- * touches a setting.
+ * The four glance tiles that replaced the 826-line "Current Connection" hero.
  *
- * `py-7` (28px) rather than the peer card's `py-6` — the hero carries more
- * content and the extra vertical padding is what lets it read as the anchor.
+ * WHY A STRIP AND NOT A CARD. The hero asked the wrong question. A settings
+ * surface is opened to answer "what is this modem set to, and what happens if I
+ * touch this?" — the hero instead led with AMBR, the network-granted rate
+ * ceiling, across two of its three columns. AMBR is the most specialist number
+ * on the page, is not settable anywhere on it, and none of the six writable
+ * fields can move it. Eighteen distinct facts rendered in one card.
+ *
+ * THE RAIL RAN A GENERATION THE FAMILY DELETED TWICE. `HERO_RAIL_TONE.NR` was
+ * `bg-primary text-primary-foreground` painted across a full-width block.
+ * `radio/summary-tiles.tsx` documents five generations of exactly that shape:
+ * Gen 2 measured it live at 623x212 = 132,033px^2 carrying 9,526px^2 of ink
+ * (7.2%) and called it "a large empty purple slab"; GEN 5 REMOVED BODY TINT
+ * ENTIRELY — "Every tile body is now NEUTRAL_TILE and the disc is the only
+ * coloured element on the strip." The hero's own JSDoc cited that file as its
+ * precedent while running the composition it had abandoned. So the geometry
+ * comes from `components/cellular/tile-shape.ts` (the 104px pin, the 52px disc)
+ * and the tone rule comes with it: `BODY` is the only body fill on this strip,
+ * and every hue lives on a `DISC_*` key.
+ *
+ * ONE CLOCK. Every fact in a tile is read from the poller snapshot, which ticks
+ * continuously, so the freshness chip in `HEAD` is honest about the whole band —
+ * which is what the retired `HERO_FOOTNOTE` existed to apologise for. The rate
+ * ceiling, which runs on the settings GET and does not tick, is a separate band
+ * with its own provenance line (`RATE_CEILING` below). No surface here holds two
+ * clocks.
+ *
+ * THE SIM TILE DELIBERATELY OVERLAPS THE `sim_slot` CONTROL BELOW IT, and that
+ * is the point rather than a duplication: the tile reports the slot the modem is
+ * ON (poller), the control holds the slot the user has ASKED FOR (settings).
+ * During the ~35s slot apply they legitimately disagree, and a technician needs
+ * to see both. The two facts the hero really did render twice — radio power and
+ * the active slot as read-only `ParamRow`s over the same `saved` object the
+ * control below was bound to — are gone.
+ *
+ * THE EMPTY STATE IS PER TILE, not a branch of the strip. A modem with no
+ * carrier name, no APN and no aggregation is a fully successful read of a real
+ * device state; each tile states its own absence as a fact ("No carrier
+ * reported") rather than the band collapsing into one empty screen. The strip's
+ * own third state is a FAILED read, which takes `NOTICE_*`.
  */
-export const HERO_SHELL =
-  "@container/hero flex flex-col gap-5 rounded-hero border-0 bg-surface py-7 shadow-[var(--shadow-whisper)]";
-
-/** Hero card padding: 28px horizontal, matching CARD_PAD. */
-export const HERO_PAD = "px-7";
-
-// -----------------------------------------------------------------------------
-// The hero — Band 1: the identity rail
-// -----------------------------------------------------------------------------
-
-/**
- * The hero's anchor statement: a HORIZONTAL rail, not a centred big-figure
- * stack. Glyph disc → serving technology → carrier → freshness chip, on one
- * baseline.
- *
- * WHY A RAIL AND NOT A HERO METRIC. The obvious shape here is the hero-metric
- * template — one large figure over a small label with supporting stats beneath.
- * It is refused on two grounds. First, the value is a CATEGORY ("5G NSA"), not
- * a magnitude, and setting a four-character category at display size buys
- * emphasis it cannot spend. Second, the template's small-label-above-big-value
- * arrangement is an eyebrow, and an eyebrow over a heading is banned outright
- * on this product. The rail states the technology at the Headline+1 step with
- * the carrier as its own supporting line and no label above either.
- *
- * THE FILL IS IDENTITY, NEVER HEALTH (The Identity-Chip Rule). NR takes the
- * brand blue, LTE the identity violet, and an UNIDENTIFIED technology takes the
- * NEUTRAL pair — an unknown radio must never claim the 5G blue. The freshness
- * chip riding at the rail's end is a status Badge with its own container pair,
- * so quality is reported chromatically only inside that chip and never by the
- * rail's own fill.
- *
- * HEIGHT IS THE TILE FLOOR, NOT A DERIVATION. DESIGN.md defines a tile as "a
- * 28px-radius block, 92px minimum height, holding a 52px full-round glyph disc
- * beside a text column" — which is exactly this rail, down to the disc size and
- * the inverted pairing. An earlier draft derived 84px from `52 + py-4 x2` and
- * shipped the product's most prominent instance of the pattern as the one that
- * is short. 92 -> 5.75rem, which gives the 52px disc 20px of air either side
- * (`py-4` still applies; the floor is what wins). The text column measures
- * tech 29 + gap 4 + carrier 18 = 51 and clears it either way.
- *
- * HEIGHT carries the RADIUS as well as the height. A skeleton that mirrors the
- * height from the contract and then hand-writes `rounded-tile` beside it has
- * kept half the contract (The Skeleton-Mirror Rule).
- */
-export const HERO_RAIL = {
-  ROOT: "flex min-h-[5.75rem] items-center gap-4 rounded-tile px-5 py-4",
-  /** Mirrors ROOT's resolved height AND radius, for the skeleton. */
-  HEIGHT: "h-[5.75rem] rounded-tile",
-  /** The 52px glyph disc. Tone INVERTS the rail's pairing at the call site. */
-  DISC: "grid size-[3.25rem] flex-none place-items-center rounded-pill",
-  /** The glyph inside the disc. Exported so retuning DISC cannot desync it. */
+export const STRIP = {
+  /** The band header. Label left, freshness chip pushed right by `mr-auto`. */
+  HEAD: "flex items-center gap-3 px-1 pb-0.5",
+  /** "Live state" — the thing the freshness chip is a property OF. */
+  HEAD_LABEL: "text-on-surface-variant mr-auto text-xs font-semibold",
+  /** The tile's text column, inside `TILE_SHAPE.ROOT`. */
+  TEXT: "flex min-w-0 flex-1 flex-col gap-[3px]",
+  EYEBROW:
+    "text-on-surface-variant truncate text-[0.6875rem] font-semibold tracking-[0.02em]",
+  /**
+   * The figure. `tabular-nums` and NOT `font-mono`: a slot number and a carrier
+   * count are changing figures, not identifiers (The Machine-Voice Rule).
+   * `min-w-0` rather than `truncate` — this is a flex container, so the
+   * truncation has to happen on the text child (`VALUE_TEXT`).
+   */
+  VALUE:
+    "flex min-w-0 items-center gap-2 text-[1.375rem] font-bold leading-[1.1] tracking-[-0.015em] tabular-nums",
+  /**
+   * The same figure when it is an IDENTIFIER the device emits verbatim — the
+   * APN, and nothing else on this strip. Mono is wider per glyph, so it drops a
+   * step to keep a 21-character APN inside the 104px tile.
+   */
+  VALUE_MONO:
+    "flex min-w-0 items-center gap-2 font-mono text-[1.125rem] font-bold leading-[1.1] tracking-[-0.01em]",
+  /** The truncating text child of either VALUE box. */
+  VALUE_TEXT: "truncate",
+  CAPTION: "text-on-surface-variant truncate text-xs",
+  /**
+   * Every tile body on this strip, with no exception and no `tone` prop to make
+   * one — see the Gen 5 note above. Making the wrong thing unreachable is
+   * cheaper than a comment asking nobody to do it.
+   */
+  BODY: "bg-surface-container text-on-surface",
+  /** The glyph inside `TILE_SHAPE.DISC`. */
   GLYPH: 28,
-  TEXT: "flex min-w-0 flex-1 flex-col gap-1",
   /**
-   * The serving technology. One step above the tile Headline (`text-xl`)
-   * because this is the page's single dominant statement and the tiles it
-   * replaces no longer exist to compete with it. `truncate` is mandatory:
-   * "5G NSA" is short in English and is not short in every locale.
-   */
-  TECH: "truncate text-2xl font-semibold leading-[1.05] tracking-[-0.01em]",
-  /**
-   * The carrier. Human-authored, so `font-sans` (The Machine-Voice Rule) — an
-   * operator name is not a machine string even though the modem reports it.
-   * `opacity-90`, not 85: this line carries a FACT, not decoration, and 90 is
-   * the step the family already uses for on-fill body text
-   * (`SETTING_ROW_DIRTY.CONSEQUENCE_ON_FILL`, `CHOICE_ROW.CAPTION`).
-   */
-  CARRIER: "truncate text-[0.8125rem] font-medium opacity-90",
-  /**
-   * The rail's statement when the read FAILED — a sentence, not a category,
-   * so it takes the Title step instead of `TECH`'s 24px (a sentence at 24px
-   * truncates on its first word in a rail that also holds a 52px disc).
+   * Disc fills, and the ONLY colour on the strip. Each is a FILL pair
+   * (`bg-X` + `text-X-foreground`), never a container pair — the disc is the one
+   * element small enough to want a strong fill, and the pair is never crossed.
    *
-   * The rail keeps its geometry in this state rather than collapsing to a
-   * skeleton: a skeleton is a promise that data is on its way, and holding one
-   * indefinitely over a dead poller is the same class of misstatement as the
-   * whole-card "Live" chip this hero was rebuilt to remove.
+   * An UNIDENTIFIED radio (`network.type === ""`) takes the neutral disc. It
+   * must never claim the 5G blue (The Identity-Chip Rule).
    */
-  NOTICE: "truncate text-lg font-semibold",
-  META: "flex flex-none items-center gap-2",
-} as const;
-
-/**
- * Rail tone pairs. A rail is a FILL pair and its disc is the matching
- * CONTAINER pair — the inversion `radio/summary-tiles.tsx` makes, so the glyph
- * pops off its own surface and survives grayscale.
- */
-export const HERO_RAIL_TONE = {
-  NR: "bg-primary text-primary-foreground",
-  NR_DISC: "bg-primary-container text-on-primary-container",
-  LTE: "bg-lte text-lte-foreground",
-  LTE_DISC: "bg-lte-container text-on-lte-container",
-  NEUTRAL: "bg-surface-container text-on-surface",
-  NEUTRAL_DISC: "bg-surface-container-high text-on-surface-variant",
+  DISC_NR: "bg-primary text-primary-foreground",
+  DISC_LTE: "bg-lte text-lte-foreground",
+  DISC_SPATIAL: "bg-spatial text-spatial-foreground",
+  DISC_NEUTRAL: "bg-surface-container-high text-on-surface-variant",
+  /**
+   * A FAILED read. The band keeps the family box and goes neutral rather than
+   * shimmering: a skeleton is a promise that data is on its way, and holding one
+   * indefinitely over a dead poller is the misstatement this whole re-authoring
+   * was done to remove. No freshness chip renders beside it — there is no
+   * reading for one to be a property of.
+   */
+  NOTICE_SPAN: "@xl/main:col-span-2 @5xl/main:col-span-4",
+  NOTICE_TITLE: "truncate text-lg font-semibold",
 } as const;
 
 // -----------------------------------------------------------------------------
-// The hero — Band 2: the three-column body
+// Band A2 — the rate-ceiling disclosure
 // -----------------------------------------------------------------------------
 
 /**
- * Rates, rates, parameters — the column order the surface was designed to.
+ * AMBR, demoted from headline to a summary line with the per-bearer detail
+ * behind a disclosure.
  *
- * The third column is WIDER (1.15fr) because it holds identifiers: an APN can
- * run 21 characters and a carrier-aggregation breakdown is two facts on one
- * line, while a rate column holds a heading and two 8-character chips. Equal
- * thirds would truncate the only column whose contents a technician opened the
- * page to read (the `READOUT_ROW.GRID` argument, one level up).
+ * The governing pair is always visible, because "what will the network let this
+ * connection do" is a legitimate glance question. The per-bearer table for both
+ * radios is not: it is two blocks of two figures plus a DNN, for a fact no
+ * control on this page can change. It opens on click.
  *
- * KEYED OFF `@container/hero`, NEVER `/main`. The hero's own width decides
- * whether three columns fit; the sidebar expanding must not restack the page.
- * Every step is written out literally — a template-interpolated step compiles
- * to no rule at all (see `SEGMENTED_BREAKPOINTS`).
+ * THIS BAND OWNS ITS OWN CLOCK AND SAYS SO. The figures come from the settings
+ * GET, read on mount and re-read only around a save — they do not tick. The
+ * retired `HERO_FOOTNOTE` carried that admission for a card whose freshness chip
+ * described a different data source entirely; here the provenance line sits
+ * under the numbers it is about, and no chip on this band claims liveness.
  *
- * THE THREE-COLUMN STEP IS `@5xl` (64rem), NOT `@4xl`. It was measured, not
- * chosen: at a 56rem hero the first rate column resolves to 258px and its
- * content box to 222px, which is narrower than a 20px heading plus the
- * governing chip beside it (~235px) — so the heading wrapped under the chip at
- * every width in the 896-1024px band. At 64rem the column is 298px / 262px
- * inner and the header sits on one line. Below the step the two-column layout
- * gives each block ~301px, which also clears it.
+ * THE PANEL ANIMATES `grid-template-rows`, WHICH IS NEITHER TRANSFORM NOR
+ * OPACITY. `<MotionConfig reducedMotion="user">` collapses transform movement
+ * for motion/react components and cannot see a CSS grid transition, so the
+ * consumer must call `useReducedMotion()` and drop `PANEL_MOTION` itself. Same
+ * mechanism and same reason as the frequency-locking skeleton (4b4d688).
  */
-export const HERO_BODY =
-  "grid grid-cols-1 gap-3.5 @2xl/hero:grid-cols-2 @5xl/hero:grid-cols-[1fr_1fr_1.15fr]";
-
-/**
- * The parameters cell. At the two-column step it spans the full width UNDER
- * the rate pair, which is the only arrangement that keeps the two rate blocks
- * as visual peers — putting one rate block beside the parameters would imply a
- * pairing between them that does not exist.
- */
-export const HERO_BODY_PARAMS_CELL = "@2xl/hero:col-span-2 @5xl/hero:col-span-1";
-
-/**
- * One cell of `HERO_BODY`. Carries the row's stretch down to the block inside.
- *
- * THIS IS `CARD_CELL`'S LESSON ONE LEVEL DOWN, and it shipped broken: a grid
- * item stretches to the row height by default, but a BLOCK CHILD of that item
- * does not inherit the height unless told to (DESIGN.md > Layout > "Equal
- * heights are explicit"). Each cell here is a `motion.div` wrapper, so the
- * wrapper was full height while the `<section>` inside it stayed content-sized.
- *
- * Caught on screen, not in review, and only at the THREE-column step: the
- * parameters column runs four rows plus a heading (~180px) while a rate block
- * with one bearer is ~118px, so the two rate blocks floated with ~70px of dead
- * space beneath them and the row ended on three different bottom edges. At the
- * two-column step the parameters column sits on its own full-width row and the
- * two rate blocks are natural peers, which is why every narrower width looked
- * correct and the defect was invisible below 64rem.
- *
- * `*:h-full` rather than a class on each block: the cell has exactly one child
- * in every branch (block, empty block, unavailable block, or skeleton), and
- * naming it here means a new branch cannot forget it.
- */
-export const HERO_BODY_CELL = "h-full *:h-full";
-
-/**
- * The provenance line under all three columns.
- *
- * It exists because the hero has TWO CLOCKS and one of them does not tick. The
- * freshness chip on the rail is honest about the poller and says nothing about
- * the rate columns, which are fetched on mount and re-fetched only around a
- * save. A single "Live" chip over a card whose visual majority can be
- * arbitrarily old is a straightforward misstatement, and this line is the fix.
- * It also names what an AMBR figure IS — a ceiling the network grants, not a
- * speed the modem is achieving — which nothing else on this page does.
- */
-export const HERO_FOOTNOTE =
-  "text-on-surface-variant text-[0.75rem] leading-relaxed text-pretty";
-
-/**
- * Column 3: the active parameters block.
- *
- * A NEUTRAL block beside two identity-filled ones, deliberately. These facts
- * belong to no radio, and giving them a hue would invent a fourth identity.
- *
- * ROW STEPS UP ONE TONE. `READOUT_ROW.ROOT` is `bg-surface-container`, which
- * is this block's own fill — nesting them would make the rows invisible. The
- * rows take `surface-container-high`, one step up, which is what Tonal
- * Elevation means by depth. The row geometry is otherwise identical to
- * `READOUT_ROW.ROOT`, so `READOUT_ROW.HEIGHT` remains its skeleton mirror.
- *
- * `min-h-[9rem]` matches `AMBR_BLOCK.COL_MIN` so the three columns share a
- * floor and an empty rate column never reads as a layout bug.
- *
- * HEADING IS THE TITLE STEP (18px), NOT `text-sm`. It shipped at 14px, which is
- * the same size as the `CardDescription` two nodes above it and one pixel off
- * the 13px rows below it — the hero's whole type ladder collapsed into 24 -> 16
- * -> 14 -> 14 -> 13 with the 18 and 20 steps unused. It is a peer of the two
- * rate-block headings and carries the same class, so retuning one retunes all
- * three (see `AMBR_BLOCK.TITLE`).
- */
-export const HERO_PARAMS = {
-  ROOT: "flex min-h-[9rem] flex-col gap-1.5 rounded-tile bg-surface-container p-3",
-  HEADING: "px-1 pb-0.5 text-lg font-semibold",
-  ROW: "flex items-center gap-3 rounded-pill bg-surface-container-high px-4 py-2.5",
+export const RATE_CEILING = {
+  ROOT: "overflow-hidden rounded-tile bg-surface-container",
+  /**
+   * The always-visible summary. A real `<button>`, so it is keyboard-reachable
+   * and announces its own expanded state.
+   */
+  SUMMARY:
+    "flex w-full items-center gap-3.5 bg-transparent px-5 py-4 text-left",
+  /**
+   * A 40px disc — one step below the strip's 52px, because this is a summary
+   * line and not a tile, and the size difference is what says so.
+   *
+   * DOWNLINK ROSE, not an identity hue. A rate ceiling belongs to no radio: the
+   * summary shows whichever radio governs, and painting the disc after that
+   * radio would make the same band change colour on a handover. `bg-downlink`
+   * is the direction axis (`RATE_CHIP` documents why it exists), and the
+   * download figure is the one this line leads with.
+   */
+  DISC: "grid size-10 flex-none place-items-center rounded-pill",
+  DISC_RATE: "bg-downlink text-downlink-foreground",
+  /** The same disc on a FAILED read — neutral, never a hue over absent data. */
+  DISC_NEUTRAL: "bg-surface-container-high text-on-surface-variant",
+  GLYPH: 22,
+  TEXT: "flex min-w-0 flex-1 flex-col gap-[3px]",
+  EYEBROW:
+    "text-on-surface-variant truncate text-[0.6875rem] font-semibold tracking-[0.02em]",
+  /** The governing pair, and the tag naming which radio it belongs to. */
+  VALUE:
+    "flex min-w-0 flex-wrap items-center gap-2 text-[1.125rem] font-bold leading-[1.1] tracking-[-0.01em] tabular-nums",
+  CHEVRON:
+    "text-on-surface-variant ml-auto flex-none transition-transform duration-[var(--duration-standard)] ease-[var(--ease-standard)]",
+  CHEVRON_OPEN: "rotate-180",
+  /**
+   * The 0fr -> 1fr row. The row VALUE is set at the call site (it is state, not
+   * geometry); this carries the clock, and is dropped entirely under reduced
+   * motion.
+   */
+  PANEL: "grid",
+  PANEL_MOTION:
+    "transition-[grid-template-rows] duration-[var(--duration-emphasized)] ease-[var(--ease-emphasized)]",
+  /** `min-h-0` is what lets the 0fr row actually collapse. */
+  PANEL_CLIP: "min-h-0 overflow-hidden",
+  INNER: "grid grid-cols-1 gap-3.5 px-5 pb-5 @2xl/main:grid-cols-2",
+  /**
+   * One radio's block. `bg-surface` INSIDE `bg-surface-container` — the panel is
+   * the container and the block steps back DOWN to the page ground, which is
+   * what keeps two nested neutrals legible without a hairline.
+   *
+   * `rounded-field` (20px) is a step tighter than the panel's `rounded-tile`
+   * (28px), per Radius-Follows-Size: the inner block is rounder per pixel and
+   * smaller in absolute radius. It is deliberately NOT an identity container
+   * fill — inside a disclosure that is already about one governing radio, two
+   * tinted blocks re-introduce exactly the "large empty slab" the strip above
+   * was rebuilt to delete. Identity is an outline `Tag` in the block header
+   * instead (The Two-Form Rule), which is also the channel that survives
+   * grayscale.
+   */
+  BLOCK: "flex flex-col gap-2.5 rounded-field bg-surface p-4",
+  /**
+   * The block heading, a step BELOW `RATE_CEILING.EYEBROW`'s parent value. 14px
+   * bold, not the hero's 18px: inside a panel that is already introduced by the
+   * summary line above it, an 18px heading competes with the figure it is
+   * subordinate to.
+   */
+  BLOCK_TITLE: "min-w-0 truncate text-sm font-bold",
+  /** The in-force marker, pushed to the block header's end. */
+  BLOCK_MARK: "ml-auto flex-none",
+  /** The band's provenance sentence, and each block's own. */
+  PROVENANCE: "text-on-surface-variant text-xs leading-[1.6] text-pretty",
+  /**
+   * Mirrors the summary row's resolved height for the skeleton: `py-4` either
+   * side (32) over a 40px disc, which is taller than the eyebrow + value column
+   * (16 + 3 + 20 = 39). 72px -> 4.5rem, and the radius travels with it (The
+   * Skeleton-Mirror Rule).
+   */
+  HEIGHT: "h-[4.5rem] rounded-tile",
 } as const;
-
 // -----------------------------------------------------------------------------
 // The governing-block marker
 // -----------------------------------------------------------------------------
@@ -333,20 +382,19 @@ export const HERO_PARAMS = {
  * radio would grant — but it drops the fact that only one of them is in force,
  * and that fact has to come back somewhere.
  *
- * IT MUST NOT COME BACK AS A HUE. `AMBR_BLOCK`'s own comment names the
- * constraint it is now cashing: the violet fill is doing identity work alone
- * and is safe there ONLY because the block reports no quality — "if a health
- * state is ever added to this block it needs a non-chromatic channel." This is
- * that state and this is that channel: a GLYPH plus a WORD, in two shapes
- * (filled chip vs plain inline text). Both survive grayscale and deuteranopia,
- * and the fill of each block stays exactly what it was.
+ * IT MUST NOT COME BACK AS A HUE ALONE, and it must not come back as a STATUS
+ * ROLE at all. `success` would claim health, and governance is not health — an
+ * idle radio's rate ceiling is not "degraded", it is simply not the one in
+ * force (The Functional-Color Promise). So the marker is a GLYPH plus a WORD in
+ * two shapes: a filled chip against plain inline text. Both survive grayscale
+ * and deuteranopia, which is what lets the chip also carry the block's radio
+ * hue without that hue being load-bearing.
  *
- * THE CHIP WEARS ITS OWN BLOCK'S FILL PAIR, not a status role. `info` renders
- * `primary-container`, which is invisible on the 5G block; `success` would
- * claim health, and governance is not health. The block's container inverted
- * to its own fill is the pairing the tile discipline already uses, it declares
- * both halves so consumers set no ink, and it reads as "this block, emphasised"
- * rather than as a verdict.
+ * THE CHIP WEARS ITS BLOCK'S RADIO FILL PAIR, which is now the only place a
+ * radio hue is filled anywhere in the disclosure — the blocks themselves went
+ * neutral, and their identity is an outline `Tag`. A `bg-lte` chip on a
+ * `bg-surface` block is a fill on a ground, the pairing the tile discipline
+ * already uses; it declares both halves, so consumers set no ink.
  *
  * ABSENCE IS NOT THE SIGNAL. The non-governing block states its state in
  * words too. A marker that only ever appears once would leave the other block
@@ -372,8 +420,20 @@ export const GOVERNING_GLYPH = {
 // -----------------------------------------------------------------------------
 
 /**
- * One physical SIM slot in the hero's parameters column: which slot, and the
- * tail of the card sitting in it.
+ * One physical SIM slot in the live-state strip's SIM tile caption: which slot,
+ * and the tail of the card sitting in it.
+ *
+ * IT RENDERS THE SLOT THE TILE IS NOT ABOUT. The tile's own value states the
+ * slot the modem is switched to, as read from the POLLER; this chip states what
+ * is in the other one, as read from the SETTINGS GET. The two sources are
+ * allowed to disagree for the ~35s a slot apply takes, which is why the ACTIVE
+ * leg below is not dead code: during that window `dual_slot` reports the new
+ * slot active while the poller still reports the old one, and a chip that could
+ * only render the standby form would flatten a real, temporary, visible fact.
+ *
+ * `bg-primary` on ACTIVE is correct against `STRIP.BODY`
+ * (`surface-container`) — a fill on a container, never a container on a
+ * container.
  *
  * THIS IS `GOVERNING_MARK` ONE ROW DOWN, and it is deliberately built to the
  * same rule rather than to a status role. "The modem is switched to this slot"
@@ -384,14 +444,13 @@ export const GOVERNING_GLYPH = {
  * against PLAIN INLINE TEXT with a different glyph. Shape, glyph and fill all
  * move together, so the pair survives grayscale and deuteranopia.
  *
- * `bg-primary`, not a container: this chip sits on `HERO_PARAMS.ROW`
- * (`surface-container-high`), and a container fill on a container row is the
- * step-collision `HERO_PARAMS`'s own comment documents. The fill pair also
- * declares its ink, so consumers set none.
+ * The fill pair declares its own ink, so consumers set none.
  *
- * ABSENCE IS NOT THE SIGNAL — both slots always render. A readout that showed
- * only the active slot would leave the other ambiguous between "empty" and "not
- * read", which is the whole reason this row exists.
+ * ABSENCE IS NOT THE SIGNAL — the peer slot always renders, empty or not. A
+ * readout that showed only the slot in use would leave the other ambiguous
+ * between "empty" and "not read", which is the whole reason this chip exists.
+ * The one case where nothing renders is `dual_slot` being ABSENT from the GET,
+ * which is the honest "the modem cannot answer this at all".
  */
 export const SLOT_CHIP = {
   /** The slot the modem is switched to. */
@@ -424,15 +483,126 @@ export const SLOT_GLYPH = {
   empty: "sim_card_alert",
 } as const satisfies Record<string, MaterialSymbolName>;
 
-/** The Display triple every migrated page `h1` carries. */
-export const PAGE_TITLE = "text-3xl font-bold tracking-[-0.02em]";
-
-/** The page description directly under it. */
-export const PAGE_DESCRIPTION = "text-on-surface-variant";
-
 /** The page-header action pill. Restated, not imported — see custom-profiles. */
 export const PILL_ACTION =
   "h-[2.625rem] gap-2 rounded-pill px-5 text-sm font-semibold";
+
+/**
+ * The glyph inside a `PILL_ACTION`.
+ *
+ * Named rather than typed at each call site. Blocked Networks carried `17` in
+ * three places and `14` in a fourth for what are two roles, not four sizes —
+ * the kind of drift a per-family shapes module exists to make impossible.
+ */
+export const PILL_ACTION_GLYPH = 17;
+
+/**
+ * An icon-only action that sits BESIDE a `PILL_ACTION` in the same cluster —
+ * Reset, and anything else that is a verb with no sentence.
+ *
+ * `size="icon"` resolves to 36px, under the 44px coarse-pointer floor DESIGN.md
+ * sets. The bump is at the pointer media query rather than always, so a dense
+ * desktop cluster keeps its proportions and a tablet still gets a real target.
+ * Both IMEI write cards typed this string; they are one control in two places.
+ */
+export const ICON_ACTION = "rounded-pill [@media(pointer:coarse)]:size-11";
+
+/** The glyph inside an `ICON_ACTION` — one step under `PILL_ACTION_GLYPH`. */
+export const ICON_ACTION_GLYPH = 18;
+
+/**
+ * A 24px icon button riding INSIDE a readout pill (the copy-this-value affordance).
+ *
+ * It cannot take `ICON_ACTION`: at 44px it would be taller than the 41px pill it
+ * lives in. The target is bought with an inset `::before` overlay instead — the
+ * visual control stays 24px and dense, while the hit area is 44px square and
+ * overhangs the pill invisibly. This is the sanctioned way to keep a dense
+ * readout row inside the touch floor.
+ *
+ * The hover tint is on the `quick` clock via `var()`, which is load-bearing:
+ * Tailwind v4 compiles a bare-var duration arbitrary — the custom property
+ * written directly in the brackets with no `var()` wrapper — to a literal
+ * `transition-duration` declaration naming the property, an invalid value the
+ * browser drops — so the un-wrapped spelling ships as NO transition at all
+ * rather than as an off-scale one. Every arbitrary custom property on this
+ * surface takes `var()`.
+ */
+export const READOUT_ICON_ACTION = [
+  "relative grid size-6 flex-none place-items-center rounded-pill",
+  "text-on-surface-variant transition-colors duration-[var(--duration-quick)] ease-[var(--ease-standard)]",
+  "before:absolute before:-inset-2.5 before:content-['']",
+  "hover:text-on-surface focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+].join(" ");
+
+/** The glyph inside a `READOUT_ICON_ACTION`, sized to the 13px value beside it. */
+export const READOUT_ICON_GLYPH = 16;
+
+/**
+ * The compact action that rides INSIDE a `TonalBanner`'s copy.
+ *
+ * A banner's CTA cannot be a `PILL_ACTION`: at 42px it out-weighs the sentence
+ * it belongs to and pushes the banner's own height past the card row it sits
+ * above. 32px on the Label step is the shorter twin, and it keeps the pill
+ * radius so it still reads as the same family of control.
+ *
+ * Promoted here because the byte-identical string had been typed three times
+ * across this family — twice on APN Management, once on the settings index —
+ * which is the exact count that made `sms/shapes.ts` worth extracting. The
+ * third site adds `underline-offset-4` and is deliberately NOT swept in with
+ * this change: it is on another route, and a near-identical string is a
+ * judgement call rather than a mechanical one.
+ */
+export const BANNER_ACTION = "h-8 rounded-pill px-3 text-xs font-semibold";
+
+/**
+ * The action row that sits BELOW a `ConditionScreen`, inside the same card.
+ *
+ * Centred rather than trailing, because a condition screen is centred and a
+ * right-aligned action under a centred block reads as belonging to something
+ * else. Stacked below the card's own `@lg/card` step so a phone gets full-width
+ * targets — this is the one place on the surface where the primary action is
+ * destructive and irreversible.
+ */
+export const CONDITION_ACTIONS =
+  "flex flex-col gap-2.5 @lg/card:flex-row @lg/card:justify-center";
+
+/**
+ * An inline text link inside a `CardDescription`.
+ *
+ * `--primary` is the only hue in this system that acts (DESIGN.md > Identity),
+ * so a link is brand-inked by construction. The pill focus ring is what keeps
+ * it consistent with every other focusable thing on the surface; a default
+ * browser outline on a rounded surface is the "browser default that belongs to
+ * no design system" this pass exists to remove.
+ */
+export const INLINE_LINK =
+  "text-primary inline-flex items-center gap-1 rounded-pill font-medium underline underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none";
+
+/** The glyph inside an `INLINE_LINK` — sized to the 14px body it rides on. */
+export const INLINE_LINK_GLYPH = 14;
+
+/**
+ * A standing footnote beneath a card — a fact about how the feature works that
+ * is always true, rather than a condition that arose.
+ *
+ * DELIBERATELY NOT A `TonalBanner`. A banner IS its state ("the tint is the
+ * message"), and this note has no off state: a permanently-tinted block is
+ * wallpaper, and wallpaper in a functional role spends a container the system
+ * reserves for states. So it sits on the neutral container step and borrows
+ * `ConditionScreen`'s own neutral disc pair, which keeps the two neutral blocks
+ * on one surface reading as the same voice.
+ *
+ * `text-sm`, not the 12.5px consequence step. This is a standalone paragraph,
+ * not a line riding under a row label — and DESIGN.md's Don'ts name 13px prose
+ * outside a dense metric row explicitly. `on-surface-variant` is what demotes
+ * it, not a smaller size.
+ */
+export const CARD_FOOTNOTE = {
+  ROOT: "flex items-start gap-3 rounded-tile bg-surface-container px-4 py-3.5",
+  DISC: "bg-surface-container-high text-on-surface-variant grid size-8 flex-none place-items-center rounded-pill",
+  GLYPH: 18,
+  BODY: "text-on-surface-variant min-w-0 text-sm leading-relaxed text-pretty",
+} as const;
 
 // -----------------------------------------------------------------------------
 // The settings row group (the Pixel Settings pattern)
@@ -457,16 +627,48 @@ export const ROW_GROUP = {
 /**
  * One setting row.
  *
- * HEIGHT is the skeleton's mirror. It is a `min-h` floor on ROOT rather than a
- * fixed height because the consequence line wraps to two lines on narrow
- * containers — a fixed height would clip it. The floor is derived, not guessed:
- * label 20 + gap 3 + consequence 18 = 41, plus `py-4` x2 = 73 -> 4.5625rem,
- * rounded to the 4.75rem the control's own 42px pill height dominates anyway.
+ * -----------------------------------------------------------------------------
+ * THE DELTA CHIP RIDES THE LABEL'S LINE. IT USED TO OWN ONE.
+ * -----------------------------------------------------------------------------
+ * The chip ("SIM 2 -> SIM 1") was previously rendered UNCONDITIONALLY on its own
+ * line between the label and the consequence, merely going `invisible` when the
+ * row was clean. That bought a dirty-state-independent height, and it cost 28px
+ * of permanent blank between a title and the sentence explaining it — which read
+ * as two unrelated blocks rather than one decision, and is what a reviewer saw
+ * on the shipped page.
+ *
+ * The chip now sits INSIDE `LABEL_ROW`, beside the label, on a row that is
+ * `items-center` and `min-h`-floored to the chip's own 1.375rem. An invisible
+ * chip is zero-width and shorter than the label's line box, so on every row this
+ * surface actually renders it adds NOTHING to the height in either state — the
+ * reservation is still there, it is just horizontal now.
+ *
+ * The residual, stated rather than hidden: the label is allowed to WRAP
+ * (`min-w-0`, never truncated — clipping a setting's name is worse than a
+ * reflow), so a text column narrow enough that `label + chip` will not fit on
+ * one line can still gain a line on promotion. That needs the longest shipped
+ * label (Italian, "Rilevamento sostituzione SIM a caldo", ~270px) beside the
+ * ~120px chip inside a text column under ~400px, which happens only on a phone.
+ * The old failure was a guaranteed 30px jump at 760px AND 1500px body width;
+ * this one is a possible 22px jump in one locale at one size, and the control
+ * is stacked BELOW the text there rather than `items-center` beside it, so it
+ * does not half-shift the segmented thumb the way the old one did.
+ *
+ * -----------------------------------------------------------------------------
+ * HEIGHT
+ * -----------------------------------------------------------------------------
+ * A `min-h` FLOOR on ROOT, not a fixed height — the consequence line wraps to
+ * two lines on narrow containers and a fixed height would clip it. Derived, not
+ * guessed: label row 22 + gap 4 + consequence 20 = 46, plus `py-4` x2 = 78 ->
+ * 5rem. The old floor was 6.125rem and included the chip's retired line; keeping
+ * it would have left the 28px the chip vacated sitting under every row instead
+ * of between the title and its sentence, which is the same blank moved rather
+ * than removed.
  */
 export const SETTING_ROW = {
-  ROOT: "flex min-h-[4.75rem] flex-col gap-3 rounded-field px-4 py-4 @2xl/card:flex-row @2xl/card:items-center @2xl/card:gap-4 @2xl/card:pl-[1.125rem]",
+  ROOT: "flex min-h-[5rem] flex-col gap-3 rounded-field px-4 py-4 @2xl/card:flex-row @2xl/card:items-center @2xl/card:gap-4 @2xl/card:pl-[1.125rem]",
   /** Mirrors ROOT's resolved floor, for the skeleton. */
-  HEIGHT: "h-[4.75rem]",
+  HEIGHT: "h-[5rem]",
   /**
    * The label + consequence column.
    *
@@ -477,8 +679,20 @@ export const SETTING_ROW = {
    * (an untranslated label, a long locale, four segments), so the layout looks
    * fine right up until it doesn't. `flex-1` makes the text claim its share
    * first; `min-w-0` still lets it wrap rather than overflow.
+   *
+   * `gap-1` (4px) is the whole vertical distance between a title and the
+   * sentence that explains it. They are one unit; the group's own hairlines are
+   * what separate one decision from the next.
    */
-  TEXT: "flex min-w-0 flex-1 flex-col gap-0.75",
+  TEXT: "flex min-w-0 flex-1 flex-col gap-1",
+  /**
+   * The label's own line, carrying the delta chip beside it.
+   *
+   * `min-h` matches `SETTING_ROW_DIRTY.DELTA_CHIP`'s height so the row cannot
+   * breathe when the chip appears, and `items-center` is what puts a 22px pill
+   * on the optical centre of a 22.5px line box rather than on its baseline.
+   */
+  LABEL_ROW: "flex min-h-[1.375rem] min-w-0 items-center gap-2",
   LABEL: "text-[0.9375rem] font-semibold",
   /**
    * The one-line consequence. This is the sentence that makes a settings row a
@@ -499,7 +713,7 @@ export const SETTING_ROW = {
  * both write cards held their skeleton FOREVER, shimmering with no explanation —
  * a skeleton is a promise that data is on its way, and this is where that promise
  * is broken. Same defect the hero fixed with its `unavailable` branches
- * (`HERO_RAIL.NOTICE`), arriving one card over.
+ * (now `STRIP.NOTICE_TITLE`), arriving one card over.
  *
  * IT IS DELIBERATELY QUIET, NOT A SECOND ALARM. The route shell already renders a
  * `destructive` `TonalBanner` with the retry action when `error` is set; the page
@@ -513,30 +727,38 @@ export const SETTING_ROW = {
  * nothing to draw.
  *
  * GEOMETRY IS COMPOSED, NEVER RESTATED. It wears `SETTING_ROW.ROOT`'s own box
- * (radius, padding, the 4.75rem floor) and `SETTING_ROW.CONSEQUENCE`'s ink and
+ * (radius, padding, the 5rem floor) and `SETTING_ROW.CONSEQUENCE`'s ink and
  * size, so the card holds its height and the notice cannot drift from the rows
  * it replaces.
  */
 export const CARD_NOTICE = `${SETTING_ROW.ROOT} ${SETTING_ROW.CONSEQUENCE}`;
 
 /**
- * A row promoted because it holds an unsaved edit.
+ * Tone for a row holding an unsaved edit. The row itself no longer promotes —
+ * `DELTA_CHIP` is the sole indicator now, so this is a single-key object
+ * rather than a retired name; see the shapes.ts header's Tone Rule note.
  *
- * The ink flips to `on-primary-container` for the whole row, so the consequence
- * line must NOT keep `text-on-surface-variant` — that is a cross-pair, one
- * role's ink on another role's container, and it is the most common way this
- * pattern goes wrong. Consumers apply CONSEQUENCE_ON_FILL instead.
+ * `CONSEQUENCE_ON_FILL` also survives as a general ink-on-`primary-container`
+ * utility for a PERMANENT accent block unrelated to row dirtiness — see
+ * `imei-tools-card.tsx`'s check-digit cell. Do not read its name as implying a
+ * dirty row; it predates that block and the block kept it.
  */
 export const SETTING_ROW_DIRTY = {
-  ROOT: "bg-primary-container text-on-primary-container",
-  /** The consequence line when the row is promoted. */
-  CONSEQUENCE_ON_FILL: "text-[0.78125rem] leading-relaxed text-pretty opacity-90",
+  /** Ink for text sitting on a permanent `bg-primary-container` block. */
+  CONSEQUENCE_ON_FILL:
+    "text-[0.78125rem] leading-relaxed text-pretty opacity-90",
   /**
    * The "before -> after" chip. Machine-voice: these are literal setting values,
    * so `font-mono` is correct here and nowhere else in the row.
+   *
+   * IT RIDES THE LABEL'S LINE inside `SETTING_ROW.LABEL_ROW`, and is rendered on
+   * a clean row too (with `invisible`, which keeps the element and drops its
+   * width to zero). `flex-none` so it is never the thing that shrinks — a
+   * half-width "SIM 2 -> S…" states the wrong pending value. See `SETTING_ROW`
+   * for why the line it used to own is gone and what the residual is.
    */
   DELTA_CHIP:
-    "inline-flex h-[1.375rem] flex-none items-center rounded-pill bg-primary px-2.5 font-mono text-[0.6875rem] font-semibold text-primary-foreground",
+    "inline-flex h-[1.375rem] w-fit flex-none items-center rounded-pill bg-primary px-2.5 font-mono text-[0.6875rem] font-semibold text-primary-foreground",
 } as const;
 
 // -----------------------------------------------------------------------------
@@ -551,48 +773,67 @@ export const SETTING_ROW_DIRTY = {
  * `layoutId` (see `signal-history.tsx:302-315`). Two rules ride on that:
  *   1. Nothing animates `width` — motion tweens the box between positions.
  *      Segments have unequal label widths, so a cross-fade would visibly jump.
- *   2. The `layoutId` MUST be scoped per instance. This surface renders THREE
- *      segmented controls at once; sharing an id makes their thumbs fly across
- *      each other on first paint.
+ *   2. The `layoutId` MUST be scoped per instance. This surface renders SIX
+ *      segmented controls at once — three rows in each of two write cards, not
+ *      three in one card as this comment used to say; sharing an id makes their
+ *      thumbs fly across each other on first paint.
+ *   3. EVERY SEGMENT RESERVES THE CHECK GLYPH. See `GLYPH_RESERVED`. The thumb
+ *      is `absolute inset-0`, so its box IS the segment's box: a glyph that
+ *      renders only on the active segment changes both ends of the animation
+ *      Framer is computing, mid-flight.
  *
  * SEGMENT neutralises the ToggleGroupItem's own `data-[state=on]` fill so the
  * travelling span is the only thing that paints.
  */
 export const SEGMENTED = {
   TRACK: "flex rounded-pill bg-surface-container-high p-1",
-  /**
-   * The same track on a PROMOTED row, which drops its fill entirely.
-   *
-   * An earlier draft wrote `bg-primary/25` here. That is an alpha wash — the
-   * exact thing this file's Tone Rule forbids — and it was reached for because
-   * the brand ramp has no `--tone-primary-*` steps to step up into. The absence
-   * is the canon telling you the answer is different, not that you should
-   * invent one with opacity: on a promoted row the ROW is already the tonal
-   * container, so a second fill behind the segments is redundant. Only the
-   * travelling thumb paints, and it reads correctly against the container.
-   */
-  TRACK_ON_FILL: "flex rounded-pill p-1",
   SEGMENT:
     "relative h-[2.125rem] gap-1.5 rounded-pill px-4 text-[0.84375rem] font-medium text-on-surface-variant hover:bg-transparent hover:text-on-surface data-[state=on]:bg-transparent data-[state=on]:font-semibold data-[state=on]:text-primary-foreground",
-  /**
-   * The same segment on a PROMOTED row.
-   *
-   * The inactive ink MUST change with the container. `SEGMENT` carries
-   * `text-on-surface-variant`, which is the ink for a NEUTRAL surface; leaving
-   * it on a `primary-container` row puts one role's ink on another role's
-   * container — the exact cross-pair this file's Tone Rule names, and one this
-   * file shipped anyway until it was seen on screen. Inactive segments take
-   * `on-primary-container`; the active one keeps `primary-foreground`, since
-   * its own `bg-primary` thumb is what it sits on.
-   */
-  SEGMENT_ON_FILL:
-    "relative h-[2.125rem] gap-1.5 rounded-pill px-4 text-[0.84375rem] font-medium text-on-primary-container hover:bg-transparent hover:text-on-primary-container data-[state=on]:bg-transparent data-[state=on]:font-semibold data-[state=on]:text-primary-foreground",
   /** The travelling fill. */
   THUMB: "absolute inset-0 rounded-pill bg-primary",
   /** Label sits above the thumb. */
   LABEL: "relative",
-  /** Glyph size inside an active segment. */
+  /** Glyph size inside a segment. */
   GLYPH: 16,
+  /**
+   * The check glyph on the ACTIVE segment.
+   *
+   * The check reinforces selection non-chromatically, so the choice survives
+   * grayscale and sunlight washout — the fill alone is never allowed to be the
+   * only carrier.
+   */
+  GLYPH_ACTIVE:
+    "relative opacity-100 scale-100 transition-[opacity,transform] duration-[var(--duration-quick)] ease-[var(--ease-quick)]",
+  /**
+   * The same glyph on an INACTIVE segment: still in the box, invisible to the
+   * eye. THIS IS THE PRIMARY FIX for the segmented control's travelling fill,
+   * and it is a layout fix, not a decoration.
+   *
+   * MEASURED. The glyph plus `gap-1.5` is worth 21.7px (15.7px advance + 6px
+   * gap) and used to render only on the active segment. The thumb is
+   * `absolute inset-0`, so its box IS the segment's box — changing a segment's
+   * width therefore changes BOTH ends of the animation Framer is computing.
+   * "Preferred Network Type" at 1914px, before -> after one click:
+   *
+   *   before (Automatic active)  118.3 | 86 | 79.6 | 82.3
+   *   after  (5G only active)     96.6 | 86 | 101.4 | 82.3
+   *
+   * Consequences, all visible: the fill STRETCHED while it travelled (first
+   * frame `translate3d(-266.99px, 0, 0) scale(1.13606, 1)`, and on `rounded-pill`
+   * a 1.14 scaleX makes the caps read as ellipses in flight); the label you
+   * clicked slid 21.8px out from under your cursor, un-animated; and the whole
+   * track reshuffled as a hard cut while the one animated thing glided for
+   * 600ms. Reserved, the widths go to 118.3 | 108 | 122.6 | 104.3 ->
+   * 118.6 | 108 | 122.6 | 104.2.
+   *
+   * `opacity` + `scale` ONLY — never `display`, `hidden` or a conditional
+   * render, all three of which give the box back. The residual 0.3px is
+   * `data-[state=on]:font-semibold` and is left alone: widths are stable to the
+   * eye, not to the pixel, and chasing `scaleX === 1` would cost the weight
+   * change that makes the active label read as active.
+   */
+  GLYPH_RESERVED:
+    "relative opacity-0 scale-[0.6] transition-[opacity,transform] duration-[var(--duration-quick)] ease-[var(--ease-quick)]",
 } as const;
 
 /**
@@ -622,6 +863,50 @@ export const SEGMENTED = {
  * The ROW keeps its own `@2xl/card` step: between the two breakpoints a row is
  * stacked (text above control) and the pill group renders full-width under it,
  * which is the same arrangement a phone already shows.
+ *
+ * -----------------------------------------------------------------------------
+ * WHY `5xl` EXISTS, AND WHY IT IS ONE ROW'S STEP RATHER THAN THE FAMILY'S
+ * -----------------------------------------------------------------------------
+ * A step ABOVE the row's own flip is not a contradiction — it is the only place
+ * a fallback can live. `SETTING_ROW.ROOT` flips stacked -> side-by-side at
+ * `@2xl/card` (672px), and it is exactly THERE that the text column collapses
+ * against a wide track. Below 672 the control is full-width under the text and
+ * nothing competes; above 672 the two share one line and the widest control on
+ * the surface takes the text column's share.
+ *
+ * Reserving the check glyph on every segment (see `GLYPH_RESERVED`) widened the
+ * four-segment track from ~386px to 452px, which turned a pre-existing squeeze
+ * into a visible one. Measured on the real component (`SettingRow` +
+ * `SegmentedField`, English, card container width swept directly), the
+ * `mode_pref` row — the only four-way row, and the only one that can render
+ * FIVE segments when the modem reports a value we do not offer:
+ *
+ *   card px  |  4 segments (`lg`)      |  5 segments (`lg`)
+ *   ---------|-------------------------|-----------------------
+ *   672      |  102px text, 3 lines    |    0px text, 6 lines, 249px row
+ *   700      |  130px text, 2 lines    |    0px text, 6 lines, 249px row
+ *   740      |  170px text, 2 lines    |    0px text, 6 lines, 249px row
+ *   800      |  230px text, 2 lines    |   57px text, 5 lines, 229px row
+ *   860      |  290px text, 1 line     |  117px text, 3 lines, 166px row
+ *   896      |  326px text, 1 line     |  153px text, 2 lines, 146px row
+ *   1024     |  454px text, 1 line     |  281px text, 1 line,  103px row
+ *
+ * That is `SETTING_ROW.TEXT`'s own documented failure arriving for real: a
+ * 249px row of one-word lines, at widths a desktop review actually looks at.
+ *
+ * WHY 64rem AND NOT 56rem. `@4xl` (896px) was measured too and does clear the
+ * four-segment case, but the five-segment case only crosses into two lines at
+ * 870px — 26px of margin — and returns the pill group into a 146px row, 43px
+ * above the row's own 102.8px floor. At `@5xl` (1024px) BOTH the four- and
+ * five-segment cases render one consequence line in a 102.8px row at every card
+ * width from 672 up: the control change and the row settling coincide, which is
+ * what makes the switch read as a layout decision rather than a symptom.
+ *
+ * THE OTHER FIVE ROWS KEEP `lg`. Two- and three-segment tracks are 309px at
+ * most and are not the offender — `nr5g_mode` measured identically (244.7px
+ * text / 3 lines / 143.4px row at 672) before and after this change. Demoting
+ * them to a Select at desktop widths would spend the pill group to fix a row
+ * that does not have the problem.
  */
 const SEGMENTED_BREAKPOINTS = {
   lg: {
@@ -640,15 +925,31 @@ const SEGMENTED_BREAKPOINTS = {
     SELECT: "flex w-full @2xl/card:hidden",
     WRAP: "flex w-full @2xl/card:w-auto",
   },
+  "5xl": {
+    GROUP: "hidden @5xl/card:flex",
+    SELECT: "flex w-full @5xl/card:hidden",
+    WRAP: "flex w-full @5xl/card:w-auto",
+  },
 } as const;
 
 /** Literal strings only — see the header comment. Never interpolate. */
-export const segmentedBreakpoint = (step: "lg" | "xl" | "2xl" = "2xl") =>
-  SEGMENTED_BREAKPOINTS[step];
+export const segmentedBreakpoint = (
+  step: "lg" | "xl" | "2xl" | "5xl" = "2xl",
+) => SEGMENTED_BREAKPOINTS[step];
+
+/**
+ * The 42px box every control on this surface wears, and the type it speaks in.
+ *
+ * MODULE-PRIVATE, and split out for one reason: `CHECK_GROUP` below needs the
+ * same box WITHOUT the input's own padding, and the same type INSIDE a
+ * transparent child. Restating either would put a second copy of the surface's
+ * control height in the one file whose whole job is that there is only one.
+ */
+const CONTROL_BOX = "h-[2.625rem] rounded-pill border-0 bg-surface-container-high";
+const CONTROL_TEXT = "text-[0.84375rem] font-medium";
 
 /** The dropdown trigger for rows that stay a Select at every width. */
-export const SELECT_TRIGGER =
-  "h-[2.625rem] w-full rounded-pill border-0 bg-surface-container-high px-4 text-[0.84375rem] font-medium @2xl/card:w-auto";
+export const SELECT_TRIGGER = `${CONTROL_BOX} ${CONTROL_TEXT} w-full px-4 @2xl/card:w-auto`;
 
 /**
  * A free-text field on this surface, as a RAW `<input>` rather than
@@ -675,49 +976,148 @@ export const SELECT_TRIGGER =
  * deliberately drops back to the interface voice — a placeholder is
  * human-authored instruction, not machine output, and mono'd prompt text reads
  * as though the field were already filled.
+ *
+ * MODULE-PRIVATE ON PURPOSE. Nothing outside this file ever imported it — the
+ * real API is the two `FIELD_SHELL` composites below, which is what
+ * `imei-settings-card.tsx` reaches for. An exported half-a-field invites a
+ * fourth local variant of exactly the drift documented above.
  */
-export const FIELD_INPUT = [
+/**
+ * The VOICE half: mono, tracked, tabular, with the placeholder dropping back to
+ * the interface voice. Shared with `CHECK_GROUP.INPUT`, where the ring half
+ * below moves to the group shell instead of living on the input.
+ */
+const FIELD_VOICE = [
   "font-mono tracking-[0.06em] tabular-nums",
   "placeholder:font-sans placeholder:tracking-normal placeholder:text-on-surface-variant",
-  "focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
+].join(" ");
+
+/** The STATE half: focus ring, invalid ring, disabled. Rides whatever is the box. */
+const FIELD_STATE = [
+  "focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
   "aria-invalid:ring-[3px] aria-invalid:ring-destructive/40",
   "disabled:cursor-not-allowed disabled:opacity-50",
 ].join(" ");
 
-/**
- * The same trigger on a PROMOTED row.
- *
- * Same cross-pair trap as `SEGMENTED.SEGMENT_ON_FILL`, one level down and
- * easier to miss: it only appears BELOW the segmented breakpoint, so on a
- * desktop review the Select is never on screen at the moment a row is dirty.
- * A neutral `surface-container-high` fill on a `primary-container` row reads as
- * a dead grey hole punched in the brand fill. `bg-primary` with its own
- * `primary-foreground` ink is the pair that belongs there.
- */
-export const SELECT_TRIGGER_ON_FILL =
-  "h-[2.625rem] w-full rounded-pill border-0 bg-primary px-4 text-[0.84375rem] font-medium text-primary-foreground @2xl/card:w-auto";
+const FIELD_INPUT = `${FIELD_VOICE} ${FIELD_STATE}`;
 
-/**
- * A complete text field, at rest and promoted. Compose with a width and nothing
- * else.
- *
- * THESE EXIST AS A PAIR BECAUSE THE FIELD IS WHAT MAKES THE ROW DIRTY. Every
- * other control on this surface got an `_ON_FILL` variant the moment it could
- * land on a promoted row, and a free-text field is the one control where that
- * is guaranteed rather than possible: the user typing in it is precisely what
- * flips the row to `primary-container`. A field that keeps the neutral
- * `surface-container-high` fill there is a dead grey hole punched in the brand
- * fill — the same failure `SELECT_TRIGGER_ON_FILL` above documents, except that
- * one only surfaces below the segmented breakpoint while this one is visible at
- * every width, on the primary interaction of the card.
- *
- * The placeholder ink has to move too, and it must be appended LAST: it lands
- * in the same tailwind-merge group as `FIELD_INPUT`'s own placeholder colour,
- * so order decides the winner.
- */
+/** A complete text field. Compose with a width and nothing else. */
 export const FIELD_SHELL = `${SELECT_TRIGGER} ${FIELD_INPUT}`;
 
-export const FIELD_SHELL_ON_FILL = `${SELECT_TRIGGER_ON_FILL} ${FIELD_INPUT} placeholder:text-primary-foreground/70`;
+/**
+ * The field's own cluster: the input, and whatever rides beside it.
+ *
+ * Full width while the row is stacked, natural width once the row goes side by
+ * side — the same `@2xl/card` step `SETTING_ROW` itself turns on, so the field
+ * and the row it sits in change shape together rather than at two widths.
+ */
+export const FIELD_CLUSTER =
+  "flex w-full items-center gap-2.5 @2xl/card:w-auto";
+
+/**
+ * The "12/15" digit counter beside a fixed-length identifier field.
+ *
+ * SANS AND `tabular-nums`, NEVER `font-mono` — and the field beside it IS mono,
+ * which is exactly why this is worth a named export rather than a class string
+ * typed next to each input. The value in the field is a machine string the
+ * device will emit verbatim; the count is the interface speaking about it while
+ * the user types, and DESIGN.md's Machine-Voice Rule splits those two voices.
+ * `tabular-nums` is what stops the counter reflowing as it climbs past 9.
+ *
+ * It was typed byte-identically beside both IMEI fields, which is the count
+ * that makes a shape a shape.
+ */
+export const FIELD_COUNTER =
+  "text-on-surface-variant flex-none text-[0.78125rem] tabular-nums";
+
+/**
+ * An identifier field whose actions ride INSIDE it — one row, one box.
+ *
+ * WHERE IT IS USED. The workbench's "Check a number" field. Copy and "Look up
+ * online" used to sit on a second row underneath it, and that row never earned
+ * its own line: neither action is a decision, both operate on the value in the
+ * field above them, and stacked they read as a toolbar for the whole section
+ * rather than as two things you can do to this number. Folded in, the field
+ * states its own affordances and the section loses a row it was only spending on
+ * furniture. Actions bracket the value: the outbound link leads, the number is
+ * the content, copy closes.
+ *
+ * WHY NOT `components/ui/input-group.tsx`. The stock primitive is a hairline
+ * `border` over `rounded-md` with `dark:bg-input/30` and `text-muted-foreground`
+ * — a stroke where this system uses a fill (The No-Hairline-On-Fill Rule), the
+ * legacy `--radius` chain where this system uses the role scale, and precisely
+ * the `dark:`-scoped fill that `FIELD_VOICE`'s own note documents as surviving
+ * an unprefixed override through tailwind-merge. Overriding it back would mean
+ * restating every one of this file's numbers as a `dark:` variant. The group is
+ * therefore composed from `CONTROL_BOX` like every other control here, so it is
+ * the SAME 42px pill as the fields above it rather than a lookalike.
+ *
+ * THE RING MOVED TO THE SHELL. The input inside is transparent and unringed —
+ * a ring drawn around a child that fills only the middle of the box would trace
+ * a rectangle through the middle of a pill. `has-[input:focus-visible]` puts the
+ * ring on the group, so the whole control lights up as one object, which is what
+ * it is to the user.
+ *
+ * THE LEAD LABEL IS CONTAINER-GATED, NOT DROPPED. Below `@md/card` — which is
+ * every phone, and also the workbench's own column at the `@4xl/main` step where
+ * the split first turns on — a 15-digit mono identifier plus a labelled pill
+ * plus a copy target will not fit on one line, and the field would scroll its
+ * own value out of sight. The label hides there and the glyph carries the action
+ * (the `aria-label` is unconditional, so the accessible name never changes).
+ * `@md/card` is the step this card already uses for `BREAKDOWN.GRID` — see
+ * DESIGN.md > The Grid-Step-Costing Rule: costed against the COLUMN, not the page.
+ */
+export const CHECK_GROUP = {
+  ROOT: [
+    CONTROL_BOX,
+    "flex w-full items-center gap-1 pr-3 pl-1.5",
+    "has-[input:focus-visible]:ring-[3px] has-[input:focus-visible]:ring-ring has-[input:focus-visible]:ring-offset-2 has-[input:focus-visible]:ring-offset-background",
+  ].join(" "),
+  /** The value itself: transparent, unringed, and the only thing that grows. */
+  INPUT: [
+    CONTROL_TEXT,
+    FIELD_VOICE,
+    "min-w-0 flex-1 bg-transparent px-2.5 outline-none",
+    "disabled:cursor-not-allowed disabled:opacity-50",
+  ].join(" "),
+  /**
+   * The leading action. 30px inside a 42px shell, so it insets by the group's
+   * own 6px rather than filling it edge to edge.
+   *
+   * BRAND INK, AND `-on-surface` IS THE SLOT. `--primary` is the only hue in
+   * this system that acts and this is the one control on the card that leaves
+   * the app, so the ink is brand by construction — but `--primary` is the
+   * STRONG FILL, and tinted text sitting directly on a container is the
+   * `--{role}-on-surface` slot. Measured on the shipped tokens: `text-primary`
+   * on this group's `surface-container-high` fill is 4.18:1 in dark mode, under
+   * the 4.5:1 floor; `text-primary-on-surface` clears it. Picking the wrong one
+   * of the five is what DESIGN.md calls the most common contrast failure in this
+   * system, and it bites in dark mode where `--primary` is the lighter value and
+   * therefore looks fine. Same reasoning, same fix as `INLINE_ERROR`.
+   *
+   * The `hover:` restatement is deliberate — `ghost` ships
+   * `hover:text-accent-foreground`, so without it the ink would change colour
+   * under the cursor for no reason. Never hand-build a tonal hover on `ghost`;
+   * see the note in `components/ui/button.tsx`.
+   */
+  LEAD: [
+    "relative h-[1.875rem] flex-none gap-1.5 rounded-pill px-3",
+    "text-[0.78125rem] font-semibold",
+    "text-primary-on-surface hover:text-primary-on-surface",
+    // The 44px coarse-pointer target, bought by an inset overlay rather than by
+    // a taller pill — 30px is what fits inside a 42px shell, and `ICON_ACTION`'s
+    // `size-11` bump would burst the group it lives in. Same technique as
+    // `READOUT_ICON_ACTION`, with one difference that matters: the overlay grows
+    // DOWN and UP into the shell's own dead space and LEFT into its 6px padding,
+    // never right. A symmetric inset would overhang the input beside it, and the
+    // user would tab-free click "look this up" while aiming at the field.
+    "before:absolute before:-inset-y-[7px] before:-left-1.5 before:right-0 before:content-['']",
+  ].join(" "),
+  /** The glyph inside `LEAD`, sized to the 12.5px label beside it. */
+  LEAD_GLYPH: 15,
+  /** Hides the lead's label where the row cannot afford it. */
+  LEAD_LABEL: "hidden @md/card:inline",
+} as const;
 
 /**
  * Inline validation copy on a plain card.
@@ -737,6 +1137,79 @@ export const INLINE_ERROR = "text-destructive-on-surface";
 
 /** A hairline rule between sections INSIDE a card, not between rows. */
 export const SECTION_DIVIDER = "h-px bg-surface-container-high";
+
+/**
+ * The heading of a section INSIDE a card, below the `CardTitle` and above the
+ * controls it names.
+ *
+ * It reads at `SETTING_ROW.LABEL`'s size on purpose — a section and a row label
+ * are the same rank of thing to the eye — but it is deliberately its own export
+ * rather than a reuse of that constant. A section heading is not a row label,
+ * and borrowing the name is how one of them ends up retuned by a change aimed at
+ * the other.
+ */
+export const SECTION_LABEL = "text-[0.9375rem] font-semibold";
+
+/**
+ * Progressive disclosure: the 0fr -> 1fr grid row.
+ *
+ * A control that reveals the row it creates should show that row ARRIVING, not
+ * blink it into existence — and a height cannot be animated with the
+ * transform-and-opacity vocabulary DESIGN.md restricts motion to. The grid-row
+ * collapse is the sanctioned way out, already used by `RATE_CEILING.PANEL`: the
+ * parent animates `grid-template-rows` between `0fr` and `1fr` and the child
+ * clips, so nothing per-frame touches layout inside the revealed content.
+ *
+ * `emphasized` is correct here rather than `standard` — this is a container
+ * changing size, which is the step's own definition.
+ *
+ * REDUCED MOTION IS CARRIED BY THE SHAPE, NOT BY THE CALL SITE. A CSS grid
+ * transition is neither transform nor opacity, so `<MotionConfig
+ * reducedMotion="user">` cannot see it — the same hole `RATE_CEILING` above
+ * documents, which it plugs by making every consumer call `useReducedMotion()`
+ * and drop `PANEL_MOTION` itself. That works and is one `cn()` away from being
+ * forgotten. The project's own `motion-safe` is a `@custom-variant` redefined in
+ * globals.css so it honours the sidebar's Animations preference in BOTH
+ * directions, not just the bare media query, which makes it the stronger guard
+ * AND the one a consumer cannot omit. Anything new here takes this form.
+ *
+ * The row VALUE belongs at the call site: it is state, not geometry.
+ */
+export const REVEAL = {
+  ROOT: "grid motion-safe:transition-[grid-template-rows] motion-safe:duration-[var(--duration-emphasized)] motion-safe:ease-[var(--ease-emphasized)]",
+  OPEN: "grid-rows-[1fr]",
+  CLOSED: "grid-rows-[0fr]",
+  /** `min-h-0` is what lets the 0fr row actually collapse. */
+  CLIP: "min-h-0 overflow-hidden",
+} as const;
+
+/**
+ * The three cells an IMEI decomposes into: type allocation code, serial, check
+ * digit.
+ *
+ * THE BREAKPOINT IS COSTED AGAINST THE COLUMN, NOT THE PAGE. This grid lives in
+ * the workbench card, which is the narrow half of `WORKBENCH_SPLIT` — roughly
+ * 40% of the content column. At `@2xl/card` (672px) the 3-up step therefore
+ * never fired at any realistic window width, and the breakdown shipped as three
+ * stacked full-width cells that looked deliberate and were not. `@md/card`
+ * (448px) is the step the column can actually reach; the widest cell holds an
+ * 8-digit TAC in 13px mono, which clears it with room. See DESIGN.md >
+ * The Grid-Step-Costing Rule.
+ */
+export const BREAKDOWN = {
+  GRID: "grid grid-cols-1 gap-1.5 @md/card:grid-cols-3",
+  CELL: "flex flex-col gap-0.75 rounded-field px-4 py-3",
+  /** The two derived-from-nobody cells: neutral ground. */
+  CELL_NEUTRAL: "bg-surface-container",
+  /**
+   * The check digit — the only part of an IMEI the machine derives rather than
+   * the manufacturer assigns, and the part the validity chip above is judging.
+   * `primary-container` is emphasis by container step (DESIGN.md >
+   * The Highlight-by-Container Rule), never a health signal: validity is the
+   * chip's job and the chip carries a glyph.
+   */
+  CELL_ACCENT: "bg-primary-container text-on-primary-container",
+} as const;
 
 // -----------------------------------------------------------------------------
 // The pending-changes save bar
@@ -825,8 +1298,7 @@ export const READOUT_ROW = {
   /** Multiple facts in one value cell, spaced rather than punctuated. */
   VALUE_GROUP: "ml-auto flex min-w-0 items-center gap-2.5",
   /** Machine strings: identifiers, MCCMNC, slot names. */
-  VALUE_MONO:
-    "font-mono text-[0.8125rem] font-semibold tabular-nums truncate",
+  VALUE_MONO: "font-mono text-[0.8125rem] font-semibold tabular-nums truncate",
   /**
    * Human-authored labels never take mono (The Machine-Voice Rule) — but this
    * slot also carries CHANGING FIGURES that are not identifiers: a slot number
@@ -873,26 +1345,38 @@ export const READOUT_ROW = {
  */
 export const REORDER_ROW = {
   ROOT: "flex items-center gap-3.5 rounded-field px-3 py-3.5",
-  /** Mirrors ROOT's resolved height for the skeleton. */
-  HEIGHT: "h-[4.25rem]",
   /**
-   * The grab handle.
+   * The grab handle's BOX, split out from its interaction so the skeleton can
+   * share it rather than restate it.
    *
    * `size-8` is the visual size; the coarse-pointer bump to 44px is NOT
    * optional and lives here rather than at the call site. This is the one
    * control on the surface whose whole job is being dragged, and 32px is under
    * the touch floor — on the tablet where someone is actually reordering RATs
-   * in a van, a 32px target next to a scrolling list is a miss. `touch-none` is
-   * set by the consumer alongside dnd-kit's activator ref, not here, because it
-   * is a gesture-routing concern rather than a shape one.
+   * in a van, a 32px target next to a scrolling list is a miss.
+   */
+  HANDLE_BOX:
+    "flex size-8 flex-none items-center justify-center rounded-pill [@media(pointer:coarse)]:size-11",
+  /**
+   * The handle itself: the box above plus everything that makes it a control.
+   * `touch-none` is set by the consumer alongside dnd-kit's activator ref, not
+   * here, because it is a gesture-routing concern rather than a shape one.
    */
   HANDLE:
-    "flex size-8 flex-none cursor-grab items-center justify-center rounded-pill text-on-surface-variant hover:bg-surface-container-high active:cursor-grabbing focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none [@media(pointer:coarse)]:size-11",
+    "flex size-8 flex-none cursor-grab items-center justify-center rounded-pill text-on-surface-variant hover:bg-surface-container-high active:cursor-grabbing focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none [@media(pointer:coarse)]:size-11",
   HANDLE_GLYPH: 20,
   TEXT: "flex min-w-0 flex-1 flex-col gap-0.75",
   LABEL: "text-[0.9375rem] font-semibold",
+  /**
+   * The label's resolved LINE BOX — 15px at the inherited 1.5 leading. Sizes
+   * for a skeleton are the line box, never the font size, or the sliver reflows
+   * the moment real text lands.
+   */
+  LABEL_LINE: "h-[1.40625rem]",
   CONSEQUENCE:
     "text-on-surface-variant text-[0.78125rem] leading-relaxed text-pretty",
+  /** The consequence's resolved line box — 12.5px x `leading-relaxed` (1.625). */
+  CONSEQUENCE_LINE: "h-[1.26953rem]",
   /** The trailing chip cluster ("Serving now"). */
   META: "flex flex-none items-center gap-2",
   /**
@@ -914,6 +1398,46 @@ export const REORDER_ROW = {
    */
   DRAGGING:
     "relative z-10 bg-surface opacity-80 shadow-[0_12px_28px_-8px_oklch(0.19_0.032_258/0.35)]",
+} as const;
+
+/**
+ * The skeleton for one `REORDER_ROW`. It has NO geometry of its own: the
+ * wrapper is `REORDER_ROW.ROOT`, the handle box is `REORDER_ROW.HANDLE_BOX`,
+ * the text column is `REORDER_ROW.TEXT`, and the two slivers take the label's
+ * and consequence's own line boxes. Height therefore RESOLVES to the real row's
+ * (73.81px measured, at both) instead of being asserted.
+ *
+ * It replaces one full-width bar under a pinned `h-[4.25rem]`, which broke the
+ * mirror three ways.
+ *
+ * 1. THE PIN WAS SIMPLY WRONG. `4.25rem` is 68px; the row measures **73.81px**
+ *    with a one-line consequence and **94.13px** with two. So the constant that
+ *    existed to guarantee the mirror was itself the mismatch — and because it
+ *    was a number rather than a derivation, nothing could catch it. It had
+ *    exactly one consumer, the skeleton it was lying to, so it is deleted
+ *    rather than corrected: a second magic number is a second thing to get
+ *    wrong. (A skeleton still cannot know how far the copy wraps; matching the
+ *    one-line row is the honest floor, and it is now exact.)
+ *
+ * 2. THE RADIUS DID NOT RESOLVE. The call site passed `rounded-field` to a
+ *    `Skeleton` whose own base string ends `rounded-md`. `cn()` is bare
+ *    tailwind-merge and it cannot dedupe THIS REPO'S CUSTOM radius names, so
+ *    both utilities survived into the class list and the winner was CSS
+ *    declaration order — alphabetical, so `rounded-md` (10.4px) beat
+ *    `rounded-field` (20px) on every render. The skeleton drew corners half the
+ *    size of the row it stood in for, and nothing errored. `rounded-pill` wins
+ *    that same coin-flip, which is why the slivers below need no escape hatch
+ *    and the bar did.
+ *
+ * 3. A BAR IS NOT A ROW. The loaded row is a handle, a rank disc and a two-line
+ *    text column; one solid block resolving into that is a pop, not a
+ *    handoff.
+ */
+export const REORDER_ROW_SKELETON = {
+  HANDLE: "size-5 rounded-pill",
+  RANK: "size-[1.875rem] flex-none rounded-pill",
+  LABEL: "w-[7.5rem] max-w-full rounded-pill",
+  CONSEQUENCE: "w-[13rem] max-w-full rounded-pill",
 } as const;
 
 /**
@@ -976,7 +1500,7 @@ export const RAT_RANK_TONE: Record<string, string> = {
  */
 export const CHOICE_ROW = {
   SCROLL_CAP: "max-h-[17rem] overflow-y-auto",
-  ROOT: "flex w-full items-center gap-3 rounded-field px-4 py-3 text-left transition-[background-color,color] duration-[--duration-standard] ease-[--ease-standard] focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
+  ROOT: "flex w-full items-center gap-3 rounded-field px-4 py-3 text-left transition-[background-color,color] duration-[var(--duration-standard)] ease-[var(--ease-standard)] focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
   REST: "hover:bg-surface-container-high",
   SELECTED: "bg-primary-container text-on-primary-container",
   /** Mirrors ROOT's resolved height for the skeleton. */
@@ -1006,30 +1530,20 @@ export const CHOICE_ROW = {
 // -----------------------------------------------------------------------------
 
 /**
- * The LTE rates block.
+ * The INSIDE of one radio's rate block — the bearer list and nothing else. The
+ * block's own container is `RATE_CEILING.BLOCK`.
  *
- * VIOLET IS THE LANGUAGE. The comp put an `lte_mobiledata_badge` glyph and an
- * "LTE" label chip on this block; both are gone by product decision, because the
- * card title already says LTE and the container fill already IS the LTE
- * identity. Keeping all three would be saying the same thing three times.
- *
- * The cost of that decision is real and is paid below: with the chip gone, the
- * violet fill is doing identity work alone, and `lte-container` must never be
- * read as "healthy" (The Identity-Chip Rule). It is safe here ONLY because this
- * block reports no quality — it reports two numbers and an APN. If a health
- * state is ever added to this block it needs a non-chromatic channel.
+ * THE IDENTITY CONTAINER FILLS ARE GONE, and with them `LTE` / `NR` / `TITLE` /
+ * `HEIGHT` / `COL_MIN` / `COL_HEIGHT`. They belonged to the hero's three-column
+ * body, where each rate column was a full-height tinted block and the fill was
+ * the only thing saying which radio it was about. Inside a disclosure the block
+ * is neutral (`bg-surface` on the panel's `surface-container`) and identity is
+ * carried by an outline `Tag` in the block header — the Two-Form Rule's answer,
+ * and a better one: the previous arrangement had `lte-container` doing identity
+ * work with no second channel, which was safe only for as long as the block
+ * reported no quality at all.
  */
 export const AMBR_BLOCK = {
-  LTE: "flex flex-col gap-3 rounded-tile bg-lte-container px-4.5 py-4 text-on-lte-container",
-  NR: "flex flex-col gap-3 rounded-tile bg-primary-container px-4.5 py-4 text-on-primary-container",
-  /**
-   * The block heading, at the Title step (18px).
-   *
-   * It shipped at `text-sm` — 14px, identical to the `CardDescription` above it
-   * — so the three column headings had no more weight than the card's own
-   * subtitle. `HERO_PARAMS.HEADING` is its peer and carries the same class.
-   */
-  TITLE: "text-lg font-semibold",
   /** The bearer/DNN name. Machine string. */
   APN: "font-mono text-[0.84375rem] font-medium truncate",
   /**
@@ -1050,27 +1564,19 @@ export const AMBR_BLOCK = {
    */
   ROW: "flex flex-col gap-2",
   RATES: "flex flex-wrap gap-2",
-  HEIGHT: "h-[6.5rem]",
   /**
    * Heading + governing marker on one baseline. `items-start` so a wrapped
    * heading does not drag the chip down with it.
    */
-  HEADER: "flex items-start justify-between gap-2",
-  /** The NSA gloss, and any other one-line explanation on the fill. */
+  HEADER: "flex items-center gap-2",
+  /**
+   * The NSA gloss, and any other one-line explanation inside a block. It sets no
+   * ink of its own and dims whatever the block already carries, which is what
+   * keeps it correct on a neutral block and on a filled one alike.
+   */
   NOTE: "text-[0.71875rem] leading-relaxed text-pretty opacity-90",
   /** The entry list. `gap-2.5` because a multi-PDN device shows two rows. */
   LIST: "flex flex-col gap-2.5",
-  /**
-   * The three-column floor. Derived: heading 26 + gap 12 + one stacked entry
-   * (name 20 + gap 8 + chips 30 = 58) + py-4 either side 32 = 128 -> 8rem;
-   * rounded up to 9rem so a two-entry block and a one-entry block sit closer
-   * in height and an EMPTY_BLOCK column is not visibly shorter than its
-   * populated neighbour. `HEIGHT` (6.5rem) stays the SKELETON mirror for the
-   * stacked case; this is the floor for the gridded case.
-   */
-  COL_MIN: "min-h-[9rem]",
-  /** Mirrors COL_MIN's height AND the block's radius, for the skeleton. */
-  COL_HEIGHT: "h-[9rem] rounded-tile",
 } as const;
 
 /**
@@ -1081,9 +1587,9 @@ export const AMBR_BLOCK = {
  * `bg-primary` inside the 5G block) — which is why an LTE download chip and
  * an LTE upload chip were the same purple, distinguished only by their arrow
  * glyph. A figure's DIRECTION now reads the same colour regardless of which
- * radio block it sits in — the radio identity still lives in the block's own
- * container fill (`AMBR_BLOCK.LTE` / `AMBR_BLOCK.NR`), one layer out from the
- * chip — and the two hues carrying that direction belong to neither radio.
+ * radio block it sits in — the radio identity still lives one layer out from the
+ * chip, on the block's own identity `Tag` — and the two hues carrying that
+ * direction belong to neither radio.
  *
  * WHY ROSE AND CYAN, AND NOT BLUE AND VIOLET. An earlier pass used `primary`
  * (download) and `lte` (upload), reasoning that cyan read as a discordant third
@@ -1110,13 +1616,12 @@ export const AMBR_BLOCK = {
  * so on a dark block the arrow is the information and the hue is reinforcement.
  *
  * ON THE FILL CHOICE. An earlier draft wrote `bg-lte/25` and `bg-primary/25`.
- * Both are alpha washes and both are wrong for the same reason as
- * `SEGMENTED.TRACK_ON_FILL` above. The correct move for a chip that must lift
- * off a CONTAINER is the role's own FILL pair — `bg-downlink` carries
- * `text-downlink-foreground`, `bg-uplink` carries `text-uplink-foreground`. That is
- * a real pair in both themes, where an alpha is a different perceived
- * lightness in each. Note the pairs are declared here, so consumers must NOT
- * also set an ink class on the chip.
+ * Both are alpha washes, and this file's Tone Rule forbids them: an alpha is a
+ * different perceived lightness in each theme. The correct move for a chip
+ * that must lift off a CONTAINER is the role's own FILL pair — `bg-downlink`
+ * carries `text-downlink-foreground`, `bg-uplink` carries
+ * `text-uplink-foreground`, a real pair in both themes. Note the pairs are
+ * declared here, so consumers must NOT also set an ink class on the chip.
  */
 export const RATE_CHIP = {
   ROOT: "inline-flex h-[1.875rem] items-center gap-1.5 rounded-pill px-3 font-mono text-[0.8125rem] font-semibold tabular-nums",

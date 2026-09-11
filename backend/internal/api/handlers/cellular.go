@@ -374,10 +374,13 @@ func (h *CellularHandler) LockBands(w http.ResponseWriter, r *http.Request) {
 // LockTower handles PCI/EARFCN locking via AT+QNWLOCK.
 func (h *CellularHandler) LockTower(w http.ResponseWriter, r *http.Request) {
 	type TowerLockReq struct {
-		Mode   string `json:"mode"`   // "4g" or "5g"
-		EARFCN int    `json:"earfcn"`
+		Mode   string `json:"mode"`
 		PCID   int    `json:"pcid"`
-		SCS    int    `json:"scs,omitempty"` // For 5G NR
+		PCI    int    `json:"pci,omitempty"`
+		EARFCN int    `json:"earfcn"`
+		ARFCN  int    `json:"arfcn,omitempty"`
+		SCS    int    `json:"scs,omitempty"`
+		Band   int    `json:"band,omitempty"`
 	}
 
 	var req TowerLockReq
@@ -386,15 +389,29 @@ func (h *CellularHandler) LockTower(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pcid := req.PCI
+	if req.PCID != 0 {
+		pcid = req.PCID
+	}
+
+	earfcn := req.ARFCN
+	if req.EARFCN != 0 {
+		earfcn = req.EARFCN
+	}
+
 	var atCmd string
 	if req.Mode == "5g" {
+		if req.Band <= 0 {
+			Error(w, http.StatusBadRequest, "band is required for 5G tower lock")
+			return
+		}
 		scs := req.SCS
 		if scs == 0 {
 			scs = 30 // Default 30kHz for Sub-6
 		}
-		atCmd = fmt.Sprintf(`AT+QNWLOCK="common/5g",1,%d,%d,%d`, req.EARFCN, req.PCID, scs)
+		atCmd = fmt.Sprintf(`AT+QNWLOCK="common/5g",%d,%d,%d,%d`, pcid, earfcn, scs, req.Band)
 	} else {
-		atCmd = fmt.Sprintf(`AT+QNWLOCK="common/4g",1,%d,%d`, req.EARFCN, req.PCID)
+		atCmd = fmt.Sprintf(`AT+QNWLOCK="common/4g",1,%d,%d`, earfcn, pcid)
 	}
 
 	if _, err := h.engine.Exec(atCmd); err != nil {
@@ -418,4 +435,80 @@ func (h *CellularHandler) UnlockTower(w http.ResponseWriter, r *http.Request) {
 	}
 
 	Success(w, map[string]string{"message": "Tower locks cleared"})
+}
+
+// HandleTowerLockCGI handles legacy POST /cgi-bin/quecmanager/tower/lock.sh
+func (h *CellularHandler) HandleTowerLockCGI(w http.ResponseWriter, r *http.Request) {
+	type CellItem struct {
+		EARFCN int `json:"earfcn"`
+		PCI    int `json:"pci"`
+	}
+	type CGITowerLockReq struct {
+		Type   string     `json:"type"`   // "lte" or "nr_sa"
+		Action string     `json:"action"` // "lock" or "unlock"
+		Cells  []CellItem `json:"cells,omitempty"`
+		PCI    int        `json:"pci,omitempty"`
+		ARFCN  int        `json:"arfcn,omitempty"`
+		SCS    int        `json:"scs,omitempty"`
+		Band   int        `json:"band,omitempty"`
+	}
+
+	var req CGITowerLockReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	var atCmd string
+	switch req.Type {
+	case "lte", "4g":
+		if req.Action == "unlock" {
+			atCmd = `AT+QNWLOCK="common/4g",0`
+		} else if req.Action == "lock" {
+			if len(req.Cells) == 0 {
+				Error(w, http.StatusBadRequest, "No cells provided for LTE lock")
+				return
+			}
+			parts := make([]string, 0, len(req.Cells)*2)
+			for _, c := range req.Cells {
+				parts = append(parts, strconv.Itoa(c.EARFCN), strconv.Itoa(c.PCI))
+			}
+			atCmd = fmt.Sprintf(`AT+QNWLOCK="common/4g",%d,%s`, len(req.Cells), strings.Join(parts, ","))
+		} else {
+			Error(w, http.StatusBadRequest, "Invalid action for LTE tower lock")
+			return
+		}
+	case "nr_sa", "5g", "nr5g":
+		if req.Action == "unlock" {
+			atCmd = `AT+QNWLOCK="common/5g",0`
+		} else if req.Action == "lock" {
+			if req.Band <= 0 {
+				Error(w, http.StatusBadRequest, "band is required for 5G tower lock")
+				return
+			}
+			scs := req.SCS
+			if scs == 0 {
+				scs = 30
+			}
+			atCmd = fmt.Sprintf(`AT+QNWLOCK="common/5g",%d,%d,%d,%d`, req.PCI, req.ARFCN, scs, req.Band)
+		} else {
+			Error(w, http.StatusBadRequest, "Invalid action for NR-SA tower lock")
+			return
+		}
+	default:
+		Error(w, http.StatusBadRequest, "Invalid lock type: must be 'lte' or 'nr_sa'")
+		return
+	}
+
+	if _, err := h.engine.Exec(atCmd); err != nil {
+		Error(w, http.StatusInternalServerError, fmt.Sprintf("Tower lock failed: %v", err))
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"type":    req.Type,
+		"action":  req.Action,
+		"message": "Tower lock updated successfully",
+	})
 }

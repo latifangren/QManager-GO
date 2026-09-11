@@ -306,6 +306,70 @@ func TestRouter_MountsAndEndpoints(t *testing.T) {
 		t.Errorf("expected status 200 for CGI system/known_sims.sh, got %d", wKnownSims.Code)
 	}
 
+	// Test POST /system/known_sims.sh does not return 405 Method Not Allowed
+	reqKnownSimsPost := httptest.NewRequest("POST", "/cgi-bin/quecmanager/system/known_sims.sh", strings.NewReader(`{"iccid":"89860401102290123456","label":"Primary"}`))
+	wKnownSimsPost := httptest.NewRecorder()
+	handler.ServeHTTP(wKnownSimsPost, reqKnownSimsPost)
+	if wKnownSimsPost.Code != http.StatusOK {
+		t.Errorf("expected status 200 for POST CGI system/known_sims.sh, got %d", wKnownSimsPost.Code)
+	}
+
+	// Test GET & POST /network/ttl.sh
+	reqTTLGet := httptest.NewRequest("GET", "/cgi-bin/quecmanager/network/ttl.sh", nil)
+	wTTLGet := httptest.NewRecorder()
+	handler.ServeHTTP(wTTLGet, reqTTLGet)
+	if wTTLGet.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI network/ttl.sh GET, got %d", wTTLGet.Code)
+	}
+
+	reqTTLPost := httptest.NewRequest("POST", "/cgi-bin/quecmanager/network/ttl.sh", strings.NewReader(`{"ttl":64,"hl":64}`))
+	wTTLPost := httptest.NewRecorder()
+	handler.ServeHTTP(wTTLPost, reqTTLPost)
+	if wTTLPost.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI network/ttl.sh POST, got %d", wTTLPost.Code)
+	}
+
+	// Test GET & POST /cellular/settings.sh
+	reqCellSettingsGet := httptest.NewRequest("GET", "/cgi-bin/quecmanager/cellular/settings.sh", nil)
+	wCellSettingsGet := httptest.NewRecorder()
+	handler.ServeHTTP(wCellSettingsGet, reqCellSettingsGet)
+	if wCellSettingsGet.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI cellular/settings.sh GET, got %d", wCellSettingsGet.Code)
+	}
+
+	reqCellSettingsPost := httptest.NewRequest("POST", "/cgi-bin/quecmanager/cellular/settings.sh", strings.NewReader(`{"mode_pref":"AUTO"}`))
+	wCellSettingsPost := httptest.NewRecorder()
+	handler.ServeHTTP(wCellSettingsPost, reqCellSettingsPost)
+	if wCellSettingsPost.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI cellular/settings.sh POST, got %d", wCellSettingsPost.Code)
+	}
+
+	// Test POST /tower/lock.sh
+	mock.SetResponse(`AT+QNWLOCK="common/4g",0`, "OK")
+	reqTowerLockPost := httptest.NewRequest("POST", "/cgi-bin/quecmanager/tower/lock.sh", strings.NewReader(`{"type":"lte","action":"unlock"}`))
+	wTowerLockPost := httptest.NewRecorder()
+	handler.ServeHTTP(wTowerLockPost, reqTowerLockPost)
+	if wTowerLockPost.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI tower/lock.sh POST, got %d", wTowerLockPost.Code)
+	}
+
+	// Test REST endpoints with Auth
+	reqRESTSettings := httptest.NewRequest("GET", "/api/v1/cellular/settings", nil)
+	reqRESTSettings.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	wRESTSettings := httptest.NewRecorder()
+	handler.ServeHTTP(wRESTSettings, reqRESTSettings)
+	if wRESTSettings.Code != http.StatusOK {
+		t.Errorf("expected status 200 for REST /cellular/settings, got %d", wRESTSettings.Code)
+	}
+
+	reqRESTTTL := httptest.NewRequest("GET", "/api/v1/network/ttl", nil)
+	reqRESTTTL.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	wRESTTTL := httptest.NewRecorder()
+	handler.ServeHTTP(wRESTTTL, reqRESTTTL)
+	if wRESTTTL.Code != http.StatusOK {
+		t.Errorf("expected status 200 for REST /network/ttl, got %d", wRESTTTL.Code)
+	}
+
 	reqLangCancel := httptest.NewRequest("POST", "/cgi-bin/quecmanager/system/language-packs/install_cancel.sh", nil)
 	wLangCancel := httptest.NewRecorder()
 	handler.ServeHTTP(wLangCancel, reqLangCancel)

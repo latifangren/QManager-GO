@@ -320,6 +320,7 @@
       "scanning_title": "Sintonizzazione di ogni banda",
       "scanning_body": "Lascia aperta questa scheda: i risultati compaiono qui quando il modem termina.",
       "complete_title": "Scansione terminata",
+      "summary_total_cells": "Celle totali",
       "failed_title": "Scansione non riuscita",
       "failed_body": "Il modem potrebbe essere occupato o irraggiungibile. Controlla la connessione e ripeti la scansione."
     },
@@ -425,10 +426,8 @@
         "link_blocked": "Disponibile al termine di questa lettura.",
         "summary_empty": "La lettura è terminata senza indicare nemmeno una cella vicina, quindi non c'è nulla da analizzare.",
         "summary_measured_label": "Con misurazioni",
-        "summary_channels_one": "1 canale",
-        "summary_channels_other": "{{count}} canali",
-        "summary_channel_only_one": "1 con solo canale",
-        "summary_channel_only_other": "{{count}} con solo canale",
+        "available_bands_one": "1 banda disponibile",
+        "available_bands_other": "{{count}} bande disponibili",
         "verdict_channel_only_one": "1 cella vicina è stata restituita con il solo canale: la cella di servizio sa che è lì ma non ne ha una misurazione attuale, quindi non porta alcuna qualità e non può essere bloccata.",
         "verdict_channel_only_other": "{{count}} celle vicine sono state restituite con il solo canale: la cella di servizio sa che sono lì ma non ne ha misurazioni attuali, quindi non portano alcuna qualità e non possono essere bloccate.",
         "idle_title": "Nessuna lettura",
@@ -451,7 +450,9 @@
         "tally_measured_one": "1 misurata",
         "tally_measured_other": "{{count}} misurate",
         "tally_channel_only_one": "1 con solo canale",
-        "tally_channel_only_other": "{{count}} con solo canale"
+        "tally_channel_only_other": "{{count}} con solo canale",
+        "tally_bands_one": "1 banda",
+        "tally_bands_other": "{{count}} bande"
       },
       "columns": {
         "cell_type": "Relazione",
@@ -587,12 +588,10 @@
         "title": "Configurazione APN",
         "description": "Il nome del punto di accesso usato dal modem per stabilire una connessione dati."
       },
-      "status": {
-        "active": "Attivo",
-        "not_live": "Non attivo",
-        "carrier_default": "Predefinito operatore"
+      "cards": {
+        "unread": "Non è stato letto nulla dal modem, quindi questa scheda non ha valori da mostrare."
       },
-      "save_connection_notice": "Il salvataggio interrompe brevemente la connessione cellulare durante la riconnessione del modem.",
+      "save_connection_notice": "Il salvataggio scollega e ricollega il modem. I dati cellulari si interrompono per circa quattro secondi — e se sei collegato tramite la porta Ethernet del modem, anche questa pagina cadrà e si riconnetterà da sola.",
       "carrier_default": {
         "button": "Usa predefinito operatore",
         "dialog": {
@@ -606,7 +605,8 @@
         "saved": "Impostazioni APN salvate",
         "save_error": "Impossibile salvare le impostazioni APN",
         "deactivated": "Ripristinato all'APN predefinito dell'operatore",
-        "deactivate_error": "Impossibile ripristinare il predefinito dell'operatore"
+        "deactivate_error": "Impossibile ripristinare il predefinito dell'operatore",
+        "reconciling": "Verifica del ritorno della connessione…"
       },
       "controls_label": "Configurazione APN",
       "managed_by_profile_fallback": "profilo SIM personalizzato attivo",
@@ -643,6 +643,9 @@
           "description_sos": "Il CID {{cid}} è riservato alle chiamate di emergenza (SOS). Scrivere qui un APN dati può compromettere le chiamate di emergenza. Continuare comunque?",
           "confirm": "Usa comunque",
           "cancel": "Annulla"
+        },
+        "reserved_dialog": {
+          "unverified_body": "Questo contesto è di solito riservato al VoLTE o alle chiamate di emergenza, ma il modem non ne ha riportato il tipo. Scrivere qui un APN dati può compromettere quei servizi."
         }
       },
       "rows": {
@@ -665,7 +668,6 @@
       "readout": {
         "title": "Cosa ha concesso la rete",
         "description": "Letto dal modem in tempo reale, non dai valori salvati.",
-        "serving_apn": "APN in uso",
         "granted_ip": "IP concesso",
         "bearer_state": "Stato del bearer",
         "ipv4": "Indirizzo IPv4",
@@ -677,7 +679,14 @@
         "ip_both": "IPv4 e IPv6",
         "ip_none": "Non assegnato",
         "error_title": "Stato in tempo reale non disponibile",
-        "error_body": "Il feed di stato del modem non ha risposto. I valori sotto potrebbero mancare."
+        "error_body": "Il feed di stato del modem non ha risposto. I valori sotto potrebbero mancare.",
+        "configured_label": "Hai configurato",
+        "granted_label": "La rete ha concesso",
+        "source_stored": "Dalle impostazioni salvate",
+        "source_negotiated": "Negoziato con la rete",
+        "stale": "Letture ferme",
+        "stale_body": "Il feed di stato del modem non riporta da un po'. I valori sopra potrebbero non essere più veri.",
+        "reread": "Rileggi dal modem"
       },
       "mbn": {
         "title": "Profilo operatore (MBN)",
@@ -688,7 +697,6 @@
         },
         "list_label": "Pacchetti disponibili",
         "selected_caption": "Selezionato, attivo dall'ultimo avvio",
-        "reboot_notice": "Un pacchetto ha effetto dopo un riavvio. QManager lo propone, non lo esegue mai da solo.",
         "pending_note": "Le modifiche hanno effetto dopo un riavvio.",
         "save": "Applica profilo",
         "empty": {
@@ -798,27 +806,34 @@
         "reread": "Rileggi dal modem",
         "in_sync": "Le impostazioni salvate corrispondono al modem."
       },
-      "hero": {
-        "title": "Connessione attuale",
-        "description": "Su cosa sta funzionando il modem in questo momento e i limiti di velocità che la rete gli concede.",
-        "params_heading": "Parametri attivi",
-        "rates_note": "I limiti di velocità sono tetti concessi dalla rete, non velocità misurate. Vengono letti all'apertura della pagina e di nuovo dopo ogni salvataggio.",
-        "sr_rate_block": "{{radio}}: {{state}}",
-        "live": "In tempo reale",
+      "strip": {
+        "label": "Stato in tempo reale",
         "stale": "Obsoleto",
+        "network": "Rete",
+        "sim": "SIM",
+        "aggregation": "Aggregazione",
+        "data_path": "Percorso dati",
         "carrier_none": "Nessun operatore riportato",
+        "bands_none": "Nessuna banda segnalata",
+        "ip_dual": "IPv4 e IPv6 assegnati",
+        "ip_v4": "Solo IPv4",
+        "ip_v6": "Solo IPv6",
+        "ip_none": "Nessun indirizzo assegnato",
         "unavailable_title": "Impossibile leggere il modem",
-        "unavailable_retrying": "L'ultima lettura non è riuscita. QManager sta ancora provando.",
-        "unavailable_static": "L'ultima lettura non è riuscita. Usa «Rileggi dal modem» qui sotto per riprovare."
+        "unavailable_retrying": "L'ultima lettura non è riuscita. QManager sta ancora provando."
+      },
+      "rate_ceiling": {
+        "eyebrow": "Tetto di velocità concesso dalla rete",
+        "in_force": "AMBR {{radio}} in vigore",
+        "no_ceiling": "Nessun tetto letto",
+        "sr_rate_block": "{{radio}}: {{state}}",
+        "provenance": "I limiti di velocità sono tetti concessi dalla rete, non velocità misurate. Vengono letti all'apertura della pagina e di nuovo dopo ogni salvataggio.",
+        "unavailable": "L'ultima lettura non è riuscita. Usa «Rileggi dal modem» qui sotto per riprovare."
       },
       "readout": {
-        "active_slot": "Slot attivo",
         "slot_n": "SIM {{slot}}",
         "unknown": "Sconosciuto",
-        "radio_power_label": "Stato radio",
-        "apn_label": "APN attivo",
         "no_apn": "Non segnalato",
-        "carrier_aggregation": "Aggregazione portanti",
         "ca_none": "Non attiva",
         "ca_breakdown": "LTE {{lte}} + NR {{nr}}",
         "ca_lte_only": "LTE {{lte}}",
@@ -833,7 +848,6 @@
         "unknown": "Sconosciuto"
       },
       "sim_slots": {
-        "label": "Slot SIM",
         "empty": "Vuoto",
         "sr_active": "SIM {{slot}}, attiva, scheda che termina con {{last4}}",
         "sr_standby": "SIM {{slot}}, in standby, scheda che termina con {{last4}}",
@@ -845,13 +859,13 @@
         "governing": "In uso",
         "not_governing": "Non in uso",
         "nsa_note": "Il 5G non-standalone viaggia sulla sessione dati LTE, quindi vale questo limite.",
-        "lte_empty_title": "Nessuna velocità LTE riportata",
         "lte_empty_reason": "Il modem pubblica un limite LTE solo mentre è attiva una sessione dati LTE.",
-        "nr_empty_title": "Nessuna velocità 5G riportata",
         "nr_empty_reason": "Il modem pubblica un limite 5G solo mentre è attiva una sessione dati 5G.",
         "download": "Download",
         "upload": "Upload",
-        "governing_unread": "La tua connessione usa questa radio. Nessun limite è stato letto per essa all’apertura della pagina."
+        "governing_unread": "La tua connessione usa questa radio. Nessun limite è stato letto per essa all’apertura della pagina.",
+        "lte_short": "LTE",
+        "nr_short": "5G NR"
       }
     },
     "fplmn": {
@@ -1132,7 +1146,8 @@
         "imei_override": "Override IMEI",
         "scenario": "Scenario attivo",
         "scheduled": "Pianificato",
-        "radio": "Radio, governata dallo scenario",
+        "not_scheduled": "Non pianificato",
+        "radio": "Configurazione radio",
         "band_locking": "Blocco bande",
         "network_mode": "Modalità di rete",
         "lte_bands": "Bande LTE",

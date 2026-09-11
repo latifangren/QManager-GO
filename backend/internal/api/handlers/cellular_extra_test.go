@@ -87,12 +87,13 @@ func TestCellularHandler_Full(t *testing.T) {
 	}
 
 	// LockTower - 5G
-	mock.SetResponse(`AT+QNWLOCK="common/5g",1,627392,320,30`, "OK")
+	mock.SetResponse(`AT+QNWLOCK="common/5g",320,627392,30,78`, "OK")
 	bodyTower5G, _ := json.Marshal(map[string]interface{}{
 		"mode":   "5g",
 		"earfcn": 627392,
 		"pcid":   320,
 		"scs":    30,
+		"band":   78,
 	})
 	reqTower5G := httptest.NewRequest(http.MethodPost, "/api/cellular/lock-tower", bytes.NewBuffer(bodyTower5G))
 	wTower5G := httptest.NewRecorder()

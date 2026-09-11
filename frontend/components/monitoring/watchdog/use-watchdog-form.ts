@@ -1,32 +1,51 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { useSaveFlash } from "@/components/ui/save-button";
 import type {
   WatchdogSettings,
   WatchdogSavePayload,
+  WatchdogSaveResult,
 } from "@/hooks/use-watchdog-settings";
+import type { TierIndex } from "./derive";
 
-// -----------------------------------------------------------------------------
-// useWatchdogForm — the single form-state coordinator for the watchdog page.
-// -----------------------------------------------------------------------------
-// The page splits the surface into a status hero + a tabbed settings card, but
-// the backend save is ATOMIC: one `save_settings` POST carrying every field. So
-// one hook owns the whole form — every value, every validation rule, the dirty
-// check, the submit, and the discard — and each card consumes the slice it
-// renders.
-//
-// The form seeds from `settings` and re-seeds itself in place whenever a value
-// fingerprint of `settings` changes, via a render-phase sync (NOT a
-// setState-in-effect, which the project's React-Compiler lint rules forbid).
-// The page used to force that re-seed by keying the consuming subtree on the
-// same signature, but a remount also destroyed the save flash, the active
-// settings tab, the recovery table's pagination, and the sibling cards' fetch
-// state — so the sync lives here now and the page renders unkeyed.
+// The backend save is ATOMIC — one POST carrying every field — so one hook owns
+// the whole draft, its validation, the blocking set and the focus map.
 
 /** Probe cadence options (seconds) offered by the Probe Interval Select. */
 export const PROBE_INTERVAL_OPTIONS = [1, 2, 5, 10, 15, 30] as const;
+
+/** A callback-ref factory: the form owns the map, a card registers into it. */
+export type RegisterField = (id: string) => (el: HTMLElement | null) => void;
+
+/** The five controls, by the id they register under. */
+export const FIELD_ID = {
+  probeInterval: "watchdog-probe-interval",
+  failThreshold: "watchdog-fail-threshold",
+  cooldown: "watchdog-cooldown",
+  backupSim: "watchdog-backup-slot",
+  maxReboots: "watchdog-max-reboots",
+} as const;
+
+/** Reading order, which is also the order a blocked save walks them in. */
+const FIELD_ORDER = [
+  "probeInterval",
+  "failThreshold",
+  "cooldown",
+  "backupSim",
+  "maxReboots",
+] as const;
+
+/** The blocked save bar names the FIELD, not a tab. There are no tabs now. */
+export const FIELD_LABEL_KEY: Record<keyof WatchdogFormErrors, string> = {
+  probeInterval: "watchdog.detection.probe.label",
+  failThreshold: "watchdog.detection.threshold.label",
+  cooldown: "watchdog.detection.cooldown.label",
+  backupSim: "watchdog.ladder.tier3.slotLabel",
+  maxReboots: "watchdog.ladder.tier4.capLabel",
+};
 
 export interface WatchdogFormErrors {
   failThreshold: string | null;
@@ -69,7 +88,24 @@ export interface WatchdogForm {
   errors: WatchdogFormErrors;
   hasValidationErrors: boolean;
   isDirty: boolean;
-  canSave: boolean;
+  /** The master switch carries an unsaved edit. */
+  masterDirty: boolean;
+  /** Per rung: the switch or the rung's own field carries an unsaved edit. */
+  tierDirty: Record<TierIndex, boolean>;
+  /** Fields blocking the save, in reading order. Empty when nothing blocks. */
+  blockedFields: (keyof WatchdogFormErrors)[];
+  /**
+   * This save would newly let the watchdog reboot the modem unattended. Keyed
+   * on both flags, not on the tier switch: a stock device ships tier 4 already
+   * armed under a master that is off, so the master is the gesture that grants
+   * the authority.
+   */
+  grantsRebootAuthority: boolean;
+
+  // Focus
+  registerField: RegisterField;
+  /** Focus and reveal the first blocking control. No-op when nothing blocks. */
+  focusFirstBlocked: () => void;
 
   // Flow
   isSaving: boolean;
@@ -81,8 +117,7 @@ export interface WatchdogForm {
 interface UseWatchdogFormArgs {
   settings: WatchdogSettings;
   isSaving: boolean;
-  error: string | null;
-  saveSettings: (payload: WatchdogSavePayload) => Promise<boolean>;
+  saveSettings: (payload: WatchdogSavePayload) => Promise<WatchdogSaveResult>;
 }
 
 // Value fingerprint of every field the form mirrors. A change means server
@@ -112,16 +147,12 @@ const isIntInRange = (raw: string, min: number, max: number) => {
 export function useWatchdogForm({
   settings,
   isSaving,
-  error,
   saveSettings,
 }: UseWatchdogFormArgs): WatchdogForm {
+  const { t } = useTranslation("common");
   const { saved, markSaved } = useSaveFlash();
 
   const [isEnabled, setIsEnabled] = useState(settings.enabled);
-  // check_interval is the watchdog's internal sampling loop. It no longer has a
-  // user-facing control (probe_interval is the meaningful cadence now), but we
-  // still round-trip its saved value through the atomic save so it's preserved.
-  const [checkInterval] = useState(String(settings.check_interval));
   const [probeInterval, setProbeInterval] = useState(
     String(settings.probe_interval),
   );
@@ -149,28 +180,29 @@ export function useWatchdogForm({
   }, [probeInterval, failThreshold]);
 
   // --- Validation (mirrors the CGI field ranges) ---
+  // Values are i18n KEYS; the rendering component translates them.
   const errors = useMemo<WatchdogFormErrors>(() => {
     const failThresholdErr =
       failThreshold && !isIntInRange(failThreshold, 1, 20)
-        ? "Must be 1–20"
+        ? "watchdog.errors.failThreshold"
         : null;
     const probeIntervalErr =
       probeInterval && !isIntInRange(probeInterval, 1, 60)
-        ? "Must be 1–60 seconds"
+        ? "watchdog.errors.probeInterval"
         : null;
     const cooldownErr =
       cooldown && !isIntInRange(cooldown, 10, 300)
-        ? "Must be 10–300 seconds"
+        ? "watchdog.errors.cooldown"
         : null;
     const maxRebootsErr =
       tier4Enabled && maxRebootsPerHour && !isIntInRange(maxRebootsPerHour, 1, 10)
-        ? "Must be 1–10"
+        ? "watchdog.errors.maxReboots"
         : null;
     // Backup slot is required whenever Tier 3 (SIM failover) is enabled — an
     // unset slot leaves the ladder unable to fail over, so block the save.
     const backupSimErr =
       tier3Enabled && !backupSimSlot
-        ? "Choose a backup SIM slot to enable failover."
+        ? "watchdog.errors.backupSim"
         : null;
 
     return {
@@ -193,6 +225,27 @@ export function useWatchdogForm({
     probeInterval.trim() === "" ||
     cooldown.trim() === "" ||
     (tier4Enabled && maxRebootsPerHour.trim() === "");
+
+  // Per-control dirty state. A chip that reads "On" for an unsaved draft is the
+  // page reporting a policy the device has not been told about, so each rung
+  // carries its own marker rather than relying on the save bar far below it.
+  const savedBackupSlot =
+    settings.backup_sim_slot != null ? String(settings.backup_sim_slot) : "";
+  const masterDirty = isEnabled !== settings.enabled;
+  // Reboot authority is the AND of both flags, so the transition to confirm is
+  // the pair going true — whichever switch moved.
+  const grantsRebootAuthority =
+    isEnabled && tier4Enabled && !(settings.enabled && settings.tier4_enabled);
+  const tierDirty: Record<TierIndex, boolean> = {
+    1: tier1Enabled !== settings.tier1_enabled,
+    2: tier2Enabled !== settings.tier2_enabled,
+    3:
+      tier3Enabled !== settings.tier3_enabled ||
+      backupSimSlot !== savedBackupSlot,
+    4:
+      tier4Enabled !== settings.tier4_enabled ||
+      maxRebootsPerHour !== String(settings.max_reboots_per_hour),
+  };
 
   const isDirty = useMemo(
     () =>
@@ -224,8 +277,43 @@ export function useWatchdogForm({
     ],
   );
 
-  const canSave =
-    !hasValidationErrors && !hasEmptyRequired && isDirty && !isSaving;
+  // An empty required field is not a range error but still blocks, so the two
+  // sets are merged here rather than in each consumer.
+  const emptyRequired: Partial<Record<keyof WatchdogFormErrors, boolean>> = {
+    probeInterval: probeInterval.trim() === "",
+    failThreshold: failThreshold.trim() === "",
+    cooldown: cooldown.trim() === "",
+    maxReboots: tier4Enabled && maxRebootsPerHour.trim() === "",
+  };
+
+  const blockedFields = FIELD_ORDER.filter(
+    (key) => errors[key] !== null || emptyRequired[key] === true,
+  );
+
+  // The map is a ref because a card mounts and unmounts its tier-3/tier-4
+  // controls with the switch; nothing renders off it.
+  const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  const registerField = useCallback<RegisterField>(
+    (id) => (el) => {
+      fieldRefs.current[id] = el;
+    },
+    [],
+  );
+
+  // A DOM side effect in a handler, never a setState in an effect. With the
+  // tabs gone there is nothing to switch to first, so no rAF is needed.
+  const focusFirstBlocked = useCallback(() => {
+    const first = blockedFields[0];
+    if (!first) return;
+    const el = fieldRefs.current[FIELD_ID[first]];
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+  }, [blockedFields]);
 
   const submit = useCallback(async () => {
     if (hasValidationErrors || hasEmptyRequired || !isDirty || isSaving) return;
@@ -235,8 +323,6 @@ export function useWatchdogForm({
       enabled: isEnabled,
       fail_threshold: parseInt(failThreshold, 10),
       probe_interval: parseInt(probeInterval, 10),
-      // Preserved untouched: no user-facing control, round-tripped at its saved value.
-      check_interval: parseInt(checkInterval, 10),
       cooldown: parseInt(cooldown, 10),
       tier1_enabled: tier1Enabled,
       tier2_enabled: tier2Enabled,
@@ -246,12 +332,16 @@ export function useWatchdogForm({
       max_reboots_per_hour: parseInt(maxRebootsPerHour || "3", 10),
     };
 
-    const ok = await saveSettings(payload);
-    if (ok) {
+    // The RESULT carries the backend's reason; the hook's `error` state is set
+    // in the same tick, so this closure would only ever see the previous value.
+    const result = await saveSettings(payload);
+    if (result.ok) {
       markSaved();
-      toast.success("Watchdog settings saved");
+      toast.success(t("watchdog.save.toastOk"));
     } else {
-      toast.error(error || "Failed to save watchdog settings");
+      toast.error(t("watchdog.save.toastFail"), {
+        description: result.message ?? undefined,
+      });
     }
   }, [
     hasValidationErrors,
@@ -261,7 +351,6 @@ export function useWatchdogForm({
     isEnabled,
     failThreshold,
     probeInterval,
-    checkInterval,
     cooldown,
     tier1Enabled,
     tier2Enabled,
@@ -271,11 +360,10 @@ export function useWatchdogForm({
     maxRebootsPerHour,
     saveSettings,
     markSaved,
-    error,
+    t,
   ]);
 
   // Discard resets every field to the server-truth in `settings`.
-  // check_interval has no control, so it never diverges — nothing to reset.
   const discard = useCallback(() => {
     setIsEnabled(settings.enabled);
     setProbeInterval(String(settings.probe_interval));
@@ -326,7 +414,12 @@ export function useWatchdogForm({
     errors,
     hasValidationErrors,
     isDirty,
-    canSave,
+    masterDirty,
+    tierDirty,
+    blockedFields,
+    grantsRebootAuthority,
+    registerField,
+    focusFirstBlocked,
     isSaving,
     saved,
     submit,

@@ -124,21 +124,13 @@ export function useSignalHistory(
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const json = await response.json();
+      const json: SignalHistoryEntry[] = await response.json();
 
       if (!mountedRef.current) return;
 
-      const historyData: SignalHistoryEntry[] = Array.isArray(json)
-        ? json
-        : Array.isArray(json?.history)
-        ? json.history
-        : Array.isArray(json?.data)
-        ? json.data
-        : [];
-
-      setRaw(historyData);
+      setRaw(json);
       // Limit to last 10 data points for chart readability
-      const recent = historyData.slice(-10);
+      const recent = json.slice(-10);
       setChartData(recent.map(toChartPoint));
       setError(null);
       setIsLoading(false);

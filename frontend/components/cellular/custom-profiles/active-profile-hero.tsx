@@ -14,6 +14,7 @@ import { Tag } from "@/components/ui/tag";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { ConnectionScenario } from "@/types/connection-scenario";
+import { optimizationLabelKey } from "@/types/connection-scenario";
 import type { ProfileApplyState, SimProfile } from "@/types/sim-profile";
 
 import { resolveScenarioIcon } from "./connection-scenarios/scenario-icons";
@@ -24,6 +25,7 @@ import {
   HERO_DISC,
   HERO_DISC_TONE,
   HERO_EYEBROW,
+  HERO_IDENTITY,
   HERO_NAME,
   HERO_NOTICE,
   HERO_NOTICE_BODY,
@@ -34,6 +36,7 @@ import {
   HERO_TILE_DISC_BRAND,
   HERO_TILE_DISC_NEUTRAL,
   HERO_TILE_SHAPE,
+  HERO_TILE_VALUE_MONO,
   HERO_TOP,
   MACHINE_VALUE,
   PILL_ACTION_SM,
@@ -282,6 +285,10 @@ export function ActiveProfileHero({
     activeScenario?.name ?? t("custom_profiles.hero.scenario.unknown");
   const scenarioGlyph = resolveScenarioIcon(activeScenario?.icon);
 
+  const optimization = activeScenario?.config.optimization ?? "";
+  const optimizationKey = optimization ? optimizationLabelKey(optimization) : null;
+  const optimizationLabel = optimizationKey ? t(optimizationKey) : optimization;
+
   const apnLabel =
     settings.apn.name || t("custom_profiles.pills.apn_default");
   const pdpKey = PDP_LABEL_KEY[settings.apn.pdp_type];
@@ -334,38 +341,41 @@ export function ActiveProfileHero({
     >
       {/* --- Identity line ---------------------------------------------- */}
       <motion.div variants={staggerItem} className={HERO_TOP}>
-        <span className={cn(HERO_DISC, HERO_DISC_TONE[condition])}>
-          <MaterialSymbol
-            name={HERO_DISC_GLYPH[condition]}
-            size={26}
-            filled={condition !== "applying"}
-            className={
-              condition === "applying"
-                ? "motion-safe:animate-spin"
-                : undefined
-            }
-            aria-hidden
-          />
-        </span>
-
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className={HERO_EYEBROW}>
-            {t("custom_profiles.hero.eyebrow")}
+        <div className={HERO_IDENTITY}>
+          <span className={cn(HERO_DISC, HERO_DISC_TONE[condition])}>
+            <MaterialSymbol
+              name={HERO_DISC_GLYPH[condition]}
+              size={26}
+              filled={condition !== "applying"}
+              className={
+                condition === "applying"
+                  ? "motion-safe:animate-spin"
+                  : undefined
+              }
+              aria-hidden
+            />
           </span>
-          <span className={HERO_NAME}>{profile.name}</span>
-          {/* The carrier and the ICCID: the two facts the name alone cannot
-              carry. Separated by layout, never by a middot — a glue character
-              belongs to a machine-voice run, and this line is half prose. */}
-          <span className="text-on-surface-variant flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[0.8125rem]">
-            <span className="min-w-0 truncate">
-              {profile.mno || t("custom_profiles.hero.unknown_operator")}
+
+          <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+            <span className={cn(HERO_EYEBROW, "leading-none")}>
+              {t("custom_profiles.hero.eyebrow")}
             </span>
+            <span className={cn(HERO_NAME, "leading-tight")}>
+              {profile.name}
+            </span>
+            {/* The ICCID, in machine voice — the operator no longer repeats
+                the name shown one line up. */}
             {profile.sim_iccid ? (
-              <span className={cn(MACHINE_VALUE, "min-w-0 truncate text-xs")}>
+              <span
+                className={cn(
+                  MACHINE_VALUE,
+                  "min-w-0 truncate text-xs leading-none",
+                )}
+              >
                 {t("custom_profiles.hero.iccid", { value: profile.sim_iccid })}
               </span>
             ) : null}
-          </span>
+          </div>
         </div>
 
         <div className="ms-auto flex flex-none flex-wrap items-center gap-2">
@@ -470,9 +480,7 @@ export function ActiveProfileHero({
             <span className={HERO_EYEBROW}>
               {t("custom_profiles.hero.tiles.identity")}
             </span>
-            <span className={cn(HERO_TILE_SHAPE.VALUE, MACHINE_VALUE)}>
-              {apnLabel}
-            </span>
+            <span className={HERO_TILE_VALUE_MONO}>{apnLabel}</span>
             <span className={HERO_TILE_SHAPE.TAGS}>
               <Tag variant="neutral">{pdpLabel}</Tag>
               {settings.apn.cid > 0 ? (
@@ -521,8 +529,8 @@ export function ActiveProfileHero({
               {t("custom_profiles.hero.tiles.scenario")}
             </span>
             <span className={HERO_TILE_SHAPE.VALUE}>{scenarioLabel}</span>
-            {schedule.enabled && schedule.blocks.length > 0 ? (
-              <span className={HERO_TILE_SHAPE.TAGS}>
+            <span className={HERO_TILE_SHAPE.TAGS}>
+              {schedule.enabled && schedule.blocks.length > 0 ? (
                 <Tag variant="neutral">
                   <MaterialSymbol
                     name="schedule"
@@ -531,20 +539,31 @@ export function ActiveProfileHero({
                   />
                   {t("custom_profiles.hero.tiles.scheduled")}
                 </Tag>
-              </span>
-            ) : null}
+              ) : (
+                <Tag variant="neutral">
+                  <MaterialSymbol
+                    name="event_busy"
+                    size={BADGE_GLYPH_SIZE}
+                    aria-hidden
+                  />
+                  {t("custom_profiles.hero.tiles.not_scheduled")}
+                </Tag>
+              )}
+            </span>
           </span>
         </div>
 
-        {/* Radio, owned by the scenario. */}
+        {/* Radio configuration — the scenario's optimization goal, owned by it. */}
         <div className={cn(HERO_TILE_SHAPE.ROOT, HERO_TILE_BODY)}>
           <span className={cn(HERO_TILE_SHAPE.DISC, HERO_TILE_DISC_NEUTRAL)}>
             <MaterialSymbol name="cell_tower" size={25} aria-hidden />
           </span>
           <span className={HERO_TILE_SHAPE.COL}>
-            {/* The one tile whose eyebrow carries an affordance: it reports a
-                lock the user cannot change from here, and the page it changes
-                it on is two clicks away in the sidebar.
+            {/* The one tile whose eyebrow row carries an affordance: it reports
+                a lock the user cannot change from here, and the page it
+                changes it on is two clicks away in the sidebar. `justify-between`
+                pins that link to the tile's trailing edge instead of letting it
+                trail the eyebrow text.
 
                 THE HREF IS `cell-locking`, NOT `band-locking`. The pre-redesign
                 hero linked `/cellular/band-locking`, which is not a route —
@@ -552,7 +571,7 @@ export function ActiveProfileHero({
                 missing route is a hard 404 off the modem's lighttpd, not a
                 soft client-side miss. The label key is unchanged; only the
                 destination is corrected. */}
-            <span className="flex min-w-0 items-baseline gap-2">
+            <span className="flex min-w-0 items-baseline justify-between gap-2">
               <span className={cn(HERO_EYEBROW, "min-w-0 truncate")}>
                 {t("custom_profiles.hero.tiles.radio")}
               </span>
@@ -562,6 +581,9 @@ export function ActiveProfileHero({
               >
                 {t("custom_profiles.hero.tiles.band_locking")}
               </Link>
+            </span>
+            <span className={HERO_TILE_SHAPE.VALUE}>
+              {optimizationLabel || "—"}
             </span>
             <span className={HERO_TILE_SHAPE.TAGS}>
               {/* The network mode names both radios in one string, so it has no
@@ -698,11 +720,13 @@ export function ActiveProfileHeroSkeleton() {
   return (
     <div className={HERO_CARD}>
       <div className={HERO_TOP}>
-        <Skeleton className={cn(HERO_DISC, "bg-accent")} />
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <Skeleton className="h-3 w-24 rounded-pill" />
-          <Skeleton className="h-6 w-56 rounded-pill" />
-          <Skeleton className="h-3.5 w-72 rounded-pill" />
+        <div className={HERO_IDENTITY}>
+          <Skeleton className={cn(HERO_DISC, "bg-accent")} />
+          <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
+            <Skeleton className="h-3 w-24 rounded-pill" />
+            <Skeleton className="h-6 w-56 rounded-pill" />
+            <Skeleton className="h-3 w-40 rounded-pill" />
+          </div>
         </div>
         <div className="ms-auto flex flex-none items-center gap-2">
           <Skeleton className="h-5 w-20 rounded-pill" />

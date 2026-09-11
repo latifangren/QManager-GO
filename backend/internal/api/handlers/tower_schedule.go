@@ -218,28 +218,40 @@ func parseNRTowerCell(raw string) (bool, *NRCellConfig) {
 		line := strings.TrimSpace(l)
 		if strings.HasPrefix(line, `+QNWLOCK: "common/5g"`) {
 			parts := strings.Split(line, ",")
+			if len(parts) == 2 && strings.TrimSpace(parts[1]) == "0" {
+				return false, nil
+			}
+			// Canonical format: +QNWLOCK: "common/5g",<pci>,<arfcn>,<scs>,<band>
+			if len(parts) == 5 {
+				pci, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+				arfcn, _ := strconv.Atoi(strings.TrimSpace(parts[2]))
+				scs, _ := strconv.Atoi(strings.TrimSpace(parts[3]))
+				band, _ := strconv.Atoi(strings.TrimSpace(parts[4]))
+				return true, &NRCellConfig{
+					PCI:   &pci,
+					ARFCN: &arfcn,
+					SCS:   &scs,
+					Band:  &band,
+				}
+			}
+			// Legacy/extended format with count: +QNWLOCK: "common/5g",1,<earfcn>,<pci>,<scs>,<band>
+			if len(parts) >= 6 {
+				earfcn, _ := strconv.Atoi(strings.TrimSpace(parts[2]))
+				pci, _ := strconv.Atoi(strings.TrimSpace(parts[3]))
+				cfg := &NRCellConfig{
+					ARFCN: &earfcn,
+					PCI:   &pci,
+				}
+				scs, _ := strconv.Atoi(strings.TrimSpace(parts[4]))
+				cfg.SCS = &scs
+				band, _ := strconv.Atoi(strings.TrimSpace(parts[5]))
+				cfg.Band = &band
+				return true, cfg
+			}
 			if len(parts) >= 2 {
 				numCells, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
 				if numCells <= 0 {
 					return false, nil
-				}
-				// Format: +QNWLOCK: "common/5g",1,<earfcn>,<pci>,<scs>,<band>
-				if len(parts) >= 4 {
-					earfcn, _ := strconv.Atoi(strings.TrimSpace(parts[2]))
-					pci, _ := strconv.Atoi(strings.TrimSpace(parts[3]))
-					cfg := &NRCellConfig{
-						ARFCN: &earfcn,
-						PCI:   &pci,
-					}
-					if len(parts) >= 5 {
-						scs, _ := strconv.Atoi(strings.TrimSpace(parts[4]))
-						cfg.SCS = &scs
-					}
-					if len(parts) >= 6 {
-						band, _ := strconv.Atoi(strings.TrimSpace(parts[5]))
-						cfg.Band = &band
-					}
-					return true, cfg
 				}
 				return true, nil
 			}

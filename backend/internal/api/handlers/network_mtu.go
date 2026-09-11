@@ -106,7 +106,7 @@ func (h *NetworkMTUHandler) SetMTU(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Persist to firewall file
-	content := fmt.Sprintf("#!/bin/sh\n# QManager custom MTU config\nfor iface in /sys/class/net/rmnet_data*; do\n  [ -e \"$iface\" ] || continue\n  ip link set dev $(basename \"$iface\") mtu %d 2>/dev/null || true\ndone\n", mtuVal)
+	content := fmt.Sprintf("#!/bin/sh\n# QManager custom MTU config\nif [ -e /sys/class/net/rmnet_ipa0 ]; then\n  ip link set dev rmnet_ipa0 mtu %d 2>/dev/null || true\nfi\nfor iface in /sys/class/net/rmnet_data*; do\n  [ -e \"$iface\" ] || continue\n  ip link set dev $(basename \"$iface\") mtu %d 2>/dev/null || true\ndone\n", mtuVal, mtuVal)
 	_ = os.MkdirAll(filepath.Dir(mtuFirewallFile), 0755)
 	_ = os.WriteFile(mtuFirewallFile, []byte(content), 0755)
 
@@ -121,6 +121,13 @@ func (h *NetworkMTUHandler) SetMTU(w http.ResponseWriter, r *http.Request) {
 }
 
 func getCurrentWANMTU() (int, error) {
+	// Look at /sys/class/net/rmnet_ipa0/mtu first
+	if data, err := os.ReadFile("/sys/class/net/rmnet_ipa0/mtu"); err == nil {
+		if val, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && val > 0 {
+			return val, nil
+		}
+	}
+
 	// Look at /sys/class/net/rmnet_data*/mtu
 	files, err := filepath.Glob("/sys/class/net/rmnet_data*/mtu")
 	if err == nil && len(files) > 0 {
@@ -138,6 +145,9 @@ func getCurrentWANMTU() (int, error) {
 }
 
 func applyMTUToInterfaces(mtu int) error {
+	if _, err := os.Stat("/sys/class/net/rmnet_ipa0"); err == nil {
+		_ = exec.Command("ip", "link", "set", "dev", "rmnet_ipa0", "mtu", strconv.Itoa(mtu)).Run()
+	}
 	files, _ := filepath.Glob("/sys/class/net/rmnet_data*")
 	for _, f := range files {
 		iface := filepath.Base(f)

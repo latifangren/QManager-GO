@@ -50,7 +50,13 @@ func TestTowerScheduleHandler_Deep(t *testing.T) {
 	}
 
 	// 3. Helper parser coverage: parseNRTowerCell
-	// Format: +QNWLOCK: "common/5g",1,<earfcn>,<pci>,<scs>,<band>
+	// Canonical format: +QNWLOCK: "common/5g",<pci>,<arfcn>,<scs>,<band>
+	nrLockedCan, nrCellCan := parseNRTowerCell(`+QNWLOCK: "common/5g",120,627264,30,78` + "\r\nOK")
+	if !nrLockedCan || nrCellCan == nil || *nrCellCan.PCI != 120 || *nrCellCan.ARFCN != 627264 || *nrCellCan.SCS != 30 || *nrCellCan.Band != 78 {
+		t.Errorf("parseNRTowerCell canonical mismatch: locked=%v, cell=%+v", nrLockedCan, nrCellCan)
+	}
+
+	// Legacy format: +QNWLOCK: "common/5g",1,<earfcn>,<pci>,<scs>,<band>
 	nrLocked, nrCell := parseNRTowerCell(`+QNWLOCK: "common/5g",1,627392,320,30,78` + "\r\nOK")
 	if !nrLocked || nrCell == nil || *nrCell.ARFCN != 627392 || *nrCell.PCI != 320 || *nrCell.SCS != 30 || *nrCell.Band != 78 {
 		t.Errorf("parseNRTowerCell mismatch: locked=%v, cell=%+v", nrLocked, nrCell)

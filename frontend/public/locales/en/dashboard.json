@@ -1,9 +1,17 @@
 {
+  "page": {
+    "title": "Dashboard",
+    "description": "A live view of your modem: what it's connected to, how strong the link is, and what's changed."
+  },
   "alert": {
     "modem_unreachable": "Unable to reach the modem. Data shown may be outdated."
   },
   "network": {
     "title": "Network Status",
+    "description": "What the modem is connected to right now.",
+    "description_unreachable": "The last poll did not return.",
+    "unreachable": "Modem unreachable",
+    "sim_generic": "SIM",
     "signal_5g": "5G Signal",
     "signal_5g_lte_nrca": "5G + LTE / NR-CA",
     "signal_5g_lte": "5G + LTE",
@@ -30,17 +38,23 @@
     "radio_unknown": "Radio Unknown",
     "low_power": "Low Power",
     "standby_label": "Standby",
-    "internet_label": "Internet",
     "internet_online": "Online",
     "internet_unreachable": "No Reply",
+    "internet_degraded": "Unstable",
+    "internet_recovering": "Recovering",
+    "internet_unknown": "Not Measured",
     "sim_label": "SIM {{slot}}",
     "no_carrier": "No Carrier",
     "internet_tooltip": {
-      "no_reply": "No reply to the connectivity ping. Some carriers block these probes, so the connection may still be working."
+      "no_reply": "No reply to the connectivity ping. Some carriers block these probes, so the connection may still be working.",
+      "degraded": "Pings are getting through, but at least one in ten is being lost. The connection is up and unreliable.",
+      "recovery": "The connection watchdog is restoring the link. Readings stay unreliable until it finishes.",
+      "unknown": "The connectivity probe is not reporting, so nothing is known about internet reachability right now."
     }
   },
   "device_status": {
     "title": "Device Information",
+    "description": "Hardware identity, firmware, and uptime.",
     "icon_alt": "Device Icon",
     "show_private": "Show private details",
     "hide_private": "Hide private details",
@@ -53,6 +67,10 @@
     "device_imei": "Device IMEI",
     "conn_uptime_short": "Conn. Uptime",
     "device_uptime_short": "Device Uptime",
+    "conn_uptime_caption_up": "Link up",
+    "conn_uptime_caption_down": "Link down",
+    "device_uptime_caption": "Since last boot",
+    "uptime_unknown": "Not reachable",
     "lte_category": "LTE Category",
     "active_mimo": "Active MIMO",
     "lan_gateway": "LAN Gateway",
@@ -60,6 +78,7 @@
   },
   "metrics": {
     "title": "Device Metrics",
+    "description": "Onboard health, the cumulative data counter, and the distance to each serving cell.",
     "modem_temperature": "Modem Temperature",
     "high_temp_warning": "High Temp",
     "cpu_usage": "CPU Usage",
@@ -96,6 +115,7 @@
     "scs": "SCS"
   },
   "signal_card": {
+    "description": "Primary component carrier",
     "strength_heading": "Signal Strength",
     "connected": "Connected",
     "disconnected": "Disconnected",
@@ -108,10 +128,11 @@
     "quality_fair": "Fair",
     "quality_poor": "Poor",
     "quality_bad": "Very weak",
-    "quality_none": "No signal"
+    "quality_none": "No reading"
   },
   "signal_history": {
     "title": "Signal Quality Monitor",
+    "description": "How the 4G and 5G legs have moved recently — enough history to tell a dip from a trend.",
     "rsrp_label": "RSRP",
     "rsrq_label": "RSRQ",
     "sinr_label": "SINR",
@@ -127,6 +148,7 @@
     "error_description": "Couldn't load signal history: {{message}}"
   },
   "latency": {
+    "description": "Round-trip latency and packet loss over the last ten probes, plus the most recent speed test.",
     "title": "Live Latency",
     "chart_latency": "Latency",
     "chart_packetloss": "Packetloss",
@@ -135,10 +157,91 @@
     "no_reading": "No reading",
     "empty_description": "Waiting for the first latency samples."
   },
+  "latencyMonitor": {
+    "page": {
+      "title": "Latency Monitor",
+      "description": "Round-trip time, jitter and packet loss, measured by the modem's own probes."
+    },
+    "status": {
+      "aria": "Connection status",
+      "connected": "Connected",
+      "degraded": "Degraded",
+      "disconnected": "Disconnected",
+      "recovery": "Recovering",
+      "unknown": "Not reporting"
+    },
+    "band": {
+      "average_eyebrow": "Average RTT",
+      "average_min": "Min {{value}}",
+      "average_max": "Max {{value}}",
+      "average_unmeasured": "No window to average",
+      "jitter_eyebrow": "Jitter",
+      "jitter_samples_one": "{{count}} sample in the window",
+      "jitter_samples_other": "{{count}} samples in the window",
+      "jitter_unmeasured": "Window too short",
+      "loss_eyebrow": "Packet loss",
+      "loss_counted": "{{lost}} of {{total}} lost",
+      "loss_unmeasured": "Window too short",
+      "target_eyebrow": "Probe target",
+      "target_unknown": "No target reported"
+    },
+    "range": {
+      "aria": "Time range",
+      "realtime": "Live",
+      "hourly": "Hourly",
+      "twelvehour": "12 h",
+      "daily": "Daily"
+    },
+    "chart": {
+      "title": "Round-trip time",
+      "legend_latency": "Round-trip time",
+      "legend_loss": "Packet loss",
+      "legend_spread": "Min to max",
+      "legend_threshold": "Good, up to {{value}}",
+      "loss_label": "Packet loss",
+      "description_realtime": "The last {{count}} probes, {{seconds}} s apart.",
+      "description_hourly": "Hourly averages, {{count}} buckets from {{from}} to {{to}}.",
+      "description_twelvehour": "12-hour averages, {{count}} buckets from {{from}} to {{to}}.",
+      "description_daily": "Daily averages, {{count}} buckets from {{from}} to {{to}}.",
+      "description_loading": "Reading the probe history.",
+      "description_unreadable": "No window to describe while the history cannot be read.",
+      "description_empty": "Nothing measured in this range yet."
+    },
+    "samples": {
+      "title": "Samples",
+      "description": "Showing {{shown}} of {{total}} in this window.",
+      "description_loading": "Reading the probe history.",
+      "description_unreadable": "No samples to count while the history cannot be read.",
+      "col_time": "Time",
+      "col_rtt": "RTT",
+      "col_jitter": "Jitter",
+      "col_loss": "Loss",
+      "timeout": "Timeout",
+      "sort_label": "Sort by",
+      "sort_newest": "Newest first",
+      "sort_oldest": "Oldest first",
+      "day_today": "Today",
+      "day_yesterday": "Yesterday"
+    },
+    "empty": {
+      "title": "No samples yet",
+      "description": "The probe history fills as the modem measures the link. Nothing has been recorded for this range."
+    },
+    "error": {
+      "title": "Could not read the probe history",
+      "description": "{{message}}",
+      "retry": "Try again"
+    },
+    "notice": {
+      "stale": "Showing the last samples we managed to read. {{message}}"
+    },
+    "unit_ms": "ms",
+    "unit_pct": "%",
+    "unmeasured": "—"
+  },
   "speedtest": {
     "section_label": "Speed Test",
     "start_button_aria": "Start speed test",
-    "idle_description": "Start a speed test to measure your current network speed.",
     "dialog_idle_description": "Measure your current download speed, upload speed, and latency.",
     "result_label": "Speedtest result:",
     "title": "Speed Test",
@@ -191,6 +294,7 @@
   },
   "ca": {
     "title": "Carrier Aggregation",
+    "description": "Component carriers on air, and the bandwidth each contributes.",
     "aggregated": "MHz aggregated",
     "bandwidth": "MHz bandwidth",
     "bw_unknown": "— MHz",
@@ -219,6 +323,7 @@
   },
   "activities": {
     "title": "Recent Activities",
+    "description": "What the radio did, newest first, and whether anything is still unresolved.",
     "empty_title": "No Events",
     "empty_description": "No recent network events detected. Your device is likely stable and not experiencing any significant changes in network conditions.",
     "error_title": "Couldn't load events",

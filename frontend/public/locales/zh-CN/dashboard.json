@@ -1,9 +1,17 @@
 {
+  "page": {
+    "title": "仪表板",
+    "description": "调制解调器的实时概览：当前连接的网络、信号强度，以及最近发生的变化。"
+  },
   "alert": {
     "modem_unreachable": "无法连接到调制解调器，显示的数据可能已过期。"
   },
   "network": {
     "title": "网络状态",
+    "description": "调制解调器当前连接的网络。",
+    "description_unreachable": "上次轮询没有返回结果。",
+    "unreachable": "无法访问调制解调器",
+    "sim_generic": "SIM 卡",
     "signal_5g": "5G 信号",
     "signal_5g_lte_nrca": "5G + LTE / NR-CA",
     "signal_5g_lte": "5G + LTE",
@@ -30,17 +38,23 @@
     "radio_unknown": "射频未知",
     "low_power": "低功耗",
     "standby_label": "待机",
-    "internet_label": "互联网",
     "internet_online": "在线",
     "internet_unreachable": "无响应",
+    "internet_degraded": "不稳定",
+    "internet_recovering": "恢复中",
+    "internet_unknown": "未检测",
     "sim_label": "SIM {{slot}}",
     "no_carrier": "无运营商",
     "internet_tooltip": {
-      "no_reply": "连通性 ping 未收到响应。部分运营商会屏蔽此类探测，因此连接可能仍然正常。"
+      "no_reply": "连通性 ping 未收到响应。部分运营商会屏蔽此类探测，因此连接可能仍然正常。",
+      "degraded": "Ping 能够送达，但至少十分之一的探测丢失。连接处于在线但不可靠的状态。",
+      "recovery": "连接看门狗正在恢复链路。在其完成之前，读数仍不可靠。",
+      "unknown": "连通性探测未上报数据，因此目前无法得知互联网的可达性。"
     }
   },
   "device_status": {
     "title": "设备信息",
+    "description": "硬件标识、固件与运行时间。",
     "icon_alt": "设备图标",
     "show_private": "显示隐私信息",
     "hide_private": "隐藏隐私信息",
@@ -53,6 +67,10 @@
     "device_imei": "设备 IMEI",
     "conn_uptime_short": "连接时长",
     "device_uptime_short": "设备时长",
+    "conn_uptime_caption_up": "链路已连接",
+    "conn_uptime_caption_down": "链路已断开",
+    "device_uptime_caption": "自上次启动",
+    "uptime_unknown": "无法连接",
     "lte_category": "LTE 类别",
     "active_mimo": "活动 MIMO",
     "lan_gateway": "LAN 网关",
@@ -60,6 +78,7 @@
   },
   "metrics": {
     "title": "设备指标",
+    "description": "设备自身的运行状况、累计流量计数，以及到各服务基站的距离。",
     "modem_temperature": "调制解调器温度",
     "high_temp_warning": "温度过高",
     "cpu_usage": "CPU 使用率",
@@ -96,6 +115,7 @@
     "scs": "SCS"
   },
   "signal_card": {
+    "description": "主分量载波",
     "strength_heading": "信号强度",
     "connected": "已连接",
     "disconnected": "已断开",
@@ -108,10 +128,11 @@
     "quality_fair": "一般",
     "quality_poor": "较差",
     "quality_bad": "极弱",
-    "quality_none": "无信号"
+    "quality_none": "无读数"
   },
   "signal_history": {
     "title": "信号质量监控",
+    "description": "4G 与 5G 链路近期的变化，足以区分瞬时波动和真正的下降。",
     "rsrp_label": "RSRP",
     "rsrq_label": "RSRQ",
     "sinr_label": "SINR",
@@ -127,6 +148,7 @@
     "error_description": "无法加载信号历史：{{message}}"
   },
   "latency": {
+    "description": "最近十次探测的往返延迟与丢包率，以及最近一次测速结果。",
     "title": "实时延迟",
     "chart_latency": "延迟",
     "chart_packetloss": "丢包率",
@@ -135,10 +157,91 @@
     "no_reading": "无读数",
     "empty_description": "正在等待首批延迟采样。"
   },
+  "latencyMonitor": {
+    "page": {
+      "title": "延迟监控",
+      "description": "往返时延（RTT）、抖动与丢包率，由调制解调器自身的探测测得。"
+    },
+    "status": {
+      "aria": "连接状态",
+      "connected": "已连接",
+      "degraded": "不稳定",
+      "disconnected": "已断开",
+      "recovery": "恢复中",
+      "unknown": "未上报"
+    },
+    "band": {
+      "average_eyebrow": "平均 RTT",
+      "average_min": "最小 {{value}}",
+      "average_max": "最大 {{value}}",
+      "average_unmeasured": "没有可用于平均的窗口",
+      "jitter_eyebrow": "抖动",
+      "jitter_samples_one": "窗口内 {{count}} 个样本",
+      "jitter_samples_other": "窗口内 {{count}} 个样本",
+      "jitter_unmeasured": "窗口太短",
+      "loss_eyebrow": "丢包率",
+      "loss_counted": "丢失 {{lost}}（共 {{total}}）",
+      "loss_unmeasured": "窗口太短",
+      "target_eyebrow": "探测目标",
+      "target_unknown": "未报告目标"
+    },
+    "range": {
+      "aria": "时间范围",
+      "realtime": "实时",
+      "hourly": "每小时",
+      "twelvehour": "12 小时",
+      "daily": "每日"
+    },
+    "chart": {
+      "title": "往返时延",
+      "legend_latency": "往返时延",
+      "legend_loss": "丢包率",
+      "legend_spread": "最小至最大",
+      "legend_threshold": "良好，至多 {{value}}",
+      "loss_label": "丢包率",
+      "description_realtime": "最近 {{count}} 次探测，间隔 {{seconds}} 秒。",
+      "description_hourly": "每小时平均值，{{count}} 个区间，自 {{from}} 至 {{to}}。",
+      "description_twelvehour": "12 小时平均值，{{count}} 个区间，自 {{from}} 至 {{to}}。",
+      "description_daily": "每日平均值，{{count}} 个区间，自 {{from}} 至 {{to}}。",
+      "description_loading": "正在读取探测历史记录。",
+      "description_unreadable": "历史记录无法读取，暂无窗口可供描述。",
+      "description_empty": "此范围内尚无测量数据。"
+    },
+    "samples": {
+      "title": "样本",
+      "description": "此窗口内显示 {{shown}} / {{total}}。",
+      "description_loading": "正在读取探测历史记录。",
+      "description_unreadable": "历史记录无法读取，暂无样本可供统计。",
+      "col_time": "时间",
+      "col_rtt": "RTT",
+      "col_jitter": "抖动",
+      "col_loss": "丢包",
+      "timeout": "超时",
+      "sort_label": "排序方式",
+      "sort_newest": "最新优先",
+      "sort_oldest": "最早优先",
+      "day_today": "今天",
+      "day_yesterday": "昨天"
+    },
+    "empty": {
+      "title": "暂无样本",
+      "description": "调制解调器测量链路后，探测历史记录会逐步填充。此范围内尚无记录。"
+    },
+    "error": {
+      "title": "无法读取探测历史记录",
+      "description": "{{message}}",
+      "retry": "重试"
+    },
+    "notice": {
+      "stale": "正在显示我们成功读取到的最后样本。{{message}}"
+    },
+    "unit_ms": "ms",
+    "unit_pct": "%",
+    "unmeasured": "—"
+  },
   "speedtest": {
     "section_label": "速度测试",
     "start_button_aria": "开始速度测试",
-    "idle_description": "开始速度测试以测量当前的网络速度。",
     "dialog_idle_description": "测量当前的下载速度、上传速度和延迟。",
     "result_label": "测试结果：",
     "title": "速度测试",
@@ -191,6 +294,7 @@
   },
   "ca": {
     "title": "载波聚合",
+    "description": "当前在用的成员载波，以及各自贡献的带宽。",
     "aggregated": "MHz 聚合带宽",
     "bandwidth": "MHz 带宽",
     "bw_unknown": "— MHz",
@@ -219,6 +323,7 @@
   },
   "activities": {
     "title": "最近活动",
+    "description": "无线电模块的最新动态，并标注仍未解决的问题。",
     "empty_title": "无事件",
     "empty_description": "未检测到近期网络事件。您的设备状态可能很稳定，网络状况没有显著变化。",
     "error_title": "无法加载事件",

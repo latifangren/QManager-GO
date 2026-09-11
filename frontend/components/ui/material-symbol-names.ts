@@ -92,6 +92,16 @@ export const MATERIAL_SYMBOL_NAMES = [
   "info",
   "layers",
   "light_mode",
+  // The connection-uptime tile's state pair. The tile reports whether the
+  // data bearer is attached, and shipped it said so with a success-container
+  // body and NO mark at all, beside an identically shaped neutral tile --
+  // colour as the sole channel, on the one pairing where it is least
+  // survivable. `signal_disconnected` could not be borrowed for the down
+  // state: it is already the Internet chip's down mark in the rail at the top
+  // of this same page, and two adjacent things on one screen wearing one glyph
+  // for two different questions is the ambiguity the ladder exists to remove.
+  "link",
+  "link_off",
   "location_on",
   "lock",
   "lock_clock",
@@ -123,6 +133,7 @@ export const MATERIAL_SYMBOL_NAMES = [
   "search",
   "send",
   "settings",
+  "settings_backup_restore",
   "settings_ethernet",
   "settings_input_antenna",
   "shield",
@@ -146,10 +157,19 @@ export const MATERIAL_SYMBOL_NAMES = [
   "sim_card_alert",
   "sms",
   "sos",
+  "speed",
   "sports_esports",
+  "stacked_line_chart",
   "support",
   "swap_horiz",
   "terminal",
+  // The Overview splash's `normal` temperature band. Temperature previously
+  // only spoke when something was wrong — `warning` and `priority_high` and
+  // otherwise no glyph at all — which made a silent tile ambiguous between
+  // "fine" and "not measured". A healthy reading needs its own mark, and this
+  // is the only glyph in the family that names the quantity rather than a
+  // verdict about it.
+  "thermostat",
   "timeline",
   "translate",
   "trophy",

@@ -1,7 +1,13 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"qmanager/internal/atengine"
 )
 
 func TestValidateLuhnIMEI(t *testing.T) {
@@ -108,5 +114,195 @@ func TestRatAcqOrderValidation(t *testing.T) {
 	}
 	if isValidRatAcqOrder("INVALID:LTE") {
 		t.Errorf("INVALID:LTE should be invalid")
+	}
+}
+
+func TestLockTower_5G_CanonicalFormat(t *testing.T) {
+	mock := atengine.NewMockTransport()
+	eng := atengine.NewEngine(mock)
+	defer eng.Close()
+
+	h := NewCellularHandler(eng, nil)
+
+	mock.SetResponse(`AT+QNWLOCK="common/5g",120,627264,30,78`, "OK")
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"mode":   "5g",
+		"pcid":   120,
+		"earfcn": 627264,
+		"scs":    30,
+		"band":   78,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/cellular/lock-tower", bytes.NewBuffer(body))
+	w := httptest.NewRecorder()
+	h.LockTower(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("LockTower returned %d, want 200", w.Code)
+	}
+
+	history := mock.GetHistory()
+	expectedCmd := `AT+QNWLOCK="common/5g",120,627264,30,78`
+	found := false
+	for _, cmd := range history {
+		if cmd == expectedCmd {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected command %q in history, got: %v", expectedCmd, history)
+	}
+}
+
+func TestLockTower_5G_WithoutBand_Returns400(t *testing.T) {
+	mock := atengine.NewMockTransport()
+	eng := atengine.NewEngine(mock)
+	defer eng.Close()
+
+	h := NewCellularHandler(eng, nil)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"mode":   "5g",
+		"pcid":   120,
+		"earfcn": 627264,
+		"scs":    30,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/cellular/lock-tower", bytes.NewBuffer(body))
+	w := httptest.NewRecorder()
+	h.LockTower(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("LockTower 5G without band returned %d, want 400", w.Code)
+	}
+}
+
+func TestLockTower_5G_Aliases(t *testing.T) {
+	mock := atengine.NewMockTransport()
+	eng := atengine.NewEngine(mock)
+	defer eng.Close()
+
+	h := NewCellularHandler(eng, nil)
+
+	mock.SetResponse(`AT+QNWLOCK="common/5g",120,627264,30,78`, "OK")
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"mode":  "5g",
+		"pci":   120,
+		"arfcn": 627264,
+		"band":  78,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/cellular/lock-tower", bytes.NewBuffer(body))
+	w := httptest.NewRecorder()
+	h.LockTower(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("LockTower with aliases returned %d, want 200", w.Code)
+	}
+
+	history := mock.GetHistory()
+	expectedCmd := `AT+QNWLOCK="common/5g",120,627264,30,78`
+	found := false
+	for _, cmd := range history {
+		if cmd == expectedCmd {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected command %q in history, got: %v", expectedCmd, history)
+	}
+}
+
+func TestHandleTowerLockCGI(t *testing.T) {
+	mock := atengine.NewMockTransport()
+	eng := atengine.NewEngine(mock)
+	defer eng.Close()
+
+	h := NewCellularHandler(eng, nil)
+
+	// 1. LTE lock
+	bodyLTELock, _ := json.Marshal(map[string]interface{}{
+		"type":   "lte",
+		"action": "lock",
+		"cells": []map[string]int{
+			{"earfcn": 1300, "pci": 123},
+		},
+	})
+	mock.SetResponse(`AT+QNWLOCK="common/4g",1,1300,123`, "OK")
+	reqLTELock := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/tower/lock.sh", bytes.NewBuffer(bodyLTELock))
+	wLTELock := httptest.NewRecorder()
+	h.HandleTowerLockCGI(wLTELock, reqLTELock)
+	if wLTELock.Code != http.StatusOK {
+		t.Fatalf("HandleTowerLockCGI LTE lock returned %d, want 200", wLTELock.Code)
+	}
+
+	// 2. LTE unlock
+	bodyLTEUnlock, _ := json.Marshal(map[string]interface{}{
+		"type":   "lte",
+		"action": "unlock",
+	})
+	mock.SetResponse(`AT+QNWLOCK="common/4g",0`, "OK")
+	reqLTEUnlock := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/tower/lock.sh", bytes.NewBuffer(bodyLTEUnlock))
+	wLTEUnlock := httptest.NewRecorder()
+	h.HandleTowerLockCGI(wLTEUnlock, reqLTEUnlock)
+	if wLTEUnlock.Code != http.StatusOK {
+		t.Fatalf("HandleTowerLockCGI LTE unlock returned %d, want 200", wLTEUnlock.Code)
+	}
+
+	// 3. NR-SA lock
+	bodyNRLock, _ := json.Marshal(map[string]interface{}{
+		"type":   "nr_sa",
+		"action": "lock",
+		"pci":    901,
+		"arfcn":  504990,
+		"scs":    30,
+		"band":   41,
+	})
+	mock.SetResponse(`AT+QNWLOCK="common/5g",901,504990,30,41`, "OK")
+	reqNRLock := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/tower/lock.sh", bytes.NewBuffer(bodyNRLock))
+	wNRLock := httptest.NewRecorder()
+	h.HandleTowerLockCGI(wNRLock, reqNRLock)
+	if wNRLock.Code != http.StatusOK {
+		t.Fatalf("HandleTowerLockCGI NR-SA lock returned %d, want 200", wNRLock.Code)
+	}
+
+	// 4. NR-SA unlock
+	bodyNRUnlock, _ := json.Marshal(map[string]interface{}{
+		"type":   "nr_sa",
+		"action": "unlock",
+	})
+	mock.SetResponse(`AT+QNWLOCK="common/5g",0`, "OK")
+	reqNRUnlock := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/tower/lock.sh", bytes.NewBuffer(bodyNRUnlock))
+	wNRUnlock := httptest.NewRecorder()
+	h.HandleTowerLockCGI(wNRUnlock, reqNRUnlock)
+	if wNRUnlock.Code != http.StatusOK {
+		t.Fatalf("HandleTowerLockCGI NR-SA unlock returned %d, want 200", wNRUnlock.Code)
+	}
+
+	// 5. NR-SA lock without band returns 400
+	bodyNoBand, _ := json.Marshal(map[string]interface{}{
+		"type":   "nr_sa",
+		"action": "lock",
+		"pci":    901,
+		"arfcn":  504990,
+	})
+	reqNoBand := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/tower/lock.sh", bytes.NewBuffer(bodyNoBand))
+	wNoBand := httptest.NewRecorder()
+	h.HandleTowerLockCGI(wNoBand, reqNoBand)
+	if wNoBand.Code != http.StatusBadRequest {
+		t.Fatalf("HandleTowerLockCGI NR-SA lock without band returned %d, want 400", wNoBand.Code)
+	}
+
+	// 6. Invalid type returns 400
+	bodyBadType, _ := json.Marshal(map[string]interface{}{
+		"type":   "gsm",
+		"action": "lock",
+	})
+	reqBadType := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/tower/lock.sh", bytes.NewBuffer(bodyBadType))
+	wBadType := httptest.NewRecorder()
+	h.HandleTowerLockCGI(wBadType, reqBadType)
+	if wBadType.Code != http.StatusBadRequest {
+		t.Fatalf("HandleTowerLockCGI invalid type returned %d, want 400", wBadType.Code)
 	}
 }

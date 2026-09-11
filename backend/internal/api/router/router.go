@@ -58,6 +58,7 @@ func NewRouter(s AppServices) http.Handler {
 	authH := handlers.NewAuthHandler("admin", filepath.Join(configDir, "auth.json"))
 	bandFailoverH := handlers.NewBandFailoverHandler()
 	cellH := handlers.NewCellularHandler(s.Engine, s.Poller, bandFailoverH)
+	cellSettingsH := handlers.NewCellularSettingsHandler(s.Engine)
 	apnH := handlers.NewCellularApnHandler(s.Engine, s.ConfigMgr, configDir)
 	imeiH := handlers.NewCellularImeiHandler(s.Engine, s.Poller, s.ConfigMgr, configDir)
 	fplmnH := handlers.NewCellularFplmnHandler(s.Engine)
@@ -171,6 +172,8 @@ func NewRouter(s AppServices) http.Handler {
 			prot.Delete("/cellular/scenarios/{id}", scenarioH.Delete)
 
 			// Cellular Settings & Identity Suite
+			prot.Get("/cellular/settings", cellSettingsH.GetSettings)
+			prot.Post("/cellular/settings", cellSettingsH.ApplySettings)
 			prot.Get("/cellular/apn", apnH.GetAPN)
 			prot.Post("/cellular/apn", apnH.SaveAPN)
 			prot.Get("/cellular/imei", imeiH.GetIMEI)
@@ -183,6 +186,7 @@ func NewRouter(s AppServices) http.Handler {
 			prot.Post("/cellular/mbn", mbnH.SaveMBN)
 
 			// Network, Traffic & Ethernet
+			prot.Get("/network/ttl", netH.GetTTL)
 			prot.Post("/network/ttl", netH.SetTTL)
 			prot.Get("/network/dns", customDNSH.HandleGet)
 			prot.Post("/network/dns", customDNSH.HandlePost)
@@ -292,6 +296,7 @@ func NewRouter(s AppServices) http.Handler {
 
 		// Tower CGI
 		cgi.Get("/tower/status.sh", towerH.Status)
+		cgi.Post("/tower/lock.sh", cellH.HandleTowerLockCGI)
 		cgi.Post("/tower/settings.sh", towerH.Settings)
 		cgi.Post("/tower/schedule.sh", towerH.Schedule)
 		cgi.Get("/tower/failover_status.sh", towerH.FailoverStatus)
@@ -314,6 +319,8 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Post("/scenarios/delete.sh", scenarioH.Delete)
 
 		// Cellular settings CGI endpoints
+		cgi.Get("/cellular/settings.sh", cellSettingsH.GetSettings)
+		cgi.Post("/cellular/settings.sh", cellSettingsH.ApplySettings)
 		cgi.Get("/cellular/apn.sh", apnH.GetAPN)
 		cgi.Post("/cellular/apn.sh", apnH.SaveAPN)
 		cgi.Get("/cellular/imei.sh", imeiH.GetIMEI)
@@ -326,6 +333,8 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Post("/cellular/mbn.sh", mbnH.SaveMBN)
 
 		// Network & Ethernet CGI endpoints
+		cgi.Get("/network/ttl.sh", netH.GetTTL)
+		cgi.Post("/network/ttl.sh", netH.SetTTL)
 		cgi.Get("/network/ip_passthrough.sh", ipptH.Status)
 		cgi.Post("/network/ip_passthrough.sh", ipptH.Apply)
 		cgi.Get("/network/mtu.sh", mtuH.GetMTU)
@@ -378,6 +387,7 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Get("/system/sim_registry.sh", simRegH.HandleRegistry)
 		cgi.Post("/system/sim_registry.sh", simRegH.HandleRegistry)
 		cgi.Get("/system/known_sims.sh", simRegH.HandleRegistry)
+		cgi.Post("/system/known_sims.sh", simRegH.HandleRegistry)
 		cgi.Post("/system/reboot.sh", sysH.Reboot)
 		cgi.Get("/system/update.sh", updateH.CheckUpdate)
 		cgi.Post("/system/update.sh", updateH.HandleUpdateAction)

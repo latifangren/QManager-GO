@@ -62,19 +62,11 @@ export function useLatencyHistory(
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const json = await response.json();
+      const json: PingHistoryEntry[] = await response.json();
 
       if (!mountedRef.current) return;
 
-      const historyData: PingHistoryEntry[] = Array.isArray(json)
-        ? json
-        : Array.isArray(json?.history)
-        ? json.history
-        : Array.isArray(json?.data)
-        ? json.data
-        : [];
-
-      setData(historyData);
+      setData(json);
       setError(null);
       setIsLoading(false);
     } catch (err) {

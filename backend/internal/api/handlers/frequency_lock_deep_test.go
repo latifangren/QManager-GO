@@ -148,3 +148,23 @@ func TestFrequencyLockHandler_Deep(t *testing.T) {
 		t.Errorf("unexpected NR lock response: %+v", nrSuccessResp)
 	}
 }
+
+func TestParseTowerLockNR_Responses(t *testing.T) {
+	// Unlocked 5G response returns false
+	unlocked := `+QNWLOCK: "common/5g",0` + "\r\nOK"
+	if parseTowerLockNR(unlocked) {
+		t.Errorf("expected parseTowerLockNR(%q) to be false, got true", unlocked)
+	}
+
+	// Locked 5G response returns true
+	locked := `+QNWLOCK: "common/5g",120,627264,30,78` + "\r\nOK"
+	if !parseTowerLockNR(locked) {
+		t.Errorf("expected parseTowerLockNR(%q) to be true, got false", locked)
+	}
+
+	// Locked with PCI 0 returns true (PCI 0 must not be confused with unlocked 0)
+	lockedPci0 := `+QNWLOCK: "common/5g",0,627264,30,78` + "\r\nOK"
+	if !parseTowerLockNR(lockedPci0) {
+		t.Errorf("expected parseTowerLockNR(%q) to be true for PCI 0, got false", lockedPci0)
+	}
+}

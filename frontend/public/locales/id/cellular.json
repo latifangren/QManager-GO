@@ -320,6 +320,7 @@
       "scanning_title": "Menyetel setiap band",
       "scanning_body": "Biarkan tab ini terbuka — hasilnya muncul di sini setelah modem selesai.",
       "complete_title": "Pemindaian selesai",
+      "summary_total_cells": "Total sel",
       "failed_title": "Pemindaian gagal",
       "failed_body": "Modem mungkin sedang sibuk atau tidak dapat dihubungi. Periksa koneksi lalu pindai ulang."
     },
@@ -425,10 +426,8 @@
         "link_blocked": "Tersedia setelah pembacaan ini selesai.",
         "summary_empty": "Pembacaan selesai tanpa menyebut satu sel tetangga pun, jadi tidak ada yang bisa diuraikan.",
         "summary_measured_label": "Dengan pengukuran",
-        "summary_channels_one": "1 kanal",
-        "summary_channels_other": "{{count}} kanal",
-        "summary_channel_only_one": "1 hanya kanal",
-        "summary_channel_only_other": "{{count}} hanya kanal",
+        "available_bands_one": "1 band tersedia",
+        "available_bands_other": "{{count}} band tersedia",
         "verdict_channel_only_one": "1 sel tetangga dikembalikan hanya sebagai kanal: sel pelayan tahu sel itu ada tetapi tidak punya pengukuran terkini untuknya, jadi ia tidak membawa kualitas dan tidak bisa dikunci.",
         "verdict_channel_only_other": "{{count}} sel tetangga dikembalikan hanya sebagai kanal: sel pelayan tahu sel-sel itu ada tetapi tidak punya pengukuran terkini untuknya, jadi mereka tidak membawa kualitas dan tidak bisa dikunci.",
         "idle_title": "Belum ada pembacaan",
@@ -451,7 +450,9 @@
         "tally_measured_one": "1 terukur",
         "tally_measured_other": "{{count}} terukur",
         "tally_channel_only_one": "1 hanya kanal",
-        "tally_channel_only_other": "{{count}} hanya kanal"
+        "tally_channel_only_other": "{{count}} hanya kanal",
+        "tally_bands_one": "1 band",
+        "tally_bands_other": "{{count}} band"
       },
       "columns": {
         "cell_type": "Relasi",
@@ -587,12 +588,10 @@
         "title": "Konfigurasi APN",
         "description": "Nama Titik Akses yang digunakan modem untuk membangun koneksi data."
       },
-      "status": {
-        "active": "Aktif",
-        "not_live": "Tidak live",
-        "carrier_default": "Default operator"
+      "cards": {
+        "unread": "Belum ada data yang terbaca dari modem, jadi kartu ini belum punya nilai untuk ditampilkan."
       },
-      "save_connection_notice": "Menyimpan akan memutus koneksi seluler sebentar saat modem menyambung ulang.",
+      "save_connection_notice": "Menyimpan akan melepas dan menyambungkan ulang modem. Data seluler terputus sekitar empat detik — dan jika Anda terhubung lewat port Ethernet modem, halaman ini juga akan terputus lalu menyambung sendiri.",
       "carrier_default": {
         "button": "Gunakan default operator",
         "dialog": {
@@ -606,7 +605,8 @@
         "saved": "Pengaturan APN disimpan",
         "save_error": "Gagal menyimpan pengaturan APN",
         "deactivated": "Dikembalikan ke APN default operator",
-        "deactivate_error": "Gagal kembali ke default operator"
+        "deactivate_error": "Gagal kembali ke default operator",
+        "reconciling": "Memastikan koneksi sudah kembali…"
       },
       "controls_label": "Konfigurasi APN",
       "managed_by_profile_fallback": "Profil SIM Kustom aktif",
@@ -643,6 +643,9 @@
           "description_sos": "CID {{cid}} dicadangkan untuk panggilan darurat (SOS). Menulis APN data di sini dapat mengganggu panggilan darurat. Tetap lanjutkan?",
           "confirm": "Tetap gunakan",
           "cancel": "Batal"
+        },
+        "reserved_dialog": {
+          "unverified_body": "Konteks ini biasanya dicadangkan untuk VoLTE atau panggilan darurat, tetapi modem belum melaporkan tipenya. Menulis APN data di sini dapat mengganggu layanan tersebut."
         }
       },
       "rows": {
@@ -665,7 +668,6 @@
       "readout": {
         "title": "Yang diberikan jaringan",
         "description": "Dibaca langsung dari modem, bukan dari nilai yang disimpan.",
-        "serving_apn": "APN aktif",
         "granted_ip": "IP yang diberikan",
         "bearer_state": "Status bearer",
         "ipv4": "Alamat IPv4",
@@ -677,7 +679,14 @@
         "ip_both": "IPv4 dan IPv6",
         "ip_none": "Belum ditetapkan",
         "error_title": "Status langsung tidak tersedia",
-        "error_body": "Umpan status modem tidak merespons. Nilai di bawah mungkin tidak lengkap."
+        "error_body": "Umpan status modem tidak merespons. Nilai di bawah mungkin tidak lengkap.",
+        "configured_label": "Yang Anda atur",
+        "granted_label": "Yang jaringan berikan",
+        "source_stored": "Dari pengaturan tersimpan",
+        "source_negotiated": "Hasil negosiasi dengan jaringan",
+        "stale": "Pembacaan berhenti",
+        "stale_body": "Umpan status modem belum melapor akhir-akhir ini. Nilai di atas mungkin sudah tidak benar.",
+        "reread": "Baca ulang dari modem"
       },
       "mbn": {
         "title": "Profil Operator (MBN)",
@@ -688,7 +697,6 @@
         },
         "list_label": "Paket tersedia",
         "selected_caption": "Terpilih, aktif sejak boot terakhir",
-        "reboot_notice": "Paket berlaku setelah reboot. QManager hanya menawarkan reboot, tidak pernah melakukannya sendiri.",
         "pending_note": "Perubahan berlaku setelah reboot.",
         "save": "Terapkan profil",
         "empty": {
@@ -798,27 +806,34 @@
         "reread": "Baca ulang dari modem",
         "in_sync": "Pengaturan tersimpan cocok dengan modem."
       },
-      "hero": {
-        "title": "Koneksi Saat Ini",
-        "description": "Jaringan yang sedang dipakai modem sekarang, dan batas kecepatan yang diberikan jaringan itu.",
-        "params_heading": "Parameter aktif",
-        "rates_note": "Batas kecepatan adalah plafon yang diberikan jaringan, bukan kecepatan terukur. Nilainya dibaca saat halaman dibuka dan sekali lagi setiap kali selesai menyimpan.",
-        "sr_rate_block": "{{radio}}: {{state}}",
-        "live": "Langsung",
+      "strip": {
+        "label": "Status langsung",
         "stale": "Usang",
+        "network": "Jaringan",
+        "sim": "SIM",
+        "aggregation": "Agregasi",
+        "data_path": "Jalur data",
         "carrier_none": "Tidak ada operator yang dilaporkan",
+        "bands_none": "Tidak ada band yang dilaporkan",
+        "ip_dual": "IPv4 dan IPv6 diberikan",
+        "ip_v4": "Hanya IPv4",
+        "ip_v6": "Hanya IPv6",
+        "ip_none": "Tidak ada alamat yang diberikan",
         "unavailable_title": "Gagal membaca modem",
-        "unavailable_retrying": "Pembacaan terakhir gagal. QManager masih mencoba.",
-        "unavailable_static": "Pembacaan terakhir gagal. Gunakan \"Baca ulang dari modem\" di bawah untuk mencoba lagi."
+        "unavailable_retrying": "Pembacaan terakhir gagal. QManager masih mencoba."
+      },
+      "rate_ceiling": {
+        "eyebrow": "Plafon kecepatan yang diberikan jaringan",
+        "in_force": "AMBR {{radio}} berlaku",
+        "no_ceiling": "Plafon tidak terbaca",
+        "sr_rate_block": "{{radio}}: {{state}}",
+        "provenance": "Batas kecepatan adalah plafon yang diberikan jaringan, bukan kecepatan terukur. Nilainya dibaca saat halaman dibuka dan sekali lagi setiap kali selesai menyimpan.",
+        "unavailable": "Pembacaan terakhir gagal. Gunakan \"Baca ulang dari modem\" di bawah untuk mencoba lagi."
       },
       "readout": {
-        "active_slot": "Slot aktif",
         "slot_n": "SIM {{slot}}",
         "unknown": "Tidak diketahui",
-        "radio_power_label": "Daya radio",
-        "apn_label": "APN aktif",
         "no_apn": "Tidak dilaporkan",
-        "carrier_aggregation": "Agregasi carrier",
         "ca_none": "Tidak aktif",
         "ca_breakdown": "LTE {{lte}} + NR {{nr}}",
         "ca_lte_only": "LTE {{lte}}",
@@ -833,7 +848,6 @@
         "unknown": "Tidak diketahui"
       },
       "sim_slots": {
-        "label": "Slot SIM",
         "empty": "Kosong",
         "sr_active": "SIM {{slot}}, aktif, kartu berakhiran {{last4}}",
         "sr_standby": "SIM {{slot}}, siaga, kartu berakhiran {{last4}}",
@@ -845,13 +859,13 @@
         "governing": "Berlaku",
         "not_governing": "Tidak berlaku",
         "nsa_note": "5G non-standalone berjalan di atas sesi data LTE, jadi batas inilah yang berlaku.",
-        "lte_empty_title": "Tidak ada kecepatan LTE dilaporkan",
         "lte_empty_reason": "Modem hanya menerbitkan batas LTE selama sesi data LTE aktif.",
-        "nr_empty_title": "Tidak ada kecepatan 5G dilaporkan",
         "nr_empty_reason": "Modem hanya menerbitkan batas 5G selama sesi data 5G aktif.",
         "download": "Unduh",
         "upload": "Unggah",
-        "governing_unread": "Koneksi Anda memakai radio ini. Tidak ada batas yang terbaca untuknya saat halaman dibuka."
+        "governing_unread": "Koneksi Anda memakai radio ini. Tidak ada batas yang terbaca untuknya saat halaman dibuka.",
+        "lte_short": "LTE",
+        "nr_short": "5G NR"
       }
     },
     "fplmn": {
@@ -1132,7 +1146,8 @@
         "imei_override": "Penggantian IMEI",
         "scenario": "Skenario berlaku",
         "scheduled": "Terjadwal",
-        "radio": "Radio, dikendalikan skenario",
+        "not_scheduled": "Tidak dijadwalkan",
+        "radio": "Konfigurasi radio",
         "band_locking": "Penguncian band",
         "network_mode": "Mode jaringan",
         "lte_bands": "Band LTE",
