@@ -841,6 +841,28 @@ func (p *Poller) poll() {
 	// 2. Carrier aggregation
 	if res, err := p.engine.ExecLow(ctx, `AT+QCAINFO`); err == nil {
 		caList := atengine.ParseQCAINFO(res.Raw)
+
+		// Reconcile NR leg in NSA EN-DC mode if AT+QCAINFO reports 0 dBm or invalid PCI (-99 / -100)
+		if status.NR.PCI != nil && *status.NR.PCI > 0 {
+			for i, comp := range caList {
+				if comp.Technology == "NR" || strings.HasPrefix(strings.ToUpper(comp.Band), "N") {
+					if caList[i].PCI <= 0 && *status.NR.PCI > 0 {
+						caList[i].PCI = *status.NR.PCI
+						caList[i].PCID = *status.NR.PCI
+					}
+					if caList[i].RSRP == 0 && status.NR.RSRP != nil && *status.NR.RSRP != 0 {
+						caList[i].RSRP = *status.NR.RSRP
+					}
+					if caList[i].RSRQ == 0 && status.NR.RSRQ != nil && *status.NR.RSRQ != 0 {
+						caList[i].RSRQ = *status.NR.RSRQ
+					}
+					if caList[i].SINR == 0 && status.NR.SINR != nil && *status.NR.SINR != 0 {
+						caList[i].SINR = *status.NR.SINR
+					}
+				}
+			}
+		}
+
 		status.CA = caList
 		status.Network.CarrierComponents = caList
 		status.Network.CACount = len(caList)
