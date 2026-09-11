@@ -82,6 +82,8 @@ jobs:
             cp deploy/systemd/qmanager.service "${staging_dir}/"
             cp deploy/install.sh "${staging_dir}/"
             cp deploy/README.md "${staging_dir}/"
+            cp deploy/TROUBLESHOOTING.md "${staging_dir}/"
+            cp deploy/TROUBLESHOOTING_ID.md "${staging_dir}/"
             chmod +x "${staging_dir}/qmanager" "${staging_dir}/install.sh"
 
             tar -czf "release-artifacts/${tarball_name}" -C "${staging_dir}" .
