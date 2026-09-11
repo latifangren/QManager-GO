@@ -254,9 +254,7 @@ func (p *PingProber) ProbeOnce() PingSample {
 				Timeout: dialTimeout,
 				Control: func(network, address string, c syscall.RawConn) error {
 					return c.Control(func(fd uintptr) {
-						if iface != "" {
-							_ = syscall.SetsockoptString(int(fd), syscall.SOL_SOCKET, 25, iface) // 25 = SO_BINDTODEVICE
-						}
+						bindSocketToDevice(fd, iface)
 					})
 				},
 			}
