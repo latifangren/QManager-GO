@@ -53,11 +53,13 @@ func (h *CellularFplmnHandler) GetFPLMN(w http.ResponseWriter, r *http.Request) 
 	hexData := parseCRSMHexData(res.Raw)
 	entries := ParseFplmnHex(hexData)
 
+	hasEntries := len(entries) > 0
 	JSON(w, http.StatusOK, map[string]interface{}{
-		"success":  true,
-		"fplmns":   entries,
-		"count":    len(entries),
-		"raw_data": hexData,
+		"success":     true,
+		"has_entries": hasEntries,
+		"fplmns":      entries,
+		"count":       len(entries),
+		"raw_data":    hexData,
 	})
 }
 
