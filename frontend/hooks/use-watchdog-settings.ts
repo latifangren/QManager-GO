@@ -100,13 +100,22 @@ export function useWatchdogSettings(): UseWatchdogSettingsReturn {
         return;
       }
 
-      // Defensive defaults: the frozen backend always emits fail_threshold +
-      // probe_interval, but guard the rename so an older/partial envelope during
-      // an OTA rollout can't seed the form with NaN.
+      const rawSettings = json.settings || {};
       setSettings({
-        ...json.settings,
-        fail_threshold: json.settings?.fail_threshold ?? 5,
-        probe_interval: json.settings?.probe_interval ?? 5,
+        enabled: rawSettings.enabled === true || rawSettings.enabled === 1,
+        tier1_enabled: rawSettings.tier1_enabled === true || rawSettings.tier1_enabled === 1,
+        tier2_enabled: rawSettings.tier2_enabled === true || rawSettings.tier2_enabled === 1,
+        tier3_enabled: rawSettings.tier3_enabled === true || rawSettings.tier3_enabled === 1,
+        tier4_enabled: rawSettings.tier4_enabled === true || rawSettings.tier4_enabled === 1,
+        backup_sim_slot:
+          rawSettings.backup_sim_slot !== null && rawSettings.backup_sim_slot !== "" && rawSettings.backup_sim_slot !== undefined
+            ? Number(rawSettings.backup_sim_slot)
+            : null,
+        fail_threshold: Number(rawSettings.fail_threshold) || 5,
+        probe_interval: Number(rawSettings.probe_interval) || 5,
+        check_interval: Number(rawSettings.check_interval) || 10,
+        cooldown: Number(rawSettings.cooldown) || 60,
+        max_reboots_per_hour: Number(rawSettings.max_reboots_per_hour) || 3,
       });
       setAutoDisabled(json.auto_disabled === true);
     } catch (err) {

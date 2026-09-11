@@ -346,6 +346,19 @@ func (w *Watchdog) escalateAndRecoverLocked(cfg config.WatchcatConfig, now time.
 	}
 }
 
+// RevertSim restores primary SIM slot (slot 1) if failover was active.
+func (w *Watchdog) RevertSim() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.activeSimSlot != 1 {
+		w.activeSimSlot = 1
+		w.failoverActive = false
+		if w.engine != nil {
+			_, _ = w.engine.ExecHigh(context.Background(), "AT+QUIMSLOT=1")
+		}
+	}
+}
+
 // GetStatus returns the current live status of the watchdog.
 func (w *Watchdog) GetStatus() WatchdogStatus {
 	w.mu.Lock()
