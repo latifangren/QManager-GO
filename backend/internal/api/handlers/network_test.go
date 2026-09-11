@@ -3,8 +3,10 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -46,7 +48,13 @@ func TestTrafficEngineHostlistParsing(t *testing.T) {
 }
 
 func TestGetTTL_And_SetTTL(t *testing.T) {
-	h := NewNetworkHandler(nil)
+	executedCmds := []string{}
+	mockRunner := func(name string, arg ...string) error {
+		executedCmds = append(executedCmds, fmt.Sprintf("%s %s", name, strings.Join(arg, " ")))
+		return nil
+	}
+
+	h := NewNetworkHandler(nil, mockRunner)
 
 	// 1. Initial GetTTL returns defaults
 	reqGet := httptest.NewRequest(http.MethodGet, "/api/v1/network/ttl", nil)
@@ -145,5 +153,17 @@ func TestGetTTL_And_SetTTL(t *testing.T) {
 	h.SetTTL(wNegative, reqNegative)
 	if wNegative.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for ttl=-5, got %d", wNegative.Code)
+	}
+
+	// 8. Runner failure returns 500
+	failRunner := func(name string, arg ...string) error {
+		return fmt.Errorf("permission denied")
+	}
+	hFail := NewNetworkHandler(nil, failRunner)
+	reqFail := httptest.NewRequest(http.MethodPost, "/api/v1/network/ttl", bytes.NewBuffer(bodyTTLOnly))
+	wFail := httptest.NewRecorder()
+	hFail.SetTTL(wFail, reqFail)
+	if wFail.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 when runner fails, got %d", wFail.Code)
 	}
 }

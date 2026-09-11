@@ -11,20 +11,40 @@ import (
 	"qmanager/internal/telemetry"
 )
 
+// CommandRunner executes system commands.
+type CommandRunner func(name string, arg ...string) error
+
 // NetworkHandler manages network settings, DNS, TTL, and latency prober.
 type NetworkHandler struct {
 	prober *telemetry.PingProber
 	mu     sync.RWMutex
 	ttl    int
 	hl     int
+	runner CommandRunner
 }
 
 // NewNetworkHandler creates a NetworkHandler.
-func NewNetworkHandler(prober *telemetry.PingProber) *NetworkHandler {
+func NewNetworkHandler(prober *telemetry.PingProber, runner ...CommandRunner) *NetworkHandler {
+	var r CommandRunner = func(name string, arg ...string) error {
+		return exec.Command(name, arg...).Run()
+	}
+	if len(runner) > 0 && runner[0] != nil {
+		r = runner[0]
+	}
 	return &NetworkHandler{
 		prober: prober,
 		ttl:    64,
 		hl:     64,
+		runner: r,
+	}
+}
+
+// SetCommandRunner overrides the command runner (e.g. for testing).
+func (h *NetworkHandler) SetCommandRunner(runner CommandRunner) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if runner != nil {
+		h.runner = runner
 	}
 }
 
@@ -71,12 +91,10 @@ func (h *NetworkHandler) SetTTL(w http.ResponseWriter, r *http.Request) {
 
 	// Delete previous iptables rules if previously set
 	if prevTTL > 0 {
-		delCmd := exec.Command("iptables", "-t", "mangle", "-D", "POSTROUTING", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", prevTTL))
-		_ = delCmd.Run()
+		_ = h.runner("iptables", "-t", "mangle", "-D", "POSTROUTING", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", prevTTL))
 	}
 	if prevHL > 0 {
-		del6Cmd := exec.Command("ip6tables", "-t", "mangle", "-D", "POSTROUTING", "-j", "HL", "--hl-set", fmt.Sprintf("%d", prevHL))
-		_ = del6Cmd.Run()
+		_ = h.runner("ip6tables", "-t", "mangle", "-D", "POSTROUTING", "-j", "HL", "--hl-set", fmt.Sprintf("%d", prevHL))
 	}
 
 	if req.TTL == 0 && req.HL == 0 {
@@ -101,19 +119,13 @@ func (h *NetworkHandler) SetTTL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Apply iptables TTL mangle rule (IPv4)
-	addCmd := exec.Command("iptables", "-t", "mangle", "-A", "POSTROUTING", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", req.TTL))
-	if _, err := exec.LookPath("iptables"); err == nil {
-		if err := addCmd.Run(); err != nil {
-			Error(w, http.StatusInternalServerError, fmt.Sprintf("Failed to set TTL via iptables: %v", err))
-			return
-		}
-	} else {
-		_ = addCmd.Run()
+	if err := h.runner("iptables", "-t", "mangle", "-A", "POSTROUTING", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", req.TTL)); err != nil {
+		Error(w, http.StatusInternalServerError, fmt.Sprintf("Failed to set TTL via iptables: %v", err))
+		return
 	}
 
 	// Apply ip6tables HL mangle rule (IPv6)
-	add6Cmd := exec.Command("ip6tables", "-t", "mangle", "-A", "POSTROUTING", "-j", "HL", "--hl-set", fmt.Sprintf("%d", hl))
-	_ = add6Cmd.Run()
+	_ = h.runner("ip6tables", "-t", "mangle", "-A", "POSTROUTING", "-j", "HL", "--hl-set", fmt.Sprintf("%d", hl))
 
 	h.mu.Lock()
 	h.ttl = req.TTL
