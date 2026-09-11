@@ -62,12 +62,33 @@ ARCH=$(uname -m 2>/dev/null || echo "armv7l")
 echo "📦 Detected Platform: Model=${MODEL}, SoC=${SOC}, Arch=${ARCH}"
 
 # 2. Stop legacy web servers & daemons if running
-echo "==> Stopping legacy services (lighttpd, previous qmanager)..."
-systemctl stop lighttpd 2>/dev/null || true
-systemctl disable lighttpd 2>/dev/null || true
+echo "==> Stopping legacy services (lighttpd, bash pollers, previous qmanager)..."
+systemctl stop lighttpd qmanager-poller qmanager-ping qmanager-watchcat \
+    qmanager-firewall qmanager-setup qmanager-cfun-fix qmanager-console \
+    qmanager-ethernet qmanager-imei-check qmanager-mtu qmanager-tower-failover \
+    qmanager-ttl qmanager_tailscale_install qmanager-auto-update.timer 2>/dev/null || true
+
+systemctl disable lighttpd qmanager-poller qmanager-ping qmanager-watchcat \
+    qmanager-firewall qmanager-setup qmanager-cfun-fix qmanager-console \
+    qmanager-ethernet qmanager-imei-check qmanager-mtu qmanager-tower-failover \
+    qmanager-ttl qmanager_tailscale_install qmanager-auto-update.timer 2>/dev/null || true
+
 systemctl stop qmanager 2>/dev/null || true
-killall -9 qmanager 2>/dev/null || true
-killall -9 lighttpd 2>/dev/null || true
+killall -9 qmanager lighttpd qmanager_poller qmanager_ping ttyd 2>/dev/null || true
+
+# Purge legacy systemd units (ensure Quectel rootfs is rw)
+mount -o remount,rw / 2>/dev/null || true
+rm -f /lib/systemd/system/multi-user.target.wants/qmanager-* \
+      /lib/systemd/system/multi-user.target.wants/lighttpd.service \
+      /etc/systemd/system/multi-user.target.wants/qmanager-* \
+      /etc/systemd/system/multi-user.target.wants/lighttpd.service 2>/dev/null || true
+rm -f /lib/systemd/system/qmanager-* /lib/systemd/system/lighttpd.service 2>/dev/null || true
+rm -f /etc/systemd/system/qmanager-* /etc/systemd/system/lighttpd.service 2>/dev/null || true
+rm -f /opt/etc/init.d/S80lighttpd 2>/dev/null || true
+rm -rf /opt/etc/lighttpd 2>/dev/null || true
+rm -f /usr/bin/qmanager_* 2>/dev/null || true
+rm -rf /usrdata/qmanager/console /usrdata/qmanager/lighttpd.conf* /usrdata/qmanager/locales-* /usrdata/qmanager/www /usrdata/qmanager/data_used.json /usrdata/www /www 2>/dev/null || true
+systemctl daemon-reload 2>/dev/null || true
 
 # 3. Prepare directories & config
 echo "==> Preparing directories..."
@@ -96,7 +117,7 @@ else
     cat << 'EOF' > "$SYSTEMD_SYSTEM/qmanager.service"
 [Unit]
 Description=QManager Single-Binary Web & Telemetry Daemon
-After=network.target local-fs.target
+After=basic.target
 Wants=network.target
 
 [Service]
@@ -105,7 +126,7 @@ User=root
 WorkingDirectory=/usrdata/qmanager
 ExecStart=/usrdata/qmanager/qmanager
 Restart=always
-RestartSec=5s
+RestartSec=3s
 LimitNOFILE=65535
 
 # Cortex-A7 Runtime & Memory Protection
@@ -126,14 +147,18 @@ EOF
     chmod 0644 "$SYSTEMD_SYSTEM/qmanager.service"
 fi
 
+# Ensure cold-boot autostart symlink in /lib (Quectel rootfs authority)
+mkdir -p "$SYSTEMD_SYSTEM/multi-user.target.wants"
+ln -sf "$SYSTEMD_SYSTEM/qmanager.service" "$SYSTEMD_SYSTEM/multi-user.target.wants/qmanager.service"
+
 # 6. Enable and start unit
 echo "==> Reloading systemd and enabling service..."
 systemctl daemon-reload
-systemctl enable qmanager
+systemctl enable qmanager 2>/dev/null || true
 systemctl restart qmanager
 
 # Determine primary IP
-IP_ADDR=$(ip -4 addr show rmnet_data0 2>/dev/null | grep -o 'inet [0-9.]*' | cut -d ' ' -f 2 || true)
+IP_ADDR=$(ip -4 addr show bridge0 2>/dev/null | grep -o 'inet [0-9.]*' | cut -d ' ' -f 2 || true)
 if [ -z "$IP_ADDR" ]; then
     IP_ADDR=$(ip -4 addr show eth0 2>/dev/null | grep -o 'inet [0-9.]*' | cut -d ' ' -f 2 || true)
 fi
@@ -143,6 +168,6 @@ fi
 
 echo "======================================================"
 echo " ✅ QManager Go Single-Binary successfully installed!"
-echo " Web UI running at http://${IP_ADDR}:8080 or http://192.168.225.1:8080"
+echo " Web UI running at http://${IP_ADDR}/"
 echo " View live logs: journalctl -u qmanager -f"
 echo "======================================================"

@@ -1,6 +1,6 @@
 [Unit]
 Description=QManager Single-Binary Web & Telemetry Daemon
-After=network.target local-fs.target
+After=basic.target
 Wants=network.target
 
 [Service]
