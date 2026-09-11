@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -39,6 +40,11 @@ func NewCustomDNSHandler() *CustomDNSHandler {
 
 // HandleGet handles GET /api/v1/network/dns and /cgi-bin/quecmanager/network/custom_dns.sh
 func (h *CustomDNSHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
+	resp := h.buildFullResponse()
+	JSON(w, http.StatusOK, resp)
+}
+
+func (h *CustomDNSHandler) buildFullResponse() map[string]interface{} {
 	cfg := readCustomDNSConfig()
 
 	// Detect if dnsmasq exists
@@ -64,51 +70,59 @@ func (h *CustomDNSHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	currentUpstream := cfg.Servers
-	currentSource := "custom"
-	if !cfg.Enabled || len(cfg.Servers) == 0 {
-		currentUpstream = carrierServers
-		currentSource = "carrier"
+	currentUpstream := carrierServers
+	currentSource := "carrier"
+	if cfg.Enabled && len(cfg.Servers) > 0 {
+		currentUpstream = cfg.Servers
+		currentSource = "custom"
 	}
 
-	JSON(w, http.StatusOK, map[string]interface{}{
+	return map[string]interface{}{
 		"success":            true,
+		"ok":                 true,
 		"enabled":            cfg.Enabled,
-		"servers":            cfg.Servers,
 		"ignore_carrier":     cfg.IgnoreCarrier,
 		"ignoreCarrier":      cfg.IgnoreCarrier,
-		"dnsmasq_available":  dnsmasqAvailable,
-		"available":          dnsmasqAvailable,
+		"servers":            cfg.Servers,
 		"dns_mode":           "LOCAL",
 		"dnsMode":            "LOCAL",
-		"passthrough_bypass": false,
-		"passthroughBypass":  false,
+		"dnsmasq_available":  dnsmasqAvailable,
+		"available":          dnsmasqAvailable,
+		"max_resolvers":      maxDNSServers,
+		"maxResolvers":       maxDNSServers,
 		"current_upstream":   currentUpstream,
 		"currentUpstream":    currentUpstream,
 		"current_source":     currentSource,
 		"currentSource":      currentSource,
+		"passthrough_bypass": false,
+		"passthroughBypass":  false,
 		"block_corrupt":      false,
 		"blockCorrupt":       false,
-	})
+	}
 }
 
 // CustomDNSSavePayload represents the save payload.
 type CustomDNSSavePayload struct {
-	Action        string   `json:"action"` // "save" or "clear"
-	Enabled       *bool    `json:"enabled,omitempty"`
-	Servers       []string `json:"servers,omitempty"`
-	IgnoreCarrier *bool    `json:"ignore_carrier,omitempty"`
+	Action        string      `json:"action"` // "save" or "clear"
+	Enabled       *bool       `json:"enabled,omitempty"`
+	Servers       interface{} `json:"servers,omitempty"` // can be []string, []interface{}, or string (comma-separated)
+	IgnoreCarrier *bool       `json:"ignore_carrier,omitempty"`
 }
 
 // HandlePost handles POST /api/v1/network/dns and /cgi-bin/quecmanager/network/custom_dns.sh
 func (h *CustomDNSHandler) HandlePost(w http.ResponseWriter, r *http.Request) {
-	var payload CustomDNSSavePayload
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		Error(w, http.StatusBadRequest, "Invalid JSON payload")
+	var rawBody map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&rawBody); err != nil {
+		JSON(w, http.StatusBadRequest, map[string]interface{}{
+			"success": false,
+			"ok":      false,
+			"error":   "Invalid JSON payload",
+		})
 		return
 	}
 
-	if payload.Action == "clear" {
+	action, _ := rawBody["action"].(string)
+	if action == "clear" {
 		cfg := CustomDNSConfig{
 			Enabled:       false,
 			Servers:       []string{},
@@ -116,39 +130,87 @@ func (h *CustomDNSHandler) HandlePost(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = writeCustomDNSConfig(cfg)
 		_ = updateDnsmasqConf(cfg)
-		Success(w, map[string]string{"message": "Custom DNS cleared"})
+		applied := h.buildFullResponse()
+		JSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"ok":      true,
+			"message": "Custom DNS cleared",
+			"applied": applied,
+		})
 		return
 	}
 
 	enabled := false
-	if payload.Enabled != nil {
-		enabled = *payload.Enabled
+	if v, ok := rawBody["enabled"].(bool); ok {
+		enabled = v
 	}
 
 	ignoreCarrier := false
-	if payload.IgnoreCarrier != nil {
-		ignoreCarrier = *payload.IgnoreCarrier
+	if v, ok := rawBody["ignore_carrier"].(bool); ok {
+		ignoreCarrier = v
+	} else if v, ok := rawBody["ignoreCarrier"].(bool); ok {
+		ignoreCarrier = v
+	}
+
+	var rawServersList []string
+	if sVal, exists := rawBody["servers"]; exists {
+		switch v := sVal.(type) {
+		case string:
+			for _, part := range strings.Split(v, ",") {
+				part = strings.TrimSpace(part)
+				if part != "" {
+					rawServersList = append(rawServersList, part)
+				}
+			}
+		case []interface{}:
+			for _, item := range v {
+				if s, ok := item.(string); ok {
+					s = strings.TrimSpace(s)
+					if s != "" {
+						rawServersList = append(rawServersList, s)
+					}
+				}
+			}
+		case []string:
+			for _, s := range v {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					rawServersList = append(rawServersList, s)
+				}
+			}
+		}
 	}
 
 	var validServers []string
 	if enabled {
-		if len(payload.Servers) == 0 {
-			Error(w, http.StatusBadRequest, "At least one DNS server is required when enabled")
+		if len(rawServersList) == 0 {
+			JSON(w, http.StatusBadRequest, map[string]interface{}{
+				"success": false,
+				"ok":      false,
+				"field":   "servers",
+				"error":   "At least one DNS server is required when enabled",
+			})
 			return
 		}
-		if len(payload.Servers) > maxDNSServers {
-			Error(w, http.StatusBadRequest, fmt.Sprintf("Maximum %d DNS servers allowed", maxDNSServers))
+		if len(rawServersList) > maxDNSServers {
+			JSON(w, http.StatusBadRequest, map[string]interface{}{
+				"success": false,
+				"ok":      false,
+				"field":   "servers",
+				"error":   fmt.Sprintf("Maximum %d DNS servers allowed", maxDNSServers),
+			})
 			return
 		}
 
-		for _, s := range payload.Servers {
-			s = strings.TrimSpace(s)
-			if s == "" {
-				continue
-			}
+		for _, s := range rawServersList {
 			ip := net.ParseIP(s)
 			if ip == nil {
-				Error(w, http.StatusBadRequest, fmt.Sprintf("Invalid IP address: %s", s))
+				JSON(w, http.StatusBadRequest, map[string]interface{}{
+					"success": false,
+					"ok":      false,
+					"field":   "servers",
+					"error":   fmt.Sprintf("Invalid IP address: %s", s),
+				})
 				return
 			}
 			validServers = append(validServers, s)
@@ -162,19 +224,31 @@ func (h *CustomDNSHandler) HandlePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := writeCustomDNSConfig(cfg); err != nil {
-		Error(w, http.StatusInternalServerError, "Failed to persist DNS config")
+		JSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"success": false,
+			"ok":      false,
+			"error":   "Failed to persist DNS config",
+		})
 		return
 	}
 
 	if err := updateDnsmasqConf(cfg); err != nil {
-		Error(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update dnsmasq.conf: %v", err))
+		JSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"success": false,
+			"ok":      false,
+			"error":   fmt.Sprintf("Failed to update dnsmasq.conf: %v", err),
+		})
 		return
 	}
 
-	Success(w, map[string]interface{}{
+	applied := h.buildFullResponse()
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"ok":      true,
 		"message": "Custom DNS applied successfully",
 		"enabled": enabled,
 		"servers": validServers,
+		"applied": applied,
 	})
 }
 
@@ -199,16 +273,38 @@ func updateDnsmasqConf(cfg CustomDNSConfig) error {
 			block.WriteString(fmt.Sprintf("server=%s\n", s))
 		}
 		block.WriteString(sentinelEnd + "\n")
-		content += block.String()
+		content = content + block.String()
 	}
 
-	_ = os.MkdirAll(filepath.Dir(dnsmasqConfPath), 0755)
-	err := os.WriteFile(dnsmasqConfPath, []byte(content), 0644)
-	if err != nil {
+	dir := filepath.Dir(dnsmasqConfPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
-	// Reload dnsmasq
+	tmpFile := fmt.Sprintf("%s.tmp.%d", dnsmasqConfPath, time.Now().UnixNano())
+	f, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write([]byte(content)); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	if err := os.Rename(tmpFile, dnsmasqConfPath); err != nil {
+		return err
+	}
+
+	// Reload dnsmasq if running
 	_ = exec.Command("killall", "-HUP", "dnsmasq").Run()
 	return nil
 }
@@ -228,10 +324,33 @@ func readCustomDNSConfig() CustomDNSConfig {
 }
 
 func writeCustomDNSConfig(c CustomDNSConfig) error {
-	_ = os.MkdirAll(filepath.Dir(customDNSConfig), 0755)
+	dir := filepath.Dir(customDNSConfig)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(customDNSConfig, data, 0644)
+
+	tmpFile := fmt.Sprintf("%s.tmp.%d", customDNSConfig, time.Now().UnixNano())
+	f, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	return os.Rename(tmpFile, customDNSConfig)
 }
