@@ -104,6 +104,46 @@ export interface UseCustomDnsReturn {
   refresh: (silent?: boolean) => Promise<void>;
 }
 
+function normalizeSettings(raw: any): CustomDnsSettingsResponse {
+  if (!raw || typeof raw !== "object") {
+    return {
+      enabled: false,
+      ignoreCarrier: false,
+      servers: [],
+      dnsMode: "LOCAL",
+      available: true,
+      currentUpstream: [],
+      currentSource: "carrier",
+      blockCorrupt: false,
+      passthroughBypass: false,
+    };
+  }
+
+  return {
+    enabled: raw.enabled === true,
+    ignoreCarrier: raw.ignoreCarrier ?? raw.ignore_carrier ?? false,
+    servers: Array.isArray(raw.servers)
+      ? raw.servers
+      : typeof raw.servers === "string" && raw.servers.length > 0
+        ? raw.servers.split(",").map((s: string) => s.trim()).filter(Boolean)
+        : [],
+    dnsMode: raw.dnsMode ?? raw.dns_mode ?? "LOCAL",
+    available: raw.available ?? raw.dnsmasq_available ?? true,
+    currentUpstream: Array.isArray(raw.currentUpstream)
+      ? raw.currentUpstream
+      : Array.isArray(raw.current_upstream)
+        ? raw.current_upstream
+        : [],
+    currentSource:
+      raw.currentSource ??
+      raw.current_source ??
+      (raw.enabled ? "custom" : "carrier"),
+    blockCorrupt: raw.blockCorrupt ?? raw.block_corrupt ?? false,
+    passthroughBypass:
+      raw.passthroughBypass ?? raw.passthrough_bypass ?? false,
+  };
+}
+
 export function useCustomDns(): UseCustomDnsReturn {
   const [settings, setSettings] = useState<CustomDnsSettingsResponse | null>(
     null
@@ -140,27 +180,7 @@ export function useCustomDns(): UseCustomDnsReturn {
       const raw = (await resp.json()) as any;
       if (!mountedRef.current) return;
 
-      const data: CustomDnsSettingsResponse = {
-        enabled: raw.enabled === true,
-        ignoreCarrier: raw.ignoreCarrier ?? raw.ignore_carrier ?? false,
-        servers: Array.isArray(raw.servers) ? raw.servers : [],
-        dnsMode: raw.dnsMode ?? raw.dns_mode ?? "LOCAL",
-        available: raw.available ?? raw.dnsmasq_available ?? true,
-        currentUpstream: Array.isArray(raw.currentUpstream)
-          ? raw.currentUpstream
-          : Array.isArray(raw.current_upstream)
-            ? raw.current_upstream
-            : [],
-        currentSource:
-          raw.currentSource ??
-          raw.current_source ??
-          (raw.enabled ? "custom" : "carrier"),
-        blockCorrupt: raw.blockCorrupt ?? raw.block_corrupt ?? false,
-        passthroughBypass:
-          raw.passthroughBypass ?? raw.passthrough_bypass ?? false,
-      };
-
-      setSettings(data);
+      setSettings(normalizeSettings(raw));
     } catch (err) {
       if (!mountedRef.current) return;
       setError(
@@ -216,7 +236,11 @@ export function useCustomDns(): UseCustomDnsReturn {
           return false;
         }
 
-        setSettings(result.applied);
+        if (result.applied) {
+          setSettings(normalizeSettings(result.applied));
+        } else {
+          await fetchSettings(true);
+        }
         return true;
       } catch (err) {
         if (!mountedRef.current) return false;

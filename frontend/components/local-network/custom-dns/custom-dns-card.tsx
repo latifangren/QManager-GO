@@ -217,9 +217,11 @@ export function CustomDnsCard({
   // What is on the device versus what is in the form, per row. `settings` is
   // replaced by the save response, so every marker goes clean the moment the
   // write lands — without anything having to clear them by hand.
-  const savedServers = settings.servers;
-  const enabledDirty = localEnabled !== settings.enabled;
-  const ignoreDirty = localIgnoreCarrier !== settings.ignoreCarrier;
+  const savedServers = Array.isArray(settings?.servers)
+    ? settings.servers
+    : [];
+  const enabledDirty = localEnabled !== (settings?.enabled ?? false);
+  const ignoreDirty = localIgnoreCarrier !== (settings?.ignoreCarrier ?? false);
   const serverDirty = (index: number) =>
     (trimmedServers[index] ?? "") !== (savedServers[index] ?? "");
 

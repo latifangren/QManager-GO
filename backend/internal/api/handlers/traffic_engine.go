@@ -56,7 +56,7 @@ func (h *CustomDNSHandler) buildFullResponse() map[string]interface{} {
 	}
 
 	// Read carrier resolv.conf if available
-	var carrierServers []string
+	carrierServers := make([]string, 0)
 	if data, err := os.ReadFile("/etc/resolv.conf"); err == nil {
 		lines := strings.Split(string(data), "\n")
 		for _, l := range lines {
@@ -70,11 +70,20 @@ func (h *CustomDNSHandler) buildFullResponse() map[string]interface{} {
 		}
 	}
 
+	servers := cfg.Servers
+	if servers == nil {
+		servers = make([]string, 0)
+	}
+
 	currentUpstream := carrierServers
 	currentSource := "carrier"
-	if cfg.Enabled && len(cfg.Servers) > 0 {
-		currentUpstream = cfg.Servers
+	if cfg.Enabled && len(servers) > 0 {
+		currentUpstream = servers
 		currentSource = "custom"
+	}
+
+	if currentUpstream == nil {
+		currentUpstream = make([]string, 0)
 	}
 
 	return map[string]interface{}{
@@ -83,7 +92,7 @@ func (h *CustomDNSHandler) buildFullResponse() map[string]interface{} {
 		"enabled":            cfg.Enabled,
 		"ignore_carrier":     cfg.IgnoreCarrier,
 		"ignoreCarrier":      cfg.IgnoreCarrier,
-		"servers":            cfg.Servers,
+		"servers":            servers,
 		"dns_mode":           "LOCAL",
 		"dnsMode":            "LOCAL",
 		"dnsmasq_available":  dnsmasqAvailable,
