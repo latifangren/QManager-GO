@@ -115,6 +115,10 @@ func NewRouter(s AppServices) http.Handler {
 	historyH := handlers.NewHistoryHandler()
 	qualityH := handlers.NewQualityThresholdsHandler(filepath.Join(configDir, "quality_thresholds.json"))
 	pingProfH := handlers.NewPingProfileHandler(s.Prober, filepath.Join(configDir, "ping_profile.json"))
+	webConsoleH := handlers.NewWebConsoleHandler()
+
+	// Web Console WebSocket bridge
+	r.Get("/console/ws", webConsoleH.HandleWS)
 
 	// API Routes (v1)
 	r.Route("/api/v1", func(api chi.Router) {
