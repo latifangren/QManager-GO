@@ -20,14 +20,15 @@ import (
 
 // AppServices bundles all backend dependencies.
 type AppServices struct {
-	Engine    *atengine.Engine
-	Poller    *telemetry.Poller
-	Prober    *telemetry.PingProber
-	Watchdog  *telemetry.Watchdog
-	ConfigMgr *config.Manager
-	Identity  platform.Identity
-	DistFS    embed.FS
-	ConfigDir string
+	Engine        *atengine.Engine
+	Poller        *telemetry.Poller
+	Prober        *telemetry.PingProber
+	Watchdog      *telemetry.Watchdog
+	ConfigMgr     *config.Manager
+	Identity      platform.Identity
+	DistFS        embed.FS
+	ConfigDir     string
+	CommandRunner handlers.CommandRunner
 }
 
 // NewRouter constructs and mounts all API and static endpoints.
@@ -72,7 +73,12 @@ func NewRouter(s AppServices) http.Handler {
 	cellScanH := handlers.NewCellScannerHandler(s.Engine)
 	neighbourH := handlers.NewNeighbourScannerHandler(s.Engine)
 	speedtestH := handlers.NewSpeedtestHandler()
-	netH := handlers.NewNetworkHandler(s.Prober)
+	var netH *handlers.NetworkHandler
+	if s.CommandRunner != nil {
+		netH = handlers.NewNetworkHandler(s.Prober, s.CommandRunner)
+	} else {
+		netH = handlers.NewNetworkHandler(s.Prober)
+	}
 	ethernetH := handlers.NewEthernetHandler()
 	dataUsageH := handlers.NewDataUsageHandler()
 	ipptH := handlers.NewIPPassthroughHandler(s.Engine)

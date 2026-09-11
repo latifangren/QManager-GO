@@ -57,6 +57,9 @@ func TestRouter_MountsAndEndpoints(t *testing.T) {
 		ConfigMgr: cfgMgr,
 		Identity:  id,
 		DistFS:    testFS,
+		CommandRunner: func(name string, arg ...string) error {
+			return nil // Mock command runner to avoid iptables permission errors in CI
+		},
 	}
 
 	handler := NewRouter(services)

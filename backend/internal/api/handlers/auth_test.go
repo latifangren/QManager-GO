@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -152,12 +153,22 @@ func TestAuthHandler_LifecycleAndPersistence(t *testing.T) {
 	}
 
 	// 5. ChangeSSHPassword
+	h2.SetSSHPasswordUpdater(func(string) error { return nil })
 	bodySSH, _ := json.Marshal(ChangeSSHPasswordRequest{Password: "rootnewpass123"})
 	wSSH := httptest.NewRecorder()
 	h2.ChangeSSHPassword(wSSH, httptest.NewRequest(http.MethodPost, "/api/auth/ssh_password", bytes.NewBuffer(bodySSH)))
 	if wSSH.Code != http.StatusOK {
 		t.Errorf("expected 200 for SSH password change, got %d", wSSH.Code)
 	}
+
+	// ChangeSSHPassword failure branch returns 500
+	h2.SetSSHPasswordUpdater(func(string) error { return fmt.Errorf("chpasswd failed") })
+	wSSHFail := httptest.NewRecorder()
+	h2.ChangeSSHPassword(wSSHFail, httptest.NewRequest(http.MethodPost, "/api/auth/ssh_password", bytes.NewBuffer(bodySSH)))
+	if wSSHFail.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 for failing SSH password updater, got %d", wSSHFail.Code)
+	}
+	h2.SetSSHPasswordUpdater(func(string) error { return nil })
 
 	// 6. Logout
 	wLogout := httptest.NewRecorder()

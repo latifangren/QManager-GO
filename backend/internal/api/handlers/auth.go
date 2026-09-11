@@ -27,6 +27,18 @@ type AuthStorage struct {
 	Version int    `json:"version"`
 }
 
+// SSHPasswordUpdater defines a function to update the system root SSH password.
+type SSHPasswordUpdater func(password string) error
+
+func defaultSSHUpdater(password string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	cmd := exec.Command("chpasswd")
+	cmd.Stdin = strings.NewReader(fmt.Sprintf("root:%s\n", password))
+	return cmd.Run()
+}
+
 // AuthHandler manages session tokens, password verification, and credentials persistence.
 type AuthHandler struct {
 	mu            sync.RWMutex
@@ -36,6 +48,7 @@ type AuthHandler struct {
 	setupRequired bool
 	tokens        map[string]time.Time
 	timeout       time.Duration
+	sshUpdater    SSHPasswordUpdater
 }
 
 // NewAuthHandler creates a new AuthHandler.
@@ -50,6 +63,7 @@ func NewAuthHandler(defaultPassword string, optionalPath ...string) *AuthHandler
 		tokens:        make(map[string]time.Time),
 		timeout:       24 * time.Hour,
 		setupRequired: true,
+		sshUpdater:    defaultSSHUpdater,
 	}
 
 	if defaultPassword != "" && defaultPassword != "admin" {
@@ -60,6 +74,17 @@ func NewAuthHandler(defaultPassword string, optionalPath ...string) *AuthHandler
 	}
 
 	return h
+}
+
+// SetSSHPasswordUpdater overrides the SSH password updater function (e.g. for testing).
+func (h *AuthHandler) SetSSHPasswordUpdater(updater SSHPasswordUpdater) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if updater != nil {
+		h.sshUpdater = updater
+	} else {
+		h.sshUpdater = defaultSSHUpdater
+	}
 }
 
 // SetAuthFilePath updates the auth storage file path and reloads credentials.
@@ -438,13 +463,13 @@ func (h *AuthHandler) ChangeSSHPassword(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if runtime.GOOS == "linux" {
-		cmd := exec.Command("chpasswd")
-		cmd.Stdin = strings.NewReader(fmt.Sprintf("root:%s\n", req.Password))
-		if err := cmd.Run(); err != nil {
-			Error(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update system SSH password: %v", err))
-			return
-		}
+	updater := h.sshUpdater
+	if updater == nil {
+		updater = defaultSSHUpdater
+	}
+	if err := updater(req.Password); err != nil {
+		Error(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update system SSH password: %v", err))
+		return
 	}
 
 	Success(w, map[string]string{
