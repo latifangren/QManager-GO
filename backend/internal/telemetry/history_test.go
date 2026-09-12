@@ -67,3 +67,32 @@ func TestTelemetryHistory_EventRing(t *testing.T) {
 		t.Errorf("events mismatch: %+v", events)
 	}
 }
+
+func TestNewTelemetryHistory(t *testing.T) {
+	// 1. Explicit capacities
+	h := NewTelemetryHistory(50, 60, 70)
+	if h == nil {
+		t.Fatalf("expected non-nil TelemetryHistory")
+	}
+	if h.signalCap != 50 || len(h.signalBuffer) != 50 {
+		t.Errorf("expected signalCap 50, got %d", h.signalCap)
+	}
+	if h.pingCap != 60 || len(h.pingBuffer) != 60 {
+		t.Errorf("expected pingCap 60, got %d", h.pingCap)
+	}
+	if h.eventCap != 70 || len(h.eventBuffer) != 70 {
+		t.Errorf("expected eventCap 70, got %d", h.eventCap)
+	}
+
+	// 2. Default fallback on zero or negative capacities
+	hDef := NewTelemetryHistory(0, -1, 0)
+	if hDef.signalCap != 1800 {
+		t.Errorf("expected default signalCap 1800, got %d", hDef.signalCap)
+	}
+	if hDef.pingCap != 1440 {
+		t.Errorf("expected default pingCap 1440, got %d", hDef.pingCap)
+	}
+	if hDef.eventCap != 500 {
+		t.Errorf("expected default eventCap 500, got %d", hDef.eventCap)
+	}
+}

@@ -431,3 +431,31 @@ func TestDataUsageHandler(t *testing.T) {
 		t.Fatalf("ResetDataUsed returned %d, want 200", wReset.Code)
 	}
 }
+
+func TestParsePosixTZ(t *testing.T) {
+	tests := []struct {
+		input      string
+		expectAbbr string
+		expectOff  string
+	}{
+		{"", "UTC", "+0000"},
+		{"WIB-7", "WIB", "+0700"},
+		{"WITA-8", "WITA", "+0800"},
+		{"WIT-9", "WIT", "+0900"},
+		{"EST5EDT", "EST", "-0500"},
+		{"UTC0", "UTC", "+0000"},
+	}
+
+	for _, tt := range tests {
+		abbr, off := parsePosixTZ(tt.input)
+		if abbr != tt.expectAbbr || off != tt.expectOff {
+			t.Errorf("parsePosixTZ(%q) = (%q, %q), want (%q, %q)", tt.input, abbr, off, tt.expectAbbr, tt.expectOff)
+		}
+	}
+
+	// Test "INVALID"
+	abbr, off := parsePosixTZ("INVALID")
+	if abbr == "" || len(off) != 5 {
+		t.Errorf("expected non-empty abbr and 5-char offset for 'INVALID', got abbr=%q off=%q", abbr, off)
+	}
+}

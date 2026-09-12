@@ -312,6 +312,22 @@ func TestRouter_MountsAndEndpoints(t *testing.T) {
 		t.Errorf("expected status 200 for CGI system/known_sims.sh, got %d", wKnownSims.Code)
 	}
 
+	// 14. Test DownloadLogs REST and CGI parity
+	reqLogsDlCgi := httptest.NewRequest("GET", "/cgi-bin/quecmanager/system/logs_download.sh", nil)
+	wLogsDlCgi := httptest.NewRecorder()
+	handler.ServeHTTP(wLogsDlCgi, reqLogsDlCgi)
+	if wLogsDlCgi.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI system/logs_download.sh, got %d", wLogsDlCgi.Code)
+	}
+
+	reqLogsDlRest := httptest.NewRequest("GET", "/api/v1/system/logs/download", nil)
+	reqLogsDlRest.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	wLogsDlRest := httptest.NewRecorder()
+	handler.ServeHTTP(wLogsDlRest, reqLogsDlRest)
+	if wLogsDlRest.Code != http.StatusOK {
+		t.Errorf("expected status 200 for REST system/logs/download, got %d", wLogsDlRest.Code)
+	}
+
 	// Test POST /system/known_sims.sh does not return 405 Method Not Allowed
 	reqKnownSimsPost := httptest.NewRequest("POST", "/cgi-bin/quecmanager/system/known_sims.sh", strings.NewReader(`{"iccid":"89860401102290123456","label":"Primary"}`))
 	wKnownSimsPost := httptest.NewRecorder()

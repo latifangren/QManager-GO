@@ -268,6 +268,7 @@ func NewRouter(s AppServices) http.Handler {
 			prot.Get("/system/update", updateH.CheckUpdate)
 			prot.Post("/system/update", updateH.HandleUpdateAction)
 			prot.Get("/system/logs", logsH.GetLogs)
+			prot.Get("/system/logs/download", logsH.DownloadLogs)
 			prot.Post("/system/logs", logsH.HandleLogsAction)
 			prot.Get("/system/modem-subsys", logsH.ModemSubsys)
 
@@ -420,6 +421,7 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Get("/system/update.sh", updateH.CheckUpdate)
 		cgi.Post("/system/update.sh", updateH.HandleUpdateAction)
 		cgi.Get("/system/logs.sh", logsH.GetLogs)
+		cgi.Get("/system/logs_download.sh", logsH.DownloadLogs)
 		cgi.Post("/system/logs.sh", logsH.HandleLogsAction)
 		cgi.Get("/system/modem-subsys.sh", logsH.ModemSubsys)
 	})

@@ -351,6 +351,65 @@ func TestSMSForwarder_HelpersAndParsing(t *testing.T) {
 	}
 }
 
+func TestParseSmsToolOutput(t *testing.T) {
+	// 1. Root array format
+	rawArray := []byte(`[
+		{"index": 1, "sender": "+1234567890", "text": "Hello world", "timestamp": "09/12/26 10:00:00"},
+		{"index": 2, "sender": "+9876543210", "text": "Test 2", "timestamp": "09/12/26 10:05:00"}
+	]`)
+	items1 := ParseSmsToolOutput(rawArray)
+	if len(items1) != 2 {
+		t.Fatalf("expected 2 items from root array, got %d", len(items1))
+	}
+	if items1[0].Sender != "+1234567890" || items1[0].Text != "Hello world" {
+		t.Errorf("item 0 mismatch: %+v", items1[0])
+	}
+
+	// 2. Root envelope format {"msg": [...]}
+	rawEnvelope := []byte(`{
+		"msg": [
+			{"index": 3, "sender": "+1122334455", "content": "Envelope item", "timestamp": "09/12/26 10:10:00"}
+		]
+	}`)
+	items2 := ParseSmsToolOutput(rawEnvelope)
+	if len(items2) != 1 {
+		t.Fatalf("expected 1 item from envelope, got %d", len(items2))
+	}
+	if items2[0].Sender != "+1122334455" || items2[0].Content != "Envelope item" {
+		t.Errorf("envelope item mismatch: %+v", items2[0])
+	}
+
+	// 3. Empty or malformed JSON
+	if items3 := ParseSmsToolOutput([]byte("")); len(items3) != 0 {
+		t.Errorf("expected nil/empty for empty input, got %v", items3)
+	}
+	if items4 := ParseSmsToolOutput([]byte("{not_valid_json")); len(items4) != 0 {
+		t.Errorf("expected nil/empty for malformed input, got %v", items4)
+	}
+}
+
+func TestParseTimestampKey(t *testing.T) {
+	// Standard format: MM/DD/YY HH:MM:SS (17 chars, slashes at 2 and 5, space at 8)
+	// Example: "09/12/26 10:15:30" -> yy("26") + mm("09") + dd("12") + rest("101530") = "260912101530"
+	tsStandard := "09/12/26 10:15:30"
+	key1 := parseTimestampKey(tsStandard)
+	if key1 != "260912101530" {
+		t.Errorf("expected key '260912101530', got %q", key1)
+	}
+
+	// Non-standard format returns verbatim
+	tsISO := "2026-09-12T10:15:30Z"
+	key2 := parseTimestampKey(tsISO)
+	if key2 != tsISO {
+		t.Errorf("expected verbatim string for ISO timestamp, got %q", key2)
+	}
+
+	// Empty string
+	if key3 := parseTimestampKey(""); key3 != "" {
+		t.Errorf("expected empty string for empty input, got %q", key3)
+	}
+}
+
 func TestSMSForwarder_FetchInboxAndSendRetry(t *testing.T) {
 	mock := atengine.NewMockTransport()
 	mock.SetResponse("AT+CPMS?", `+CPMS: "ME",1,255,"SM",0,50,"ME",1,255`+"\r\nOK")
