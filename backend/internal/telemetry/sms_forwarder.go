@@ -505,6 +505,33 @@ func ParseSmsToolOutput(out []byte) []RawSmsToolItem {
 
 // FetchInboxAndStorage reads inbox messages and storage statistics across ME and SM storage pools.
 func FetchInboxAndStorage(ctx context.Context, smsToolPath, atDevice string, engine *atengine.Engine) ([]SMSMessage, SMSStorage, error) {
+	// 1. Primary: Use Native Pure-Go AT Engine (Zero-fork, in-process AT+CMGL / AT+CPMS)
+	if engine != nil {
+		_, _ = engine.ExecContext(ctx, `AT+CPMS="ME","ME","ME"`)
+		resCPMS, _ := engine.ExecContext(ctx, "AT+CPMS?")
+		meStat, smStat := ParseCPMSStorage(resCPMS.Raw)
+
+		var allMsgs []SMSMessage
+		for _, st := range []string{"ME", "SM"} {
+			_, _ = engine.ExecContext(ctx, fmt.Sprintf(`AT+CPMS="%s","%s","%s"`, st, st, st))
+			_, _ = engine.ExecContext(ctx, "AT+CMGF=1")
+			res, err := engine.ExecContext(ctx, `AT+CMGL="ALL"`)
+			if err == nil {
+				msgs := ParseCMGLText(res.Raw, st)
+				allMsgs = append(allMsgs, msgs...)
+			}
+		}
+
+		SortSMSMessages(allMsgs)
+		return allMsgs, SMSStorage{
+			Used:  meStat.Used + smStat.Used,
+			Total: meStat.Total + smStat.Total,
+			ME:    &meStat,
+			SM:    &smStat,
+		}, nil
+	}
+
+	// 2. Fallback: External sms_tool binary if engine is nil
 	if _, err := os.Stat(smsToolPath); err == nil {
 		cmdInit := exec.CommandContext(ctx, smsToolPath, "-d", atDevice, "at", `AT+CPMS="ME","ME","ME"`)
 		_ = cmdInit.Run()
@@ -533,31 +560,6 @@ func FetchInboxAndStorage(ctx context.Context, smsToolPath, atDevice string, eng
 		smStat := ReadSmsToolStatus(ctx, smsToolPath, atDevice, "SM")
 
 		return merged, SMSStorage{
-			Used:  meStat.Used + smStat.Used,
-			Total: meStat.Total + smStat.Total,
-			ME:    &meStat,
-			SM:    &smStat,
-		}, nil
-	}
-
-	if engine != nil {
-		_, _ = engine.ExecContext(ctx, `AT+CPMS="ME","ME","ME"`)
-		resCPMS, _ := engine.ExecContext(ctx, "AT+CPMS?")
-		meStat, smStat := ParseCPMSStorage(resCPMS.Raw)
-
-		var allMsgs []SMSMessage
-		for _, st := range []string{"ME", "SM"} {
-			_, _ = engine.ExecContext(ctx, fmt.Sprintf(`AT+CPMS="%s","%s","%s"`, st, st, st))
-			_, _ = engine.ExecContext(ctx, "AT+CMGF=1")
-			res, err := engine.ExecContext(ctx, `AT+CMGL="ALL"`)
-			if err == nil {
-				msgs := ParseCMGLText(res.Raw, st)
-				allMsgs = append(allMsgs, msgs...)
-			}
-		}
-
-		SortSMSMessages(allMsgs)
-		return allMsgs, SMSStorage{
 			Used:  meStat.Used + smStat.Used,
 			Total: meStat.Total + smStat.Total,
 			ME:    &meStat,

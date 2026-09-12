@@ -266,6 +266,8 @@ func NewRouter(s AppServices) http.Handler {
 			// System, SIM Registry, Language Packs, Health Check, OTA & Logs
 			prot.Get("/system/config", sysH.GetConfig)
 			prot.Post("/system/config", sysH.SaveConfig)
+			prot.Get("/system/polling", sysH.GetPollingMode)
+			prot.Post("/system/polling", sysH.SetPollingMode)
 			prot.Get("/system/sim-registry", simRegH.HandleRegistry)
 			prot.Post("/system/sim-registry", simRegH.HandleRegistry)
 			prot.Get("/system/language-packs/list", langPacksH.List)
@@ -425,6 +427,8 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Get("/device/about.sh", sysH.Info)
 		cgi.Get("/system/settings.sh", sysH.GetConfig)
 		cgi.Post("/system/settings.sh", sysH.SaveConfig)
+		cgi.Get("/system/polling.sh", sysH.GetPollingMode)
+		cgi.Post("/system/polling.sh", sysH.SetPollingMode)
 		cgi.Get("/settings/quality_thresholds.sh", qualityH.Handle)
 		cgi.Post("/settings/quality_thresholds.sh", qualityH.Handle)
 		cgi.Get("/settings/ping_profile.sh", pingProfH.Handle)

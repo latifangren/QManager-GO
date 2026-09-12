@@ -292,7 +292,7 @@ func (c *Collector) Collect() {
 }
 
 func isTargetInterface(name string) bool {
-	targets := []string{"rmnet_data0", "bridge0", "eth0", "usb0", "rndis0", "wlan0"}
+	targets := []string{"rmnet_", "bridge", "eth", "usb", "rndis", "wlan", "wwan", "tailscale"}
 	for _, t := range targets {
 		if strings.HasPrefix(name, t) || name == t {
 			return true

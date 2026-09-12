@@ -19,6 +19,7 @@ import (
 	"qmanager/internal/dpi"
 	"qmanager/internal/platform"
 	"qmanager/internal/telemetry"
+	"qmanager/internal/telemetry/bandwidth"
 )
 
 //go:embed dist/*
@@ -130,17 +131,25 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 	scheduler.Start()
 	defer scheduler.Stop()
 
-	// 5. DPI & Traffic Engine Lifecycle
+	// 5. Bandwidth Monitoring & vnStat Collector
+	bwCollector := bandwidth.NewCollector(filepath.Join(configDir, "bandwidth.json"))
+	bwCollector.Start()
+	defer func() {
+		_ = bwCollector.Close()
+	}()
+
+	// 6. DPI & Traffic Engine Lifecycle
 	dpi.SyncState()
 	defer dpi.GetManager().StopEngine()
 
-	// 6. Router & Server
+	// 7. Router & Server
 	appServices := router.AppServices{
 		Engine:    engine,
 		Poller:    poller,
 		Prober:    prober,
 		Watchdog:  watchdog,
 		ConfigMgr: cfgMgr,
+		Bandwidth: bwCollector,
 		Identity:  identity,
 		DistFS:    distFS,
 		ConfigDir: configDir,

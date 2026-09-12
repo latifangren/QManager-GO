@@ -416,6 +416,46 @@ func (h *SystemHandler) SaveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetPollingMode returns current active polling mode and interval.
+func (h *SystemHandler) GetPollingMode(w http.ResponseWriter, r *http.Request) {
+	mode := "balanced"
+	intervalSec := 2
+	if h.poller != nil {
+		mode = h.poller.GetPollingMode()
+		intervalSec = int(h.poller.GetInterval().Seconds())
+	}
+	Success(w, map[string]interface{}{
+		"mode":         mode,
+		"interval_sec": intervalSec,
+	})
+}
+
+// SetPollingMode updates the active polling mode ("active", "balanced", "low_power").
+func (h *SystemHandler) SetPollingMode(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Mode string `json:"mode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		Error(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(body.Mode))
+	if mode != "active" && mode != "balanced" && mode != "low_power" {
+		Error(w, http.StatusBadRequest, "Invalid mode: must be 'active', 'balanced', or 'low_power'")
+		return
+	}
+
+	if h.poller != nil {
+		h.poller.SetPollingMode(mode)
+	}
+
+	Success(w, map[string]interface{}{
+		"message": "Polling mode updated",
+		"mode":    mode,
+	})
+}
+
 // Reboot safely reboots modem.
 func (h *SystemHandler) Reboot(w http.ResponseWriter, r *http.Request) {
 	Success(w, map[string]string{"message": "Modem reboot initiated"})

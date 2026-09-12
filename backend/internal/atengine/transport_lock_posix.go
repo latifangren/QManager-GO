@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 func acquireFileLock(lockPath string) (*os.File, error) {
@@ -51,14 +52,15 @@ func isEAGAIN(err error) bool {
 	return errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EWOULDBLOCK)
 }
 
-func readDeviceResponse(ctx context.Context, f *os.File) (string, error) {
-	_ = syscall.SetNonblock(int(f.Fd()), true)
-	defer func() {
-		_ = syscall.SetNonblock(int(f.Fd()), false)
-	}()
+func fdSetBit(set *syscall.FdSet, fd int) {
+	bitsPerWord := int(unsafe.Sizeof(set.Bits[0])) * 8
+	idx := fd / bitsPerWord
+	set.Bits[idx] |= 1 << (uint(fd) % uint(bitsPerWord))
+}
 
+func readDeviceRawResponse(ctx context.Context, fd int) (string, error) {
 	var out bytes.Buffer
-	buf := make([]byte, 1024)
+	buf := make([]byte, 4096)
 
 	for {
 		select {
@@ -67,29 +69,39 @@ func readDeviceResponse(ctx context.Context, f *os.File) (string, error) {
 		default:
 		}
 
-		n, err := f.Read(buf)
-		if n > 0 {
-			out.Write(buf[:n])
+		rdfs := &syscall.FdSet{}
+		fdSetBit(rdfs, fd)
+		tv := syscall.NsecToTimeval(100 * time.Millisecond.Nanoseconds())
+
+		n, err := syscall.Select(fd+1, rdfs, nil, nil, &tv)
+		if err != nil {
+			if errors.Is(err, syscall.EINTR) {
+				continue
+			}
+			return out.String(), err
+		}
+		if n == 0 {
+			// select timed out on this slice
+			continue
+		}
+
+		nr, rerr := syscall.Read(fd, buf)
+		if nr > 0 {
+			out.Write(buf[:nr])
 			if terminated, termErr := evaluateResponseTerminator(out.String()); terminated {
 				return out.String(), termErr
 			}
-		} else if err != nil {
-			if errors.Is(err, io.EOF) {
+		} else if rerr != nil {
+			if errors.Is(rerr, io.EOF) {
 				resp := out.String()
 				if terminated, termErr := evaluateResponseTerminator(resp); terminated {
 					return resp, termErr
 				}
 				return resp, nil
 			}
-			if !isEAGAIN(err) {
-				return out.String(), err
+			if !isEAGAIN(rerr) && !errors.Is(rerr, syscall.EINTR) {
+				return out.String(), rerr
 			}
-		}
-
-		select {
-		case <-ctx.Done():
-			return out.String(), ErrTimeout
-		case <-time.After(10 * time.Millisecond):
 		}
 	}
 }

@@ -262,6 +262,7 @@ type Poller struct {
 	engine        *atengine.Engine
 	identity      platform.Identity
 	interval      time.Duration
+	pollingMode   string
 	mu            sync.RWMutex
 	current       *ModemStatus
 	stopCh        chan struct{}
@@ -485,17 +486,61 @@ func (p *Poller) Stop() {
 	close(p.stopCh)
 }
 
-func (p *Poller) loop() {
-	ticker := time.NewTicker(p.interval)
-	defer ticker.Stop()
+// SetPollingMode sets interval based on mode string ("active", "balanced", "low_power").
+func (p *Poller) SetPollingMode(mode string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pollingMode = mode
+	switch mode {
+	case "active":
+		p.interval = 1 * time.Second
+	case "low_power":
+		p.interval = 5 * time.Second
+	default:
+		p.pollingMode = "balanced"
+		p.interval = 2 * time.Second
+	}
+}
 
+// GetPollingMode returns current mode ("active", "balanced", "low_power").
+func (p *Poller) GetPollingMode() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.pollingMode == "" {
+		return "balanced"
+	}
+	return p.pollingMode
+}
+
+// SetInterval updates the polling cadence dynamically at runtime.
+func (p *Poller) SetInterval(d time.Duration) {
+	if d < 500*time.Millisecond {
+		d = 500 * time.Millisecond
+	}
+	p.mu.Lock()
+	p.interval = d
+	p.mu.Unlock()
+}
+
+// GetInterval returns current polling duration.
+func (p *Poller) GetInterval() time.Duration {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.interval
+}
+
+func (p *Poller) loop() {
 	p.poll()
 
 	for {
+		p.mu.RLock()
+		curInterval := p.interval
+		p.mu.RUnlock()
+
 		select {
 		case <-p.stopCh:
 			return
-		case <-ticker.C:
+		case <-time.After(curInterval):
 			p.poll()
 		}
 	}

@@ -6,6 +6,8 @@
 // Persisted in localStorage and synchronised across tabs and components.
 // =============================================================================
 
+import { authFetch } from "./auth-fetch";
+
 export type PollingMode = "active" | "balanced" | "low_power";
 
 export const POLLING_STORAGE_KEY = "qm_polling_mode";
@@ -45,7 +47,8 @@ export function getPollingInterval(mode?: PollingMode): number {
 }
 
 /**
- * Persist the polling mode choice and dispatch an event to active subscribers.
+ * Persist the polling mode choice and dispatch an event to active subscribers,
+ * and synchronise with the backend poller.
  */
 export function setPollingMode(mode: PollingMode): void {
   if (typeof window === "undefined") return;
@@ -55,6 +58,21 @@ export function setPollingMode(mode: PollingMode): void {
     // Non-fatal
   }
   window.dispatchEvent(new CustomEvent(POLLING_CHANGE_EVENT, { detail: mode }));
+
+  // Synchronise with backend poller
+  authFetch("/api/v1/system/polling", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
+  })
+    .catch(() =>
+      authFetch("/cgi-bin/quecmanager/system/polling.sh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      })
+    )
+    .catch(() => {});
 }
 
 /**
