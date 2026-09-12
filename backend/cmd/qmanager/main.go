@@ -21,6 +21,7 @@ import (
 	"qmanager/internal/telemetry"
 	"qmanager/internal/telemetry/bandwidth"
 	"qmanager/internal/tlsgen"
+	"qmanager/internal/sshd"
 )
 
 //go:embed dist/*
@@ -208,6 +209,24 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 				}
 			}()
 		}
+	}
+
+	// Native Go Standalone SSH Server on :22
+	sshServer, errSSH := sshd.NewServer(sshd.Config{
+		ListenAddr: ":22",
+		KeyDir:     filepath.Join(configDir, "ssh"),
+		ShadowPath: "/etc/shadow",
+		Shell:      "/bin/sh",
+	})
+	if errSSH == nil {
+		if err := sshServer.Start(); err != nil {
+			log.Printf("⚠️ Native SSH server start failed: %v\n", err)
+		} else {
+			log.Println("🔑 Native SSH Server listening on :22")
+			defer sshServer.Close()
+		}
+	} else {
+		log.Printf("⚠️ Native SSH server init failed: %v\n", errSSH)
 	}
 
 	select {
