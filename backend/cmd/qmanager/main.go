@@ -153,7 +153,12 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 		_ = sshManager.Stop()
 	}()
 
-	// 8. Router & Server
+	// 8. Self-Healing LAN & Network Provisioning
+	netProvisioner := platform.NewNetworkProvisioner(cfgMgr)
+	netProvisioner.Start()
+	defer netProvisioner.Stop()
+
+	// 9. Router & Server
 	appServices := router.AppServices{
 		Engine:     engine,
 		Poller:     poller,

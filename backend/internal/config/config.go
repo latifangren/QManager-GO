@@ -55,12 +55,23 @@ type SSHConfig struct {
 	AuthorizedKeys string `json:"authorized_keys"`
 }
 
+// NetworkConfig holds LAN provisioning and gateway settings.
+type NetworkConfig struct {
+	AutoProvisionLAN int    `json:"auto_provision_lan"` // 1 = auto provision bridge & DHCP, 0 = disabled
+	GatewayIP        string `json:"gateway_ip"`          // default "192.168.225.1"
+	SubnetMask       string `json:"subnet_mask"`         // default "255.255.255.0"
+	DHCPStart        string `json:"dhcp_start"`          // default "192.168.225.20"
+	DHCPEnd          string `json:"dhcp_end"`            // default "192.168.225.100"
+	DHCPLeaseTime    string `json:"dhcp_lease_time"`     // default "12h"
+}
+
 // Config represents the complete /etc/qmanager/qmanager.conf schema.
 type Config struct {
 	Watchcat WatchcatConfig `json:"watchcat"`
 	Settings SystemSettings `json:"settings"`
 	Update   UpdateConfig   `json:"update"`
 	SSH      SSHConfig      `json:"ssh"`
+	Network  NetworkConfig  `json:"network"`
 }
 
 // Manager coordinates thread-safe config read, write, and persistence.
@@ -106,6 +117,14 @@ func NewDefaultConfig() Config {
 			Enabled:        1,
 			Port:           22,
 			AuthorizedKeys: "",
+		},
+		Network: NetworkConfig{
+			AutoProvisionLAN: 1,
+			GatewayIP:        "192.168.225.1",
+			SubnetMask:       "255.255.255.0",
+			DHCPStart:        "192.168.225.20",
+			DHCPEnd:          "192.168.225.100",
+			DHCPLeaseTime:    "12h",
 		},
 	}
 }
