@@ -164,9 +164,27 @@ ln -sf /usrdata/tailscale/tailscale /usr/bin/tailscale
 
 ## 6. Akses SSH & Manajemen Password
 
-Sistem Linux Yocto pada modem Quectel tidak menyertakan perintah `chpasswd` / `usermod`. QManager-GO menggunakan `/usr/bin/openssl passwd -1` dengan penulisan atomic pada file `/etc/shadow`.
+QManager-GO telah mengintegrasikan **Native Go Standalone SSH Server** langsung di dalam binary utama. Anda tidak memerlukan Dropbear dari Entware.
 
-### 🔹 Pemulihan Password Root Manual (via ADB atau Web Console):
+### 🔹 Fitur & Konfigurasi SSH:
+- **Port:** Default port `22` (dapat diubah melalui WebUI `System Settings > SSH Access`).
+- **Autentikasi:** Membaca password root secara dinamis dari `/etc/shadow` (MD5 crypt `$1$`).
+- **Authorized Keys:** Mendukung login tanpa password melalui file `/etc/qmanager/ssh/authorized_keys` atau via input WebUI.
+- **Host Key:** Auto-generate Ed25519 host key di `/etc/qmanager/ssh/id_ed25519`.
+
+### 🔹 Deteksi Konflik Port SSH (Dropbear Lama):
+Jika modem sebelumnya terpasang Dropbear manual dan berjalan di port yang sama, WebUI akan menampilkan banner peringatan **`PORT CONFLICT`**. Untuk mengatasinya:
+```sh
+# Matikan dan nonaktifkan dropbear lama
+systemctl stop dropbear 2>/dev/null || true
+systemctl disable dropbear 2>/dev/null || true
+killall -9 dropbear 2>/dev/null || true
+rm -f /lib/systemd/system/sysinit.target.wants/dropbear.service
+# Restart qmanager untuk mengambil alih port
+systemctl restart qmanager
+```
+
+### 🔹 Pemulihan Password Root Manual:
 Jika password SSH root mengalami kendala autentikasi:
 ```sh
 # Buat hash password baru (misalnya password 'root123')
@@ -174,6 +192,31 @@ NEW_HASH=$(openssl passwd -1 "root123")
 
 # Tulis langsung ke /etc/shadow untuk user root
 sed -i "s|^root:[^:]*|root:${NEW_HASH}|" /etc/shadow
+```
+
+---
+
+## 7. Self-Healing LAN & Gateway Provisioning
+
+QManager-GO memiliki modul *Zero-Touch Network Provisioner* yang memastikan port LAN Ethernet (`eth0`) dan DHCP server (`dnsmasq`) selalu siap pakai tanpa perlu konfigurasi manual setelah modem di-reset.
+
+### 🔹 Fitur Jaringan Otomatis:
+- **Bridge Otomatis:** Membuat `bridge0` dan mendaftarkan `eth0` sebagai anggota.
+- **Anti Link-Local Collision:** Otomatis membersihkan IP liar `169.254.x.x` dari `eth0`.
+- **DHCP Server Auto-Config:** Menulis `/etc/dnsmasq.conf` dan memastikan service `dnsmasq` aktif membagikan IP (`192.168.225.20 - 192.168.225.100`).
+- **Dual HTTP & HTTPS:** Port 80 dan 443 aktif bersamaan dengan auto self-signed certificate ECDSA P-256 (`https://192.168.225.1`).
+
+### 🔹 Troubleshooting Jaringan LAN:
+Jika PC tidak mendapatkan IP dari kabel LAN:
+```sh
+# 1. Periksa interface bridge0 dan IP
+ip addr show bridge0
+
+# 2. Periksa status DHCP server (dnsmasq)
+systemctl status dnsmasq
+
+# 3. Restart manual jika diperlukan
+systemctl restart dnsmasq
 ```
 
 ---

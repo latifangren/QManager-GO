@@ -30,6 +30,21 @@ This release delivers major performance breakthroughs, native POSIX syscall AT t
 * **Two-Way Polling Cadence Sync:** Added `/api/v1/system/polling` and `/cgi-bin/quecmanager/system/polling.sh` endpoints.
 * Frontend power modes (`Active: 1s`, `Balanced: 2s`, `Low Power: 5s`) dynamically adjust the backend telemetry poller timer on the fly to conserve CPU cycles when WebUI is backgrounded.
 
+### 🛡️ Standalone Native Go SSH Server (Zero Entware Dependency)
+* **Pure Go SSH Server Daemon:** Built-in standalone SSH server listening on Port 22 (or user-defined custom port) using `golang.org/x/crypto/ssh` and `creack/pty`.
+* **Dynamic Shadow Authentication:** Direct authentication against Linux `/etc/shadow` (MD5 crypt `$1$`) with zero CGO dependencies.
+* **Authorized Keys Support:** Passwordless public key login via `/etc/qmanager/ssh/authorized_keys` with direct paste support in WebUI.
+* **Port Conflict Protection:** Automatic detection of conflicting legacy services (Dropbear/OpenSSH) with UI warning badges and installer auto-purge.
+
+### 🔒 Zero-Touch Auto TLS / HTTPS Support
+* **Dual Port Listener:** Simultaneous support for HTTP (`:80`) and HTTPS (`:443`).
+* **On-the-Fly Self-Signed Certificates:** Pure Go ECDSA P-256 TLS certificate generator (`internal/tlsgen`) ensuring instant zero-config HTTPS encryption on first boot.
+
+### 🌐 Self-Healing Zero-Touch LAN & Gateway Provisioning
+* **Automatic PCIe Ethernet & Bridge Configuration:** Automatically configures `bridge0`, attaches PCIe Ethernet (`eth0`), and flushes rogue link-local addresses (`169.254.x.x`).
+* **Dynamic DHCP Daemon:** Automatically generates `/etc/dnsmasq.conf` matching the configured gateway subnet and manages `dnsmasq.service`.
+* **WWAN Backhaul Auto-Fix:** Automatically patches `mobileap_cfg.xml` to ensure cellular mobile data flows cleanly to Ethernet LAN clients.
+
 ### 🔒 Security Hardening & Session Authentication
 * **Web Console PTY Auth:** Enforced strict session authentication token checks on WebSocket console connections (`/console/ws`).
 * **Cross-Platform Build Tagging:** Hardened OS/architecture build constraints for POSIX locking and terminal controls.
