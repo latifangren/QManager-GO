@@ -13,10 +13,12 @@ import (
 
 // Manager coordinates the lifecycle of the SSH server daemon according to system config.
 type Manager struct {
-	cfgMgr *config.Manager
-	keyDir string
-	mu     sync.Mutex
-	server *Server
+	cfgMgr      *config.Manager
+	keyDir      string
+	mu          sync.Mutex
+	server      *Server
+	lastErr     string
+	hasConflict bool
 }
 
 // Status represents the current operational state of the SSH service.
@@ -24,6 +26,8 @@ type Status struct {
 	Enabled        bool   `json:"enabled"`
 	Port           int    `json:"port"`
 	Running        bool   `json:"running"`
+	Conflict       bool   `json:"conflict"`
+	ConflictMsg    string `json:"conflict_msg,omitempty"`
 	AuthorizedKeys string `json:"authorized_keys"`
 }
 
@@ -68,14 +72,25 @@ func (m *Manager) Start() error {
 		Shell:      "/bin/sh",
 	})
 	if err != nil {
+		m.hasConflict = false
+		m.lastErr = err.Error()
 		return fmt.Errorf("failed to init ssh server: %w", err)
 	}
 
 	if err := srv.Start(); err != nil {
+		if strings.Contains(err.Error(), "address already in use") {
+			m.hasConflict = true
+			m.lastErr = fmt.Sprintf("Port %d is already in use by an external service (e.g. Dropbear or OpenSSH)", port)
+		} else {
+			m.hasConflict = false
+			m.lastErr = err.Error()
+		}
 		return fmt.Errorf("failed to start ssh listener on port %d: %w", port, err)
 	}
 
 	m.server = srv
+	m.hasConflict = false
+	m.lastErr = ""
 	log.Printf("🔑 Native SSH Server active on :%d\n", port)
 	return nil
 }
@@ -152,6 +167,8 @@ func (m *Manager) GetStatus() Status {
 		Enabled:        enabled,
 		Port:           port,
 		Running:        m.server != nil,
+		Conflict:       m.hasConflict,
+		ConflictMsg:    m.lastErr,
 		AuthorizedKeys: keys,
 	}
 }

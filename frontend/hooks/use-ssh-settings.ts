@@ -8,6 +8,8 @@ export interface SSHSettings {
   enabled: boolean;
   port: number;
   running: boolean;
+  conflict?: boolean;
+  conflict_msg?: string;
   authorized_keys: string;
 }
 
@@ -49,6 +51,8 @@ export function useSSHSettings(): UseSSHSettingsReturn {
           enabled: data.enabled ?? true,
           port: data.port ?? 22,
           running: data.running ?? true,
+          conflict: data.conflict ?? false,
+          conflict_msg: data.conflict_msg ?? "",
           authorized_keys: data.authorized_keys ?? "",
         });
       }
@@ -97,7 +101,9 @@ export function useSSHSettings(): UseSSHSettingsReturn {
           setSettings({
             enabled: data.enabled ?? fullPayload.enabled,
             port: data.port ?? fullPayload.port,
-            running: data.running ?? fullPayload.enabled,
+            running: data.running ?? (data.conflict ? false : fullPayload.enabled),
+            conflict: data.conflict ?? false,
+            conflict_msg: data.conflict_msg ?? "",
             authorized_keys: data.authorized_keys ?? fullPayload.authorized_keys,
           });
           toast.success("SSH daemon settings updated successfully.");

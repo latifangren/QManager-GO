@@ -196,9 +196,15 @@ export default function SSHPasswordCard() {
             <CardTitle className={CARD_TITLE}>{t(`${K}.card.title`)}</CardTitle>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-caption text-on-surface-variant font-mono">
-              {settings.running ? "ACTIVE : " + settings.port : "INACTIVE"}
-            </span>
+            {settings.conflict ? (
+              <span className="rounded-full bg-error-container px-2.5 py-0.5 text-caption font-medium text-on-error-container">
+                PORT CONFLICT
+              </span>
+            ) : (
+              <span className="text-caption text-on-surface-variant font-mono">
+                {settings.running ? "ACTIVE : " + settings.port : "INACTIVE"}
+              </span>
+            )}
           </div>
         </div>
         <CardDescription className={CARD_DESC}>
@@ -207,6 +213,16 @@ export default function SSHPasswordCard() {
       </CardHeader>
 
       <CardContent className={cn(CARD_PAD, CARD_BODY, "space-y-6")}>
+        {settings.conflict && (
+          <div className={cn(NOTICE.BOX, NOTICE.FAILED)} role="alert">
+            <CircleAlertIcon className={NOTICE.GLYPH} aria-hidden />
+            <p className={NOTICE.TEXT}>
+              {settings.conflict_msg ||
+                `Port ${settings.port} is already used by an external daemon (e.g. Dropbear). Please change the port or disable the external SSH daemon.`}
+            </p>
+          </div>
+        )}
+
         {/* 1. SSH Server Daemon Controls */}
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-label text-on-surface font-medium">
