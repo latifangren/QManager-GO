@@ -144,17 +144,27 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 	dpi.SyncState()
 	defer dpi.GetManager().StopEngine()
 
-	// 7. Router & Server
+	// 7. Native Go Standalone SSH Server Daemon
+	sshManager := sshd.NewManager(cfgMgr, filepath.Join(configDir, "ssh"))
+	if err := sshManager.Start(); err != nil {
+		log.Printf("⚠️ Native SSH server start failed: %v\n", err)
+	}
+	defer func() {
+		_ = sshManager.Stop()
+	}()
+
+	// 8. Router & Server
 	appServices := router.AppServices{
-		Engine:    engine,
-		Poller:    poller,
-		Prober:    prober,
-		Watchdog:  watchdog,
-		ConfigMgr: cfgMgr,
-		Bandwidth: bwCollector,
-		Identity:  identity,
-		DistFS:    distFS,
-		ConfigDir: configDir,
+		Engine:     engine,
+		Poller:     poller,
+		Prober:     prober,
+		Watchdog:   watchdog,
+		ConfigMgr:  cfgMgr,
+		Bandwidth:  bwCollector,
+		Identity:   identity,
+		DistFS:     distFS,
+		ConfigDir:  configDir,
+		SSHManager: sshManager,
 	}
 
 	r := router.NewRouter(appServices)
@@ -209,24 +219,6 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 				}
 			}()
 		}
-	}
-
-	// Native Go Standalone SSH Server on :22
-	sshServer, errSSH := sshd.NewServer(sshd.Config{
-		ListenAddr: ":22",
-		KeyDir:     filepath.Join(configDir, "ssh"),
-		ShadowPath: "/etc/shadow",
-		Shell:      "/bin/sh",
-	})
-	if errSSH == nil {
-		if err := sshServer.Start(); err != nil {
-			log.Printf("⚠️ Native SSH server start failed: %v\n", err)
-		} else {
-			log.Println("🔑 Native SSH Server listening on :22")
-			defer sshServer.Close()
-		}
-	} else {
-		log.Printf("⚠️ Native SSH server init failed: %v\n", errSSH)
 	}
 
 	select {

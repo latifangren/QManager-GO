@@ -48,11 +48,19 @@ type UpdateConfig struct {
 	AutoUpdateTime    string `json:"auto_update_time"`
 }
 
+// SSHConfig holds native SSH daemon settings.
+type SSHConfig struct {
+	Enabled        int    `json:"enabled"`
+	Port           int    `json:"port"`
+	AuthorizedKeys string `json:"authorized_keys"`
+}
+
 // Config represents the complete /etc/qmanager/qmanager.conf schema.
 type Config struct {
 	Watchcat WatchcatConfig `json:"watchcat"`
 	Settings SystemSettings `json:"settings"`
 	Update   UpdateConfig   `json:"update"`
+	SSH      SSHConfig      `json:"ssh"`
 }
 
 // Manager coordinates thread-safe config read, write, and persistence.
@@ -93,6 +101,11 @@ func NewDefaultConfig() Config {
 			IncludePrerelease: 1,
 			AutoUpdateEnabled: 0,
 			AutoUpdateTime:    "03:00",
+		},
+		SSH: SSHConfig{
+			Enabled:        1,
+			Port:           22,
+			AuthorizedKeys: "",
 		},
 	}
 }
