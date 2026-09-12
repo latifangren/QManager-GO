@@ -97,20 +97,18 @@ async function fetchStatusShared() {
 
     const json: ModemStatus = await response.json();
 
+    const nowMs = Date.now();
     let isStale = false;
     if (json.timestamp) {
-      const modemTime = new Date(json.timestamp).getTime();
-      if (!isNaN(modemTime)) {
-        const ageSeconds = (Date.now() - modemTime) / 1000;
-        isStale = ageSeconds > STALE_THRESHOLD_SECONDS;
-      }
+      const ageSeconds = Math.floor(nowMs / 1000) - json.timestamp;
+      isStale = ageSeconds > STALE_THRESHOLD_SECONDS;
     }
 
     sharedState = {
       data: json,
       isLoading: false,
       isStale,
-      receivedAtMs: Date.now(),
+      receivedAtMs: nowMs,
       error: null,
     };
   } catch (err) {
