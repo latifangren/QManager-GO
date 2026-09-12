@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 //go:embed embeds/atcli_smd11
@@ -12,6 +13,11 @@ var embeddedAtcli []byte
 // EnsureAtcliBinary ensures that the atcli_smd11 binary is present on the filesystem.
 // If it does not exist, it writes the embedded binary once.
 func EnsureAtcliBinary() string {
+	// Only extract embedded ARM binary on ARM-based modem target architectures
+	if runtime.GOARCH != "arm" && runtime.GOARCH != "arm64" {
+		return ""
+	}
+
 	targetPaths := []string{
 		"/usr/bin/atcli_smd11",
 		"/usrdata/bin/atcli_smd11",

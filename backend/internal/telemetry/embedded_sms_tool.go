@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 //go:embed embeds/sms_tool
@@ -12,6 +13,11 @@ var embeddedSmsTool []byte
 // EnsureSMSToolBinary ensures that the sms_tool binary is present on the filesystem.
 // If it does not exist, it writes the embedded binary once to /usr/bin/sms_tool or /usrdata/bin/sms_tool.
 func EnsureSMSToolBinary() string {
+	// Only extract embedded ARM binary on ARM-based modem target architectures
+	if runtime.GOARCH != "arm" && runtime.GOARCH != "arm64" {
+		return ""
+	}
+
 	targetPaths := []string{
 		"/usr/bin/sms_tool",
 		"/usrdata/bin/sms_tool",
