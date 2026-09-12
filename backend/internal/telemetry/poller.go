@@ -292,6 +292,9 @@ type Poller struct {
 	supportedSABands  string
 	lastConnUptime    float64
 
+	subMu       sync.RWMutex
+	subscribers map[chan *ModemStatus]struct{}
+
 	pollCount uint64
 }
 
@@ -316,6 +319,7 @@ func NewPoller(eng *atengine.Engine, id platform.Identity, interval time.Duratio
 		supportedLTEBands: DefaultSupportedLTEBands,
 		supportedNSABands: DefaultSupportedNRBands,
 		supportedSABands:  DefaultSupportedNRBands,
+		subscribers:       make(map[chan *ModemStatus]struct{}),
 	}
 }
 
@@ -502,6 +506,45 @@ func (p *Poller) GetStatus() *ModemStatus {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.current
+}
+
+// Subscribe registers a new subscriber channel for live ModemStatus updates.
+func (p *Poller) Subscribe() chan *ModemStatus {
+	ch := make(chan *ModemStatus, 10)
+	p.subMu.Lock()
+	if p.subscribers == nil {
+		p.subscribers = make(map[chan *ModemStatus]struct{})
+	}
+	p.subscribers[ch] = struct{}{}
+	p.subMu.Unlock()
+	return ch
+}
+
+// Unsubscribe unregisters a subscriber channel.
+func (p *Poller) Unsubscribe(ch chan *ModemStatus) {
+	p.subMu.Lock()
+	if p.subscribers != nil {
+		delete(p.subscribers, ch)
+	}
+	p.subMu.Unlock()
+	for len(ch) > 0 {
+		<-ch
+	}
+}
+
+// broadcastStatus sends the latest status snapshot to all active subscribers.
+// Uses a non-blocking select with default drop to protect against slow consumers.
+func (p *Poller) broadcastStatus(status *ModemStatus) {
+	p.subMu.RLock()
+	defer p.subMu.RUnlock()
+
+	for ch := range p.subscribers {
+		select {
+		case ch <- status:
+		default:
+			// Drop update if channel buffer is full to prevent blocking the poller loop
+		}
+	}
 }
 
 func (p *Poller) poll() {
@@ -1132,6 +1175,7 @@ func (p *Poller) poll() {
 	})
 
 	_ = writeStatusFile("/tmp/qmanager_status.json", status)
+	p.broadcastStatus(status)
 }
 
 func writeStatusFile(path string, status *ModemStatus) error {

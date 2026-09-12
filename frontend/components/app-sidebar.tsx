@@ -167,6 +167,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         ],
       },
       {
+        t_key: "bandwidth",
+        url: "/monitoring/bandwidth",
+        icon: "query_stats",
+      },
+      {
         t_key: "watchdog",
         url: "/monitoring/watchdog",
         icon: "pets",

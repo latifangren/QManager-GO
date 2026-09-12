@@ -170,3 +170,43 @@ func TestPoller_36BitNRCellID_NoOverflow(t *testing.T) {
 		t.Errorf("expected SectorID=%X, got %v", expectedSector, sNR.NR.SectorID)
 	}
 }
+
+func TestPoller_SubscribeAndBroadcast(t *testing.T) {
+	mock := atengine.NewMockTransport()
+	eng := atengine.NewEngine(mock)
+	defer eng.Close()
+
+	id := platform.Identity{Model: "RG501Q-EU"}
+	poller := NewPoller(eng, id, 100*time.Millisecond)
+
+	ch := poller.Subscribe()
+	if ch == nil {
+		t.Fatalf("expected non-nil subscriber channel")
+	}
+
+	testStatus := &ModemStatus{
+		Online: true,
+		Band:   "B1",
+	}
+
+	poller.broadcastStatus(testStatus)
+
+	select {
+	case received := <-ch:
+		if received.Band != "B1" || !received.Online {
+			t.Errorf("received status mismatch: %+v", received)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for broadcast status")
+	}
+
+	poller.Unsubscribe(ch)
+
+	poller.subMu.RLock()
+	subCount := len(poller.subscribers)
+	poller.subMu.RUnlock()
+
+	if subCount != 0 {
+		t.Errorf("expected 0 subscribers after unsubscribe, got %d", subCount)
+	}
+}

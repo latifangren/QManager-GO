@@ -2,33 +2,38 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { authFetch } from "@/lib/auth-fetch";
+import { getPollingInterval, subscribePollingMode } from "@/lib/polling-preference";
 import type { ModemStatus } from "@/types/modem-status";
 
 // =============================================================================
-// useModemStatus — Polling Hook for QManager Dashboard
+// useModemStatus — Real-time SSE & Polling Hook for QManager Dashboard
 // =============================================================================
-// Fetches the cached modem status JSON from the CGI endpoint at a regular
-// interval. Shares a single polling loop across all subscribers to eliminate
-// duplicate requests and reduce CPU strain on the modem.
+// Streams real-time telemetry from SSE endpoint (/api/v1/telemetry/stream)
+// with automatic fallback to HTTP polling. Shares a single connection/timer
+// across all components to eliminate duplicate requests and minimize modem load.
 //
 // Usage:
 //   const { data, isLoading, isStale, receivedAtMs, error, refresh } =
 //     useModemStatus();
 //
-// The hook does NOT touch the modem — it only reads the pre-built JSON cache.
+// The hook does NOT touch the modem — it only reads cached in-memory telemetry.
 // =============================================================================
 
-/** How often to poll the CGI endpoint (ms) */
+/** How often to poll the CGI endpoint (ms) as baseline fallback */
 const DEFAULT_POLL_INTERVAL = 2000;
 
 /** After this many seconds without a fresh timestamp, data is "stale" */
 const STALE_THRESHOLD_SECONDS = 10;
 
-/** CGI endpoint path (proxied in dev via next.config.ts rewrites) */
+/** HTTP endpoint path */
 const FETCH_ENDPOINT = "/cgi-bin/quecmanager/at_cmd/fetch_data.sh";
 
+/** SSE stream endpoints (primary REST, fallback CGI) */
+const SSE_PRIMARY_ENDPOINT = "/api/v1/telemetry/stream";
+const SSE_FALLBACK_ENDPOINT = "/cgi-bin/quecmanager/api/stream/status";
+
 export interface UseModemStatusOptions {
-  /** Polling interval in ms (default: 2000) */
+  /** Polling interval in ms (optional override) */
   pollInterval?: number;
   /** Whether polling is active (default: true) */
   enabled?: boolean;
@@ -53,7 +58,7 @@ export interface UseModemStatusReturn {
 }
 
 // =============================================================================
-// Module-level Singleton Polling Manager
+// Module-level Singleton State & Stream Manager
 // =============================================================================
 
 interface SharedState {
@@ -76,7 +81,12 @@ type Listener = (state: SharedState) => void;
 const listeners = new Set<Listener>();
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let eventSource: EventSource | null = null;
+let isSseConnected = false;
+let sseEndpoint = SSE_PRIMARY_ENDPOINT;
 let inFlight = false;
+let activePollInterval: number = DEFAULT_POLL_INTERVAL;
+let pollingUnsubscribe: (() => void) | null = null;
 
 function notifyListeners() {
   for (const listener of listeners) {
@@ -123,12 +133,15 @@ async function fetchStatusShared() {
   }
 }
 
-function startSharedPolling(intervalMs: number = DEFAULT_POLL_INTERVAL) {
+function startSharedPolling(intervalMs?: number) {
+  if (intervalMs) {
+    activePollInterval = intervalMs;
+  }
   if (pollTimer) return;
   pollTimer = setInterval(() => {
     if (typeof document !== "undefined" && document.hidden) return;
     fetchStatusShared();
-  }, intervalMs);
+  }, activePollInterval);
 }
 
 function stopSharedPolling() {
@@ -138,24 +151,104 @@ function stopSharedPolling() {
   }
 }
 
+function connectSSE() {
+  if (typeof window === "undefined" || !("EventSource" in window)) {
+    return;
+  }
+  if (typeof document !== "undefined" && document.hidden) {
+    return;
+  }
+  if (eventSource) {
+    disconnectSSE();
+  }
+
+  try {
+    const es = new EventSource(sseEndpoint);
+    eventSource = es;
+
+    es.onopen = () => {
+      isSseConnected = true;
+      // Pause HTTP polling while SSE stream is active
+      stopSharedPolling();
+    };
+
+    es.onmessage = (event) => {
+      try {
+        if (!event.data || event.data.startsWith(":")) return;
+        const json: ModemStatus = JSON.parse(event.data);
+
+        let isStale = false;
+        if (json.timestamp) {
+          const modemTime = new Date(json.timestamp).getTime();
+          if (!isNaN(modemTime)) {
+            const ageSeconds = (Date.now() - modemTime) / 1000;
+            isStale = ageSeconds > STALE_THRESHOLD_SECONDS;
+          }
+        }
+
+        sharedState = {
+          data: json,
+          isLoading: false,
+          isStale,
+          receivedAtMs: Date.now(),
+          error: null,
+        };
+        notifyListeners();
+      } catch {
+        // Ignore unparseable or heartbeat messages
+      }
+    };
+
+    es.onerror = () => {
+      disconnectSSE();
+      // Alternate between primary REST and fallback CGI streaming endpoints
+      sseEndpoint =
+        sseEndpoint === SSE_PRIMARY_ENDPOINT
+          ? SSE_FALLBACK_ENDPOINT
+          : SSE_PRIMARY_ENDPOINT;
+
+      // Fallback to HTTP polling
+      startSharedPolling(activePollInterval);
+    };
+  } catch {
+    disconnectSSE();
+    startSharedPolling(activePollInterval);
+  }
+}
+
+function disconnectSSE() {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  isSseConnected = false;
+}
+
 function handleVisibilityChange() {
   if (typeof document === "undefined") return;
   if (document.hidden) {
+    disconnectSSE();
     stopSharedPolling();
   } else {
     fetchStatusShared();
-    startSharedPolling();
+    connectSSE();
+    if (!isSseConnected) {
+      startSharedPolling(activePollInterval);
+    }
   }
 }
 
 export function useModemStatus(
   options: UseModemStatusOptions = {}
 ): UseModemStatusReturn {
-  const { pollInterval = DEFAULT_POLL_INTERVAL, enabled = true } = options;
+  const { pollInterval, enabled = true } = options;
   const [state, setState] = useState<SharedState>(sharedState);
 
   useEffect(() => {
     if (!enabled) return;
+
+    const effectiveInterval = pollInterval || getPollingInterval();
+    activePollInterval = effectiveInterval;
 
     const listener: Listener = (newState) => {
       setState(newState);
@@ -166,9 +259,23 @@ export function useModemStatus(
       if (typeof document !== "undefined") {
         document.addEventListener("visibilitychange", handleVisibilityChange);
       }
+
+      // Sync interval when user changes polling preference
+      pollingUnsubscribe = subscribePollingMode((mode) => {
+        const newInterval = getPollingInterval(mode);
+        activePollInterval = newInterval;
+        if (!isSseConnected && pollTimer) {
+          stopSharedPolling();
+          startSharedPolling(newInterval);
+        }
+      });
+
       if (typeof document === "undefined" || !document.hidden) {
         fetchStatusShared();
-        startSharedPolling(pollInterval);
+        connectSSE();
+        if (!isSseConnected) {
+          startSharedPolling(effectiveInterval);
+        }
       }
     } else {
       setState(sharedState);
@@ -177,7 +284,12 @@ export function useModemStatus(
     return () => {
       listeners.delete(listener);
       if (listeners.size === 0) {
+        disconnectSSE();
         stopSharedPolling();
+        if (pollingUnsubscribe) {
+          pollingUnsubscribe();
+          pollingUnsubscribe = null;
+        }
         if (typeof document !== "undefined") {
           document.removeEventListener("visibilitychange", handleVisibilityChange);
         }

@@ -32,6 +32,7 @@
     "ttl_mtu_settings": "TTL & MTU Settings",
     "custom_dns": "Custom DNS",
     "network_events": "Network Events",
+    "bandwidth": "Bandwidth & vnStat",
     "latency_monitor": "Latency Monitor",
     "alerts": "Alerts",
     "watchdog": "Watchdog",

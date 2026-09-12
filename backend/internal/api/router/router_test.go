@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"net/http"
@@ -326,6 +327,54 @@ func TestRouter_MountsAndEndpoints(t *testing.T) {
 	handler.ServeHTTP(wLogsDlRest, reqLogsDlRest)
 	if wLogsDlRest.Code != http.StatusOK {
 		t.Errorf("expected status 200 for REST system/logs/download, got %d", wLogsDlRest.Code)
+	}
+
+	// 15. Test Telemetry Stream REST and CGI routes
+	ctxStream, cancelStream := context.WithCancel(context.Background())
+	cancelStream()
+
+	reqStreamRest := httptest.NewRequest("GET", "/api/v1/telemetry/stream", nil).WithContext(ctxStream)
+	wStreamRest := httptest.NewRecorder()
+	handler.ServeHTTP(wStreamRest, reqStreamRest)
+	if wStreamRest.Header().Get("Content-Type") != "text/event-stream" {
+		t.Errorf("expected text/event-stream for /api/v1/telemetry/stream, got %s", wStreamRest.Header().Get("Content-Type"))
+	}
+
+	reqStreamCgi := httptest.NewRequest("GET", "/cgi-bin/quecmanager/api/stream/status", nil).WithContext(ctxStream)
+	wStreamCgi := httptest.NewRecorder()
+	handler.ServeHTTP(wStreamCgi, reqStreamCgi)
+	if wStreamCgi.Header().Get("Content-Type") != "text/event-stream" {
+		t.Errorf("expected text/event-stream for CGI /api/stream/status, got %s", wStreamCgi.Header().Get("Content-Type"))
+	}
+
+	reqStreamCgi2 := httptest.NewRequest("GET", "/cgi-bin/quecmanager/telemetry_stream.sh", nil).WithContext(ctxStream)
+	wStreamCgi2 := httptest.NewRecorder()
+	handler.ServeHTTP(wStreamCgi2, reqStreamCgi2)
+	if wStreamCgi2.Header().Get("Content-Type") != "text/event-stream" {
+		t.Errorf("expected text/event-stream for CGI /telemetry_stream.sh, got %s", wStreamCgi2.Header().Get("Content-Type"))
+	}
+
+	// 16. Test Bandwidth REST and CGI endpoints
+	reqBwCgi := httptest.NewRequest("GET", "/cgi-bin/quecmanager/monitoring/bandwidth.sh", nil)
+	wBwCgi := httptest.NewRecorder()
+	handler.ServeHTTP(wBwCgi, reqBwCgi)
+	if wBwCgi.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI /monitoring/bandwidth.sh, got %d", wBwCgi.Code)
+	}
+
+	reqBwRest := httptest.NewRequest("GET", "/api/v1/monitoring/bandwidth", nil)
+	reqBwRest.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	wBwRest := httptest.NewRecorder()
+	handler.ServeHTTP(wBwRest, reqBwRest)
+	if wBwRest.Code != http.StatusOK {
+		t.Errorf("expected status 200 for REST /monitoring/bandwidth, got %d", wBwRest.Code)
+	}
+
+	reqBwResetCgi := httptest.NewRequest("POST", "/cgi-bin/quecmanager/monitoring/bandwidth_reset.sh", strings.NewReader(`{"interface":"rmnet_data0"}`))
+	wBwResetCgi := httptest.NewRecorder()
+	handler.ServeHTTP(wBwResetCgi, reqBwResetCgi)
+	if wBwResetCgi.Code != http.StatusOK {
+		t.Errorf("expected status 200 for CGI /monitoring/bandwidth_reset.sh, got %d", wBwResetCgi.Code)
 	}
 
 	// Test POST /system/known_sims.sh does not return 405 Method Not Allowed
