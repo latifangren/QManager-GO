@@ -262,6 +262,7 @@ type Poller struct {
 	engine        *atengine.Engine
 	identity      platform.Identity
 	interval      time.Duration
+	pollingMode   string
 	mu            sync.RWMutex
 	current       *ModemStatus
 	stopCh        chan struct{}
@@ -292,6 +293,9 @@ type Poller struct {
 	supportedSABands  string
 	lastConnUptime    float64
 
+	subMu       sync.RWMutex
+	subscribers map[chan *ModemStatus]struct{}
+
 	pollCount uint64
 }
 
@@ -316,6 +320,7 @@ func NewPoller(eng *atengine.Engine, id platform.Identity, interval time.Duratio
 		supportedLTEBands: DefaultSupportedLTEBands,
 		supportedNSABands: DefaultSupportedNRBands,
 		supportedSABands:  DefaultSupportedNRBands,
+		subscribers:       make(map[chan *ModemStatus]struct{}),
 	}
 }
 
@@ -481,17 +486,61 @@ func (p *Poller) Stop() {
 	close(p.stopCh)
 }
 
-func (p *Poller) loop() {
-	ticker := time.NewTicker(p.interval)
-	defer ticker.Stop()
+// SetPollingMode sets interval based on mode string ("active", "balanced", "low_power").
+func (p *Poller) SetPollingMode(mode string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pollingMode = mode
+	switch mode {
+	case "active":
+		p.interval = 1 * time.Second
+	case "low_power":
+		p.interval = 5 * time.Second
+	default:
+		p.pollingMode = "balanced"
+		p.interval = 2 * time.Second
+	}
+}
 
+// GetPollingMode returns current mode ("active", "balanced", "low_power").
+func (p *Poller) GetPollingMode() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.pollingMode == "" {
+		return "balanced"
+	}
+	return p.pollingMode
+}
+
+// SetInterval updates the polling cadence dynamically at runtime.
+func (p *Poller) SetInterval(d time.Duration) {
+	if d < 500*time.Millisecond {
+		d = 500 * time.Millisecond
+	}
+	p.mu.Lock()
+	p.interval = d
+	p.mu.Unlock()
+}
+
+// GetInterval returns current polling duration.
+func (p *Poller) GetInterval() time.Duration {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.interval
+}
+
+func (p *Poller) loop() {
 	p.poll()
 
 	for {
+		p.mu.RLock()
+		curInterval := p.interval
+		p.mu.RUnlock()
+
 		select {
 		case <-p.stopCh:
 			return
-		case <-ticker.C:
+		case <-time.After(curInterval):
 			p.poll()
 		}
 	}
@@ -502,6 +551,45 @@ func (p *Poller) GetStatus() *ModemStatus {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.current
+}
+
+// Subscribe registers a new subscriber channel for live ModemStatus updates.
+func (p *Poller) Subscribe() chan *ModemStatus {
+	ch := make(chan *ModemStatus, 10)
+	p.subMu.Lock()
+	if p.subscribers == nil {
+		p.subscribers = make(map[chan *ModemStatus]struct{})
+	}
+	p.subscribers[ch] = struct{}{}
+	p.subMu.Unlock()
+	return ch
+}
+
+// Unsubscribe unregisters a subscriber channel.
+func (p *Poller) Unsubscribe(ch chan *ModemStatus) {
+	p.subMu.Lock()
+	if p.subscribers != nil {
+		delete(p.subscribers, ch)
+	}
+	p.subMu.Unlock()
+	for len(ch) > 0 {
+		<-ch
+	}
+}
+
+// broadcastStatus sends the latest status snapshot to all active subscribers.
+// Uses a non-blocking select with default drop to protect against slow consumers.
+func (p *Poller) broadcastStatus(status *ModemStatus) {
+	p.subMu.RLock()
+	defer p.subMu.RUnlock()
+
+	for ch := range p.subscribers {
+		select {
+		case ch <- status:
+		default:
+			// Drop update if channel buffer is full to prevent blocking the poller loop
+		}
+	}
 }
 
 func (p *Poller) poll() {
@@ -1132,10 +1220,11 @@ func (p *Poller) poll() {
 	})
 
 	_ = writeStatusFile("/tmp/qmanager_status.json", status)
+	p.broadcastStatus(status)
 }
 
 func writeStatusFile(path string, status *ModemStatus) error {
-	data, err := json.MarshalIndent(status, "", "  ")
+	data, err := json.Marshal(status)
 	if err != nil {
 		return err
 	}

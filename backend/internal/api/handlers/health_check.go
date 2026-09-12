@@ -130,7 +130,7 @@ func (h *HealthCheckHandler) executeDiagnostics(jobID string) {
 	execPath, _ := os.Executable()
 	version := os.Getenv("QMANAGER_VERSION")
 	if version == "" {
-		version = "1.0.0-beta"
+		version = "1.1.0-beta"
 	}
 	dBin1 := int(time.Since(tBin1Start).Milliseconds())
 	items = append(items, HealthCheckItem{

@@ -18,7 +18,7 @@ import type { DataUsedBlock } from "@/types/modem-status";
 
 const FETCH_ENDPOINT = "/cgi-bin/quecmanager/network/data_used.sh";
 const RESET_ENDPOINT = "/cgi-bin/quecmanager/network/data_used_reset.sh";
-const DEFAULT_POLL_INTERVAL = 2000;
+const DEFAULT_POLL_INTERVAL = 5000;
 
 export interface UseDataUsedReturn {
   /** Latest data-usage block (null before first successful fetch) */
@@ -93,14 +93,43 @@ export function useDataUsed(): UseDataUsedReturn {
   useEffect(() => {
     mountedRef.current = true;
 
-    fetchData();
-    intervalRef.current = setInterval(fetchData, DEFAULT_POLL_INTERVAL);
+    const startPolling = () => {
+      if (!intervalRef.current) {
+        intervalRef.current = setInterval(fetchData, DEFAULT_POLL_INTERVAL);
+      }
+    };
 
-    return () => {
-      mountedRef.current = false;
+    const stopPolling = () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (typeof document === "undefined") return;
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        fetchData();
+        startPolling();
+      }
+    };
+
+    if (typeof document === "undefined" || !document.hidden) {
+      fetchData();
+      startPolling();
+    }
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    return () => {
+      mountedRef.current = false;
+      stopPolling();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
       }
     };
   }, [fetchData]);

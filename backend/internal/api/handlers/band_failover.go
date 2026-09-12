@@ -103,3 +103,15 @@ func (h *BandFailoverHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		"enabled": h.enabled,
 	})
 }
+
+// ServeHTTP dispatches requests based on HTTP method.
+func (h *BandFailoverHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.Status(w, r)
+	case http.MethodPost:
+		h.Toggle(w, r)
+	default:
+		Error(w, http.StatusMethodNotAllowed, "Method not allowed")
+	}
+}

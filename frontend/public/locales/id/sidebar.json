@@ -32,6 +32,7 @@
     "ttl_mtu_settings": "Pengaturan TTL & MTU",
     "custom_dns": "DNS Kustom",
     "network_events": "Peristiwa Jaringan",
+    "bandwidth": "Bandwidth & vnStat",
     "latency_monitor": "Monitor Latensi",
     "alerts": "Peringatan",
     "watchdog": "Watchdog",

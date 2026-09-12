@@ -69,6 +69,7 @@
     "priority_high",
     "progress_activity",
     "public",
+    "query_stats",
     "radar",
     "refresh",
     "restart_alt",
@@ -119,6 +120,6 @@
     "wifi_tethering_off",
     "work"
   ],
-  "bytes": 43488,
-  "sha256": "9c7bd8505e49c6ce85c0b49f184d5753eb4da4ecc42204f4fef0c9f2ab6231b5"
+  "bytes": 43828,
+  "sha256": "e91bd89100f677f6ce0b1fd95cc121a3ccf1e6e7c4ddc69431ef185937e83eda"
 }

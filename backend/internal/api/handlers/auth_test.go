@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -244,5 +245,218 @@ func TestAuthHandler_1970ClockStepReanchor(t *testing.T) {
 	h.mu.RUnlock()
 	if newExp.Year() < 2024 {
 		t.Errorf("expected re-anchored token year >= 2024, got %v", newExp.Year())
+	}
+}
+
+func TestAuthHandler_SetAuthFilePath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// 1. Pointed to a valid auth file created in t.TempDir()
+	validPath := filepath.Join(tmpDir, "valid_auth.json")
+	storage := AuthStorage{
+		Hash:    "f57f0003b10b784f18d7bc89d2d4bc3558c49cc8e778641a941bfba659d4f29d",
+		Salt:    "abcdef1234567890abcdef1234567890",
+		Version: 1,
+	}
+	data, err := json.Marshal(storage)
+	if err != nil {
+		t.Fatalf("failed to marshal auth storage: %v", err)
+	}
+	if err := os.WriteFile(validPath, data, 0600); err != nil {
+		t.Fatalf("failed to write valid auth file: %v", err)
+	}
+
+	h := NewAuthHandler("")
+	h.SetAuthFilePath(validPath)
+	if h.IsSetupRequired() {
+		t.Errorf("expected setup_required to be false for valid auth file")
+	}
+
+	// 2. Pointed to a non-existent file
+	nonExistentPath := filepath.Join(tmpDir, "non_existent_auth.json")
+	hSetupNone := NewAuthHandler("", filepath.Join(tmpDir, "dummy.json"))
+	hSetupNone.SetAuthFilePath(nonExistentPath)
+	if !hSetupNone.IsSetupRequired() {
+		t.Errorf("expected setup_required to be true for non-existent file")
+	}
+}
+
+func TestAuthHandler_SetPasswordAndSetupRequired(t *testing.T) {
+	tmpDir := t.TempDir()
+	authPath := filepath.Join(tmpDir, "auth.json")
+	h := NewAuthHandler("", authPath)
+	if !h.IsSetupRequired() {
+		t.Errorf("expected initial setup_required=true")
+	}
+
+	// Test SetPassword
+	h.SetPassword("newpassword123")
+	if h.IsSetupRequired() {
+		t.Errorf("expected setup_required=false after SetPassword")
+	}
+
+	// Login with the password to verify it works
+	body, _ := json.Marshal(LoginRequest{Password: "newpassword123"})
+	w := httptest.NewRecorder()
+	h.Login(w, httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBuffer(body)))
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for login with SetPassword, got %d", w.Code)
+	}
+
+	// Test SetSetupRequired and IsSetupRequired
+	h.SetSetupRequired(true)
+	if !h.IsSetupRequired() {
+		t.Errorf("expected IsSetupRequired() == true after SetSetupRequired(true)")
+	}
+
+	h.SetSetupRequired(false)
+	if h.IsSetupRequired() {
+		t.Errorf("expected IsSetupRequired() == false after SetSetupRequired(false)")
+	}
+}
+
+func TestAuthHandler_Middleware(t *testing.T) {
+	tmpDir := t.TempDir()
+	authPath := filepath.Join(tmpDir, "auth.json")
+	h := NewAuthHandler("mypassword", authPath)
+
+	// Create valid token by logging in
+	body, _ := json.Marshal(LoginRequest{Password: "mypassword"})
+	wLogin := httptest.NewRecorder()
+	h.Login(wLogin, httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBuffer(body)))
+	if wLogin.Code != http.StatusOK {
+		t.Fatalf("login failed: %d", wLogin.Code)
+	}
+	var loginResp struct {
+		Token string `json:"token"`
+	}
+	_ = json.NewDecoder(wLogin.Body).Decode(&loginResp)
+	token := loginResp.Token
+	if token == "" {
+		t.Fatalf("expected token from login")
+	}
+
+	nextCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("protected content"))
+	})
+	middleware := h.Middleware(next)
+
+	// 1. Request without token returns 401 Unauthorized
+	nextCalled = false
+	reqNoToken := httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+	wNoToken := httptest.NewRecorder()
+	middleware.ServeHTTP(wNoToken, reqNoToken)
+	if wNoToken.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for request without token, got %d", wNoToken.Code)
+	}
+	if nextCalled {
+		t.Errorf("next handler should not have been called without token")
+	}
+	var noTokenResp map[string]interface{}
+	_ = json.NewDecoder(wNoToken.Body).Decode(&noTokenResp)
+	if noTokenResp["success"] != false || noTokenResp["authenticated"] != false {
+		t.Errorf("unexpected 401 response payload: %+v", noTokenResp)
+	}
+
+	// 2. Request with invalid token returns 401
+	nextCalled = false
+	reqBadToken := httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+	reqBadToken.Header.Set("Authorization", "Bearer invalid-token-xyz")
+	wBadToken := httptest.NewRecorder()
+	middleware.ServeHTTP(wBadToken, reqBadToken)
+	if wBadToken.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for invalid token, got %d", wBadToken.Code)
+	}
+	if nextCalled {
+		t.Errorf("next handler should not have been called with invalid token")
+	}
+
+	// 3. Request with valid token via Authorization: Bearer <token>
+	nextCalled = false
+	reqBearer := httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+	reqBearer.Header.Set("Authorization", "Bearer "+token)
+	wBearer := httptest.NewRecorder()
+	middleware.ServeHTTP(wBearer, reqBearer)
+	if wBearer.Code != http.StatusOK {
+		t.Errorf("expected 200 with Bearer token, got %d", wBearer.Code)
+	}
+	if !nextCalled {
+		t.Errorf("expected next handler to be called with Bearer token")
+	}
+
+	// 4. Request with valid token via cookie qm_auth_token
+	nextCalled = false
+	reqCookie := httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+	reqCookie.AddCookie(&http.Cookie{Name: "qm_auth_token", Value: token})
+	wCookie := httptest.NewRecorder()
+	middleware.ServeHTTP(wCookie, reqCookie)
+	if wCookie.Code != http.StatusOK {
+		t.Errorf("expected 200 with cookie token, got %d", wCookie.Code)
+	}
+	if !nextCalled {
+		t.Errorf("expected next handler to be called with cookie token")
+	}
+
+	// 5. Request with valid token via query param ?token=
+	nextCalled = false
+	reqQuery := httptest.NewRequest(http.MethodGet, "/api/protected?token="+token, nil)
+	wQuery := httptest.NewRecorder()
+	middleware.ServeHTTP(wQuery, reqQuery)
+	if wQuery.Code != http.StatusOK {
+		t.Errorf("expected 200 with query token, got %d", wQuery.Code)
+	}
+	if !nextCalled {
+		t.Errorf("expected next handler to be called with query token")
+	}
+}
+
+func TestAuthHandler_ValidateRequest(t *testing.T) {
+	tmpDir := t.TempDir()
+	authPath := filepath.Join(tmpDir, "auth.json")
+	h := NewAuthHandler("mypassword", authPath)
+
+	body, _ := json.Marshal(LoginRequest{Password: "mypassword"})
+	wLogin := httptest.NewRecorder()
+	h.Login(wLogin, httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBuffer(body)))
+	var loginResp struct {
+		Token string `json:"token"`
+	}
+	_ = json.NewDecoder(wLogin.Body).Decode(&loginResp)
+	token := loginResp.Token
+
+	// 1. Missing token returns false
+	reqEmpty := httptest.NewRequest(http.MethodGet, "/api/resource", nil)
+	if h.ValidateRequest(reqEmpty) {
+		t.Errorf("expected ValidateRequest=false when no token present")
+	}
+
+	// 2. Invalid token returns false
+	reqInvalid := httptest.NewRequest(http.MethodGet, "/api/resource", nil)
+	reqInvalid.Header.Set("Authorization", "Bearer invalid-token")
+	if h.ValidateRequest(reqInvalid) {
+		t.Errorf("expected ValidateRequest=false for invalid token")
+	}
+
+	// 3. Valid Bearer token returns true
+	reqBearer := httptest.NewRequest(http.MethodGet, "/api/resource", nil)
+	reqBearer.Header.Set("Authorization", "Bearer "+token)
+	if !h.ValidateRequest(reqBearer) {
+		t.Errorf("expected ValidateRequest=true for valid Bearer token")
+	}
+
+	// 4. Valid cookie token returns true
+	reqCookie := httptest.NewRequest(http.MethodGet, "/api/resource", nil)
+	reqCookie.AddCookie(&http.Cookie{Name: "qm_auth_token", Value: token})
+	if !h.ValidateRequest(reqCookie) {
+		t.Errorf("expected ValidateRequest=true for valid cookie token")
+	}
+
+	// 5. Valid query param returns true
+	reqQuery := httptest.NewRequest(http.MethodGet, "/api/resource?token="+token, nil)
+	if !h.ValidateRequest(reqQuery) {
+		t.Errorf("expected ValidateRequest=true for valid query token")
 	}
 }

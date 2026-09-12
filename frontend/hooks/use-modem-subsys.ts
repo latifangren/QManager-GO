@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { authFetch } from "@/lib/auth-fetch";
 import type { ModemSubsysData } from "@/types/modem-subsys";
 
-const POLL_INTERVAL = 2000;
+const POLL_INTERVAL = 5000;
 const FETCH_ENDPOINT = "/cgi-bin/quecmanager/system/modem-subsys.sh";
 
 export interface UseModemSubsysReturn {
@@ -62,14 +62,43 @@ export function useModemSubsys(): UseModemSubsysReturn {
   useEffect(() => {
     mountedRef.current = true;
 
-    void fetchData();
-    intervalRef.current = setInterval(() => void fetchData(), POLL_INTERVAL);
+    const startPolling = () => {
+      if (!intervalRef.current) {
+        intervalRef.current = setInterval(() => void fetchData(), POLL_INTERVAL);
+      }
+    };
 
-    return () => {
-      mountedRef.current = false;
+    const stopPolling = () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (typeof document === "undefined") return;
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        void fetchData();
+        startPolling();
+      }
+    };
+
+    if (typeof document === "undefined" || !document.hidden) {
+      void fetchData();
+      startPolling();
+    }
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    return () => {
+      mountedRef.current = false;
+      stopPolling();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
       }
     };
   }, [fetchData]);

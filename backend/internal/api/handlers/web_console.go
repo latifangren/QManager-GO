@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"sync"
@@ -13,7 +14,15 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		return u.Host == r.Host
 	},
 	Subprotocols: []string{"tty"},
 }
@@ -25,16 +34,30 @@ const (
 	msgJSON   = '{' // 0x7B
 )
 
+// AuthValidator defines a function that checks if a request is authenticated.
+type AuthValidator func(r *http.Request) bool
+
 // WebConsoleHandler provides a native Go PTY WebSocket bridge compatible with ttyd/xterm.js.
-type WebConsoleHandler struct{}
+type WebConsoleHandler struct {
+	validator AuthValidator
+}
 
 // NewWebConsoleHandler creates a new WebConsoleHandler.
-func NewWebConsoleHandler() *WebConsoleHandler {
-	return &WebConsoleHandler{}
+func NewWebConsoleHandler(validator ...AuthValidator) *WebConsoleHandler {
+	var v AuthValidator
+	if len(validator) > 0 {
+		v = validator[0]
+	}
+	return &WebConsoleHandler{validator: v}
 }
 
 // HandleWS handles the WebSocket connection for Web Console at /console/ws.
 func (h *WebConsoleHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
+	if h.validator != nil && !h.validator(r) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return

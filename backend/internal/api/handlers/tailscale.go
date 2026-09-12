@@ -95,9 +95,12 @@ type TailscaleRawStatus struct {
 	} `json:"Peer"`
 }
 
-const (
+var (
 	tailscaleInstallJSON = "/tmp/qmanager_tailscale_install.json"
 	tailscaleInstallLog  = "/tmp/qmanager_tailscale_install.log"
+)
+
+const (
 	tailscaleDir         = "/usrdata/tailscale"
 	tailscaleVersion     = "1.92.5"
 	tailscaleServiceUnit = "/lib/systemd/system/tailscaled.service"

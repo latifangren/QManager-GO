@@ -36,7 +36,10 @@ type SMSHandler struct {
 func NewSMSHandler(eng *atengine.Engine) *SMSHandler {
 	tool := os.Getenv("SMS_TOOL_PATH")
 	if tool == "" {
-		tool = telemetry.DefaultSMSToolPath
+		tool = telemetry.EnsureSMSToolBinary()
+		if tool == "" {
+			tool = telemetry.DefaultSMSToolPath
+		}
 	}
 	dev := os.Getenv("SMS_AT_DEVICE")
 	if dev == "" {

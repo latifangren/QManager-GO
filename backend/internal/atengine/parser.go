@@ -349,7 +349,8 @@ func ParseQCAINFO(raw string) []CarrierComponent {
 	return list
 }
 
-func parseBandwidthMHz(rawBW string, tech string) int {
+// ParseBandwidthMHz converts raw bandwidth string into MHz integer.
+func ParseBandwidthMHz(rawBW string, tech string) int {
 	rawBW = strings.Trim(strings.TrimSpace(rawBW), "\"")
 	if rawBW == "" {
 		return 0
@@ -392,7 +393,7 @@ func parseBandwidthMHz(rawBW string, tech string) int {
 	if err != nil {
 		return 0
 	}
-	if val <= 0 {
+	if val < 0 {
 		return 0
 	}
 
@@ -428,6 +429,24 @@ func parseBandwidthMHz(rawBW string, tech string) int {
 		return val
 	}
 
+	// LTE Bandwidth Codes (3GPP / Quectel: 0=1.4M, 1=3M, 2=5M, 3=10M, 4=15M, 5=20M)
+	if tech == "LTE" || (tech != "NR" && val <= 5) {
+		switch val {
+		case 0:
+			return 1 // 1.4 MHz (approx 1 MHz)
+		case 1:
+			return 3
+		case 2:
+			return 5
+		case 3:
+			return 10
+		case 4:
+			return 15
+		case 5:
+			return 20
+		}
+	}
+
 	// LTE Resource Blocks (RB)
 	switch val {
 	case 6:
@@ -448,6 +467,10 @@ func parseBandwidthMHz(rawBW string, tech string) int {
 		}
 		return val / 5
 	}
+}
+
+func parseBandwidthMHz(rawBW string, tech string) int {
+	return ParseBandwidthMHz(rawBW, tech)
 }
 
 // BatteryStatus holds parsed battery info from +CBC.

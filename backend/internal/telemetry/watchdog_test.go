@@ -511,3 +511,49 @@ func TestNewWatchdog_Configurations(t *testing.T) {
 		t.Errorf("unexpected negative uptime: %f", uptime)
 	}
 }
+
+func TestWatchdog_RevertSim(t *testing.T) {
+	wd, mock, _ := newTestWatchdog(t)
+	mock.SetResponse("AT+QUIMSLOT=1", "OK")
+	mock.ClearHistory()
+
+	// 1. When w.activeSimSlot = 2 and w.failoverActive = true
+	wd.mu.Lock()
+	wd.activeSimSlot = 2
+	wd.failoverActive = true
+	wd.mu.Unlock()
+
+	wd.RevertSim()
+
+	wd.mu.Lock()
+	slot := wd.activeSimSlot
+	failover := wd.failoverActive
+	wd.mu.Unlock()
+
+	if slot != 1 {
+		t.Errorf("expected activeSimSlot == 1 after RevertSim, got %d", slot)
+	}
+	if failover != false {
+		t.Errorf("expected failoverActive == false after RevertSim, got %v", failover)
+	}
+
+	hist := mock.GetHistory()
+	found := false
+	for _, cmd := range hist {
+		if cmd == "AT+QUIMSLOT=1" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected AT+QUIMSLOT=1 in command history, got %v", hist)
+	}
+
+	// 2. When w.activeSimSlot = 1, RevertSim is a no-op
+	mock.ClearHistory()
+	wd.RevertSim()
+
+	if len(mock.GetHistory()) != 0 {
+		t.Errorf("expected no AT commands when activeSimSlot == 1, got %v", mock.GetHistory())
+	}
+}

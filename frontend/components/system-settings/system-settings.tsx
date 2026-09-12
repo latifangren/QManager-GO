@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import SystemSettingsCard from "@/components/system-settings/system-settings-card";
 import ScheduledOperationsCard from "@/components/system-settings/scheduled-operations-card";
 import SSHPasswordCard from "@/components/system-settings/ssh-password-card";
+import AdaptivePollingCard from "./adaptive-polling-card";
 // Parked for future use — the System Health card (subsystem state + host
 // resource usage) is kept on disk and can be restored to the grid at any time.
 // import ModemSubsystemCard from "@/components/system-settings/modem-subsystem-card";
@@ -118,6 +119,9 @@ const SystemSettings = () => {
         </motion.div>
         <motion.div variants={staggerItem} className={CARD_CELL}>
           <SSHPasswordCard />
+        </motion.div>
+        <motion.div variants={staggerItem} className={CARD_CELL}>
+          <AdaptivePollingCard />
         </motion.div>
         {/* <ModemSubsystemCard /> — parked, see the commented import above. */}
         <motion.div variants={staggerItem} className={CARD_CELL}>

@@ -22,24 +22,20 @@ import (
 )
 
 const (
-	CurrentQManagerVersion = "1.0.0-beta"
+	CurrentQManagerVersion = "1.1.0-beta"
 	DefaultGitHubRepo      = "latifangren/QManager-GO"
 	DefaultUpdateLockFile  = "/tmp/qmanager_update.lock"
 	DefaultUpdateDir       = "/tmp/qmanager_update"
 	DefaultBinaryPath      = "/usrdata/qmanager/qmanager"
 )
 
-const DefaultInitialChangelog = `### QManager-GO v1.0.0-beta
-- **Single-Binary Pure Go Architecture**: Standalone lightweight web and telemetry daemon.
-- **RAM-First Storage Safety**: Zero NAND flash wear; live metrics and logs stored in RAM/tmpfs.
-- **Traffic Engine (DPI Bypass)**: Embedded on-demand tpws engine with YouTube optimizer & Full Bypass.
-- **Native Web Console**: Pure Go PTY WebSocket bridge (/console/ws) for in-browser root shell.
-- **AT Command Palette**: Redesigned 2-line responsive popover with 43 Quectel diagnostic presets.
-- **Tailscale VPN**: On-demand modular host lifecycle and automated background installer.
-- **System Health Check**: 26 native Go diagnostic probes with one-click support bundle export.
-- **Custom DNS**: 9 popular 1-click public DNS presets plus custom manual input.
-- **SSH Access Security**: Atomic /etc/shadow updater using native openssl password hashing.
-- **Multi-Language**: Full translations in English, Indonesian, Simplified/Traditional Chinese, and Italian.`
+const DefaultInitialChangelog = `### QManager-GO v1.1.0-beta
+- **Direct POSIX Syscall AT Transport**: In-process /dev/smd11 AT engine with zero process fork overhead (CPU idle 80-85%).
+- **Multi-Tier Fallback & Embedded Restoration**: Auto-restores atcli_smd11 and sms_tool binaries on clean rootfs.
+- **vnStat Live Bandwidth Monitoring & SSE**: Real-time traffic metrics and event stream telemetry.
+- **Robust SMS Engine**: UCS-2 hex decoder and automatic multipart SMS concatenation.
+- **Adaptive Polling Sync**: Dynamic frontend-to-backend telemetry interval cadence synchronization.
+- **Security Hardening**: Session-authenticated Web Console PTY WebSocket and robust API envelopes.`
 
 // UpdateSettings holds update preferences.
 type UpdateSettings struct {

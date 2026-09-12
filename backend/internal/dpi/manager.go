@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,12 +22,12 @@ var embeddedFS embed.FS
 
 const (
 	// Port for tpws redirect
-	DPIPort      = "989"
-	DPIBindAddr  = "0.0.0.0"
-	DPIRAMBinary = "/tmp/tpws"
+	DPIPort     = "989"
+	DPIBindAddr = "0.0.0.0"
 )
 
 var (
+	DPIRAMBinary    = "/tmp/tpws"
 	DPIHostlistFile = "/etc/qmanager/dpi_hostlist.txt"
 	DPIConfigFile   = "/etc/qmanager/dpi_config.json"
 	DPIVerifyFile   = "/tmp/qmanager_dpi_verify.json"
@@ -102,9 +103,12 @@ func GetManager() *Manager {
 func (m *Manager) EnsureBinaryExtracted() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.ensureBinaryExtractedLocked()
+}
 
+func (m *Manager) ensureBinaryExtractedLocked() error {
 	// Check if already extracted and valid
-	if fi, err := os.Stat(DPIRAMBinary); err == nil && fi.Size() > 0 && fi.Mode()&0111 != 0 {
+	if fi, err := os.Stat(DPIRAMBinary); err == nil && !fi.IsDir() && fi.Size() > 0 && (runtime.GOOS == "windows" || fi.Mode()&0111 != 0) {
 		return nil
 	}
 
@@ -113,11 +117,16 @@ func (m *Manager) EnsureBinaryExtracted() error {
 		return fmt.Errorf("failed to read embedded tpws binary: %w", err)
 	}
 
+	if err := os.MkdirAll(filepath.Dir(DPIRAMBinary), 0755); err != nil {
+		return fmt.Errorf("failed to create directory for %s: %w", DPIRAMBinary, err)
+	}
+
 	tmpExtract := fmt.Sprintf("%s.tmp.%d", DPIRAMBinary, time.Now().UnixNano())
 	if err := os.WriteFile(tmpExtract, data, 0755); err != nil {
 		return fmt.Errorf("failed to write %s: %w", tmpExtract, err)
 	}
 
+	_ = os.Remove(DPIRAMBinary)
 	if err := os.Rename(tmpExtract, DPIRAMBinary); err != nil {
 		_ = os.Remove(tmpExtract)
 		return fmt.Errorf("failed to move tpws to %s: %w", DPIRAMBinary, err)
@@ -144,7 +153,14 @@ func ReadConfig() Config {
 		}
 	}
 	var c Config
-	_ = json.Unmarshal(data, &c)
+	if err := json.Unmarshal(data, &c); err != nil {
+		return Config{
+			VideoOptimizerEnabled: false,
+			MasqueradeEnabled:     false,
+			SNIDomain:             "speedtest.net",
+			ForceTCP:              false,
+		}
+	}
 	if c.SNIDomain == "" {
 		c.SNIDomain = "speedtest.net"
 	}
@@ -182,6 +198,26 @@ func WriteConfig(c Config) error {
 		return err
 	}
 	return os.Rename(tmpFile, DPIConfigFile)
+}
+
+// LoadConfig loads the config from disk (alias for ReadConfig).
+func LoadConfig() Config {
+	return ReadConfig()
+}
+
+// SaveConfig stores the config to disk atomically (alias for WriteConfig).
+func SaveConfig(c Config) error {
+	return WriteConfig(c)
+}
+
+// LoadConfig loads the config from disk (alias for ReadConfig).
+func (m *Manager) LoadConfig() Config {
+	return ReadConfig()
+}
+
+// SaveConfig stores the config to disk atomically (alias for WriteConfig).
+func (m *Manager) SaveConfig(c Config) error {
+	return WriteConfig(c)
 }
 
 // EnsureHostlistFile ensures /etc/qmanager/dpi_hostlist.txt exists with default domains if empty.
@@ -289,10 +325,7 @@ func (m *Manager) StartEngine(mode string) error {
 	m.stopLocked()
 
 	// Ensure binary in RAM
-	data, err := embeddedFS.ReadFile("embeds/tpws")
-	if err == nil {
-		_ = os.WriteFile(DPIRAMBinary, data, 0755)
-	}
+	_ = m.ensureBinaryExtractedLocked()
 
 	EnsureHostlistFile()
 
@@ -344,7 +377,7 @@ func (m *Manager) IsRunning() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.cmd != nil && m.cmd.Process != nil {
-		if err := m.cmd.Process.Signal(os.Signal(nil)); err == nil {
+		if m.cmd.ProcessState == nil {
 			return true
 		}
 	}
@@ -368,13 +401,9 @@ func (m *Manager) Uptime() string {
 	return fmt.Sprintf("%dh %dm", mins/60, mins%60)
 }
 
-// GetPacketsProcessed counts packets hitting iptables rule if possible.
-func (m *Manager) GetPacketsProcessed() int64 {
-	out, err := exec.Command("iptables", "-t", "nat", "-L", "PREROUTING", "-v", "-n", "-x").Output()
-	if err != nil {
-		return 0
-	}
-	lines := strings.Split(string(out), "\n")
+// parseIptablesPackets extracts packet count from iptables output.
+func parseIptablesPackets(output string) int64 {
+	lines := strings.Split(output, "\n")
 	for _, l := range lines {
 		if strings.Contains(l, "redir ports 989") || (strings.Contains(l, "REDIRECT") && strings.Contains(l, "989")) {
 			fields := strings.Fields(l)
@@ -386,6 +415,15 @@ func (m *Manager) GetPacketsProcessed() int64 {
 		}
 	}
 	return 0
+}
+
+// GetPacketsProcessed counts packets hitting iptables rule if possible.
+func (m *Manager) GetPacketsProcessed() int64 {
+	out, err := exec.Command("iptables", "-t", "nat", "-L", "PREROUTING", "-v", "-n", "-x").Output()
+	if err != nil {
+		return 0
+	}
+	return parseIptablesPackets(string(out))
 }
 
 // StartVerify runs a background verification comparing speed with and without engine.
@@ -458,6 +496,34 @@ func (m *Manager) StartVerify() {
 		resBytes, _ := json.MarshalIndent(completedRes, "", "  ")
 		_ = os.WriteFile(DPIVerifyFile, resBytes, 0644)
 	}()
+}
+
+// GetVerifyStatus returns the current verification result from DPIVerifyFile.
+func GetVerifyStatus() VerifyResult {
+	data, err := os.ReadFile(DPIVerifyFile)
+	if err != nil {
+		return VerifyResult{
+			Success: true,
+			Status:  "idle",
+			Message: "No verification run",
+		}
+	}
+
+	var res VerifyResult
+	if err := json.Unmarshal(data, &res); err != nil {
+		return VerifyResult{
+			Success: true,
+			Status:  "idle",
+			Message: "No verification run",
+		}
+	}
+
+	return res
+}
+
+// GetVerifyStatus returns the current verification status on the manager.
+func (m *Manager) GetVerifyStatus() VerifyResult {
+	return GetVerifyStatus()
 }
 
 func measureThroughput(url string, timeout time.Duration) float64 {

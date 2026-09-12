@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -102,10 +103,12 @@ type LogsHandler struct {
 }
 
 // NewLogsHandler initializes a LogsHandler.
-func NewLogsHandler(cfgMgr ...*config.Manager) *LogsHandler {
+func NewLogsHandler(args ...interface{}) *LogsHandler {
 	var cm *config.Manager
-	if len(cfgMgr) > 0 {
-		cm = cfgMgr[0]
+	for _, arg := range args {
+		if c, ok := arg.(*config.Manager); ok {
+			cm = c
+		}
 	}
 	logPath := os.Getenv("QMANAGER_LOG_FILE")
 	if logPath == "" {
@@ -390,6 +393,31 @@ func (h *LogsHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 		Stats:               stats,
 		AvailableComponents: components,
 	})
+}
+
+// DownloadLogs streams plain text logs with Content-Disposition header.
+func (h *LogsHandler) DownloadLogs(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"qmanager.log\"")
+	w.WriteHeader(http.StatusOK)
+
+	if f, err := os.Open(h.logFilePath); err == nil {
+		defer f.Close()
+		if fi, err := f.Stat(); err == nil && fi.Size() > 0 {
+			_, _ = io.Copy(w, f)
+			return
+		}
+	}
+
+	if h.ringLogger != nil {
+		lines := h.ringLogger.GetLines(500, "")
+		for _, line := range lines {
+			_, _ = fmt.Fprintln(w, line)
+		}
+	}
 }
 
 // HandleLogsAction handles POST /api/v1/system/logs and POST /cgi-bin/quecmanager/system/logs.sh

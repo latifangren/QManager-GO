@@ -139,6 +139,7 @@ rm -rf /usrdata/qmanager/console \
 This project builds upon the work of several fantastic open-source projects:
 
 - **[dr-dolomite/QManager-RM520N](https://github.com/dr-dolomite/QManager-RM520N)** — Original QManager frontend design, UI concepts, and telemetry workflows.
+- **[1alessandro1/atcli_rust](https://github.com/1alessandro1/atcli_rust)** by [@1alessandro1](https://github.com/1alessandro1) — Safe, lightweight Rust AT command CLI utility (`atcli_smd11`) for Qualcomm modems.
 - **[bol-van/zapret](https://github.com/bol-van/zapret)** by [@bol-van](https://github.com/bol-van) — High-performance, lightweight `tpws` DPI circumvention engine.
 - **[tailscale/tailscale](https://github.com/tailscale/tailscale)** — Zero-config mesh VPN daemon.
 - **[creack/pty](https://github.com/creack/pty)** — Pure Go Pseudo-Terminal (PTY) interface for UNIX platforms.

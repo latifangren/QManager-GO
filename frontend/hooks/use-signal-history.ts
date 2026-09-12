@@ -153,14 +153,43 @@ export function useSignalHistory(
       };
     }
 
-    fetchHistory();
-    intervalRef.current = setInterval(fetchHistory, pollInterval);
+    const startPolling = () => {
+      if (!intervalRef.current) {
+        intervalRef.current = setInterval(fetchHistory, pollInterval);
+      }
+    };
 
-    return () => {
-      mountedRef.current = false;
+    const stopPolling = () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (typeof document === "undefined") return;
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        fetchHistory();
+        startPolling();
+      }
+    };
+
+    if (typeof document === "undefined" || !document.hidden) {
+      fetchHistory();
+      startPolling();
+    }
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    return () => {
+      mountedRef.current = false;
+      stopPolling();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
       }
     };
   }, [fetchHistory, pollInterval, enabled]);

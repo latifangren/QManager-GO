@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -90,6 +91,7 @@ func (m *MockTransport) Close() error {
 type DeviceTransport struct {
 	devPath  string
 	lockPath string
+	fallback Transport
 	mu       sync.Mutex
 }
 
@@ -102,9 +104,18 @@ func NewDeviceTransport(devPath string) *DeviceTransport {
 	if _, err := os.Stat("/var/lock"); err != nil {
 		lockPath = "/tmp/qmanager_at.lock"
 	}
+
+	var fb Transport
+	if devPath == "/dev/smd11" {
+		if atcliPath := EnsureAtcliBinary(); atcliPath != "" {
+			fb = NewCliTransport(atcliPath)
+		}
+	}
+
 	return &DeviceTransport{
 		devPath:  devPath,
 		lockPath: lockPath,
+		fallback: fb,
 	}
 }
 
@@ -214,7 +225,7 @@ func (d *DeviceTransport) Send(ctx context.Context, cmd string) (string, error) 
 	}
 	defer releaseFileLock(lockFile)
 
-	var f *os.File
+	var fd int
 	var openErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		select {
@@ -222,7 +233,7 @@ func (d *DeviceTransport) Send(ctx context.Context, cmd string) (string, error) 
 			return "", ErrTimeout
 		default:
 		}
-		f, openErr = os.OpenFile(d.devPath, os.O_RDWR, 0)
+		fd, openErr = syscall.Open(d.devPath, syscall.O_RDWR, 0)
 		if openErr == nil {
 			break
 		}
@@ -233,9 +244,12 @@ func (d *DeviceTransport) Send(ctx context.Context, cmd string) (string, error) 
 		break
 	}
 	if openErr != nil {
+		if d.fallback != nil {
+			return d.fallback.Send(ctx, cmd)
+		}
 		return "", fmt.Errorf("%w: %s (%v)", ErrNoDevice, d.devPath, openErr)
 	}
-	defer f.Close()
+	defer syscall.Close(fd)
 
 	cleanCmd := strings.TrimSpace(cmd)
 	if !strings.HasSuffix(cleanCmd, "\r") && !strings.HasSuffix(cleanCmd, "\n") {
@@ -249,7 +263,7 @@ func (d *DeviceTransport) Send(ctx context.Context, cmd string) (string, error) 
 			return "", ErrTimeout
 		default:
 		}
-		_, writeErr = f.Write([]byte(cleanCmd))
+		_, writeErr = syscall.Write(fd, []byte(cleanCmd))
 		if writeErr == nil {
 			break
 		}
@@ -260,10 +274,19 @@ func (d *DeviceTransport) Send(ctx context.Context, cmd string) (string, error) 
 		break
 	}
 	if writeErr != nil {
+		if d.fallback != nil {
+			return d.fallback.Send(ctx, cmd)
+		}
 		return "", fmt.Errorf("failed to write to %s: %w", d.devPath, writeErr)
 	}
 
-	return readDeviceResponse(ctx, f)
+	resp, err := readDeviceRawResponse(ctx, fd)
+	if err != nil && d.fallback != nil {
+		if fbResp, fbErr := d.fallback.Send(ctx, cmd); fbErr == nil {
+			return fbResp, nil
+		}
+	}
+	return resp, err
 }
 
 func (d *DeviceTransport) Close() error {
@@ -322,21 +345,18 @@ func AutoDetectTransport(customDevice ...string) Transport {
 		return NewDeviceTransport(dev)
 	}
 
-	// 1. Check if qcmd executable exists
-	qcmdCandidates := []string{
-		"/usr/bin/qcmd",
-		"/opt/bin/qcmd",
+	// 1. Direct Character Devices (Qualcomm SMD / TTY) - Native Go Raw Syscall Transport
+	deviceCandidates := []string{
+		"/dev/smd11",
+		"/dev/ttyUSB2",
 	}
-	for _, p := range qcmdCandidates {
-		if _, err := os.Stat(p); err == nil {
-			return NewCliTransport(p)
+	for _, dev := range deviceCandidates {
+		if _, err := os.Stat(dev); err == nil {
+			return NewDeviceTransport(dev)
 		}
 	}
-	if p, err := exec.LookPath("qcmd"); err == nil {
-		return NewCliTransport(p)
-	}
 
-	// 2. Check if atcli_smd11 exists
+	// 2. Check if compiled atcli_smd11 exists
 	atcliCandidates := []string{
 		"/usr/bin/atcli_smd11",
 		"/usr/local/bin/atcli_smd11",
@@ -350,17 +370,18 @@ func AutoDetectTransport(customDevice ...string) Transport {
 		return NewCliTransport(p)
 	}
 
-	// 3. Direct Character Devices (Qualcomm SMD / TTY)
-	deviceCandidates := []string{
-		"/dev/smd11",
-		"/dev/smd7",
-		"/dev/ttyUSB2",
+	// 3. Fallback to qcmd script
+	qcmdCandidates := []string{
+		"/usr/bin/qcmd",
+		"/opt/bin/qcmd",
 	}
-
-	for _, dev := range deviceCandidates {
-		if _, err := os.Stat(dev); err == nil {
-			return NewDeviceTransport(dev)
+	for _, p := range qcmdCandidates {
+		if _, err := os.Stat(p); err == nil {
+			return NewCliTransport(p)
 		}
+	}
+	if p, err := exec.LookPath("qcmd"); err == nil {
+		return NewCliTransport(p)
 	}
 
 	// 4. Fallback to mock transport for testing & local development
