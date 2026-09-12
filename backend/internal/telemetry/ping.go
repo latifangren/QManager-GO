@@ -213,57 +213,66 @@ func (p *PingProber) ProbeOnce() PingSample {
 			_ = conn.Close()
 		}
 	} else {
-		// 2. Try ICMP ping on cellular interface (handles modem PBR routing tables)
-		pingBin := getPingBinary()
 		iface := findWanInterface()
+		targetAddr := net.JoinHostPort(host, port)
 
-		var cmd *exec.Cmd
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		if iface != "" {
-			cmd = exec.CommandContext(ctx, pingBin, "-I", iface, "-c", "1", "-W", "2", host)
-		} else {
-			cmd = exec.CommandContext(ctx, pingBin, "-c", "1", "-W", "2", host)
+		// 2. Primary probe: In-process TCP dial with SO_BINDTODEVICE (~10-20ms, zero subprocess forks)
+		start := time.Now()
+		dialer := &net.Dialer{
+			Timeout: dialTimeout,
+			Control: func(network, address string, c syscall.RawConn) error {
+				return c.Control(func(fd uintptr) {
+					bindSocketToDevice(fd, iface)
+				})
+			},
 		}
-		out, err := cmd.CombinedOutput()
-		cancel()
-
+		conn, err := dialer.Dial("tcp", targetAddr)
 		if err == nil {
-			if lat, ok := parsePingOutput(string(out)); ok {
-				elapsed = lat
+			elapsed = float64(time.Since(start).Microseconds()) / 1000.0
+			success = true
+			_ = conn.Close()
+		} else if iface != "" {
+			// Also try direct TCP dial without device binding if bound dial failed
+			startFallback := time.Now()
+			connFb, errFb := net.DialTimeout("tcp", targetAddr, dialTimeout)
+			if errFb == nil {
+				elapsed = float64(time.Since(startFallback).Microseconds()) / 1000.0
 				success = true
+				_ = connFb.Close()
 			}
 		}
 
-		// If failed with specific iface, try without -I
-		if !success && iface != "" {
-			ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
-			out2, err2 := exec.CommandContext(ctx2, pingBin, "-c", "1", "-W", "2", host).CombinedOutput()
-			cancel2()
-			if err2 == nil {
-				if lat, ok := parsePingOutput(string(out2)); ok {
+		// 3. Fallback: If in-process TCP dial failed, try ICMP ping command
+		if !success {
+			pingBin := getPingBinary()
+			var cmd *exec.Cmd
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			if iface != "" {
+				cmd = exec.CommandContext(ctx, pingBin, "-I", iface, "-c", "1", "-W", "2", host)
+			} else {
+				cmd = exec.CommandContext(ctx, pingBin, "-c", "1", "-W", "2", host)
+			}
+			out, err := cmd.CombinedOutput()
+			cancel()
+
+			if err == nil {
+				if lat, ok := parsePingOutput(string(out)); ok {
 					elapsed = lat
 					success = true
 				}
 			}
-		}
 
-		// 3. Fallback to TCP dial with SO_BINDTODEVICE
-		if !success {
-			start := time.Now()
-			dialer := &net.Dialer{
-				Timeout: dialTimeout,
-				Control: func(network, address string, c syscall.RawConn) error {
-					return c.Control(func(fd uintptr) {
-						bindSocketToDevice(fd, iface)
-					})
-				},
-			}
-			targetAddr := net.JoinHostPort(host, port)
-			conn, err := dialer.Dial("tcp", targetAddr)
-			elapsed = float64(time.Since(start).Microseconds()) / 1000.0
-			success = err == nil
-			if conn != nil {
-				_ = conn.Close()
+			// If failed with specific iface, try without -I
+			if !success && iface != "" {
+				ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+				out2, err2 := exec.CommandContext(ctx2, pingBin, "-c", "1", "-W", "2", host).CombinedOutput()
+				cancel2()
+				if err2 == nil {
+					if lat, ok := parsePingOutput(string(out2)); ok {
+						elapsed = lat
+						success = true
+					}
+				}
 			}
 		}
 	}

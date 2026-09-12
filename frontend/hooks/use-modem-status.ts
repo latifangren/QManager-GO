@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { authFetch } from "@/lib/auth-fetch";
 import type { ModemStatus } from "@/types/modem-status";
 
@@ -8,7 +8,8 @@ import type { ModemStatus } from "@/types/modem-status";
 // useModemStatus — Polling Hook for QManager Dashboard
 // =============================================================================
 // Fetches the cached modem status JSON from the CGI endpoint at a regular
-// interval. Provides loading/error states and staleness detection.
+// interval. Shares a single polling loop across all subscribers to eliminate
+// duplicate requests and reduce CPU strain on the modem.
 //
 // Usage:
 //   const { data, isLoading, isStale, receivedAtMs, error, refresh } =
@@ -41,15 +42,8 @@ export interface UseModemStatusReturn {
   /** True if the data's timestamp is older than the stale threshold */
   isStale: boolean;
   /**
-   * Browser wall-clock ms at the moment the current `data` LANDED in this
-   * client. `null` until the first successful fetch.
-   *
-   * This exists so consumers that measure elapsed time against a snapshot can
-   * do it without reading a clock during render. It is deliberately NOT
-   * `data.timestamp`: that field is stamped by the modem, and comparing it to a
-   * browser `Date.now()` compares two unsynchronised clocks. It is deliberately
-   * NOT a ticking value either — it changes only when a snapshot arrives, which
-   * is what makes a render that consumes it idempotent.
+   * Browser wall-clock ms at the moment the current `data`
+   * snapshot was received by the client. `null` until the first successful fetch.
    */
   receivedAtMs: number | null;
   /** Error message if the last fetch failed */
@@ -58,103 +52,151 @@ export interface UseModemStatusReturn {
   refresh: () => void;
 }
 
+// =============================================================================
+// Module-level Singleton Polling Manager
+// =============================================================================
+
+interface SharedState {
+  data: ModemStatus | null;
+  isLoading: boolean;
+  isStale: boolean;
+  receivedAtMs: number | null;
+  error: string | null;
+}
+
+let sharedState: SharedState = {
+  data: null,
+  isLoading: true,
+  isStale: false,
+  receivedAtMs: null,
+  error: null,
+};
+
+type Listener = (state: SharedState) => void;
+const listeners = new Set<Listener>();
+
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+let inFlight = false;
+
+function notifyListeners() {
+  for (const listener of listeners) {
+    listener(sharedState);
+  }
+}
+
+async function fetchStatusShared() {
+  if (inFlight) return;
+  inFlight = true;
+
+  try {
+    const response = await authFetch(FETCH_ENDPOINT);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const json: ModemStatus = await response.json();
+
+    let isStale = false;
+    if (json.timestamp) {
+      const modemTime = new Date(json.timestamp).getTime();
+      if (!isNaN(modemTime)) {
+        const ageSeconds = (Date.now() - modemTime) / 1000;
+        isStale = ageSeconds > STALE_THRESHOLD_SECONDS;
+      }
+    }
+
+    sharedState = {
+      data: json,
+      isLoading: false,
+      isStale,
+      receivedAtMs: Date.now(),
+      error: null,
+    };
+  } catch (err) {
+    sharedState = {
+      ...sharedState,
+      isLoading: false,
+      error: err instanceof Error ? err.message : "Failed to fetch status",
+    };
+  } finally {
+    inFlight = false;
+    notifyListeners();
+  }
+}
+
+function startSharedPolling(intervalMs: number = DEFAULT_POLL_INTERVAL) {
+  if (pollTimer) return;
+  pollTimer = setInterval(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
+    fetchStatusShared();
+  }, intervalMs);
+}
+
+function stopSharedPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function handleVisibilityChange() {
+  if (typeof document === "undefined") return;
+  if (document.hidden) {
+    stopSharedPolling();
+  } else {
+    fetchStatusShared();
+    startSharedPolling();
+  }
+}
+
 export function useModemStatus(
   options: UseModemStatusOptions = {}
 ): UseModemStatusReturn {
   const { pollInterval = DEFAULT_POLL_INTERVAL, enabled = true } = options;
+  const [state, setState] = useState<SharedState>(sharedState);
 
-  const [data, setData] = useState<ModemStatus | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isStale, setIsStale] = useState(false);
-  const [receivedAtMs, setReceivedAtMs] = useState<number | null>(null);
-
-  // Use ref to track if the component is mounted (prevent state updates after unmount)
-  const mountedRef = useRef(true);
-  // Use ref for the interval so we can clear it
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const fetchData = useCallback(async () => {
-    try {
-      const response = await authFetch(FETCH_ENDPOINT);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const json: ModemStatus = await response.json();
-
-      if (!mountedRef.current) return;
-
-      setData(json);
-      setError(null);
-
-      // ONE clock read serves both consumers below, so a snapshot's arrival
-      // time and its computed age can never disagree by the microseconds
-      // between two `Date.now()` calls.
-      //
-      // This callback is the right place — and the only right place — to read a
-      // clock in this hook. It runs once per landed response, not once per
-      // render, so nothing here re-runs when React re-renders or replays a
-      // component. Consumers that need "how long since this snapshot" read
-      // `receivedAtMs` as data instead of reaching for their own `Date.now()`
-      // during render, which is what `react-hooks/purity` is pointing at when
-      // it flags one.
-      const nowMs = Date.now();
-      setReceivedAtMs(nowMs);
-
-      // Staleness compares the MODEM's timestamp against the browser's clock.
-      // The two are unsynchronised, which the 10s threshold absorbs; it is not
-      // precise enough to be worth correcting, and a drifting modem clock
-      // showing as stale is the safe direction to fail.
-      const age = Math.floor(nowMs / 1000) - json.timestamp;
-      setIsStale(age > STALE_THRESHOLD_SECONDS);
-
-      // Clear loading state after first successful fetch
-      setIsLoading(false);
-    } catch (err) {
-      if (!mountedRef.current) return;
-
-      const message =
-        err instanceof Error ? err.message : "Failed to fetch modem status";
-      setError(message);
-
-      // Don't clear existing data on error — show stale data with error indicator
-      // But do mark as stale
-      setIsStale(true);
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Manual refresh
-  const refresh = useCallback(() => {
-    fetchData();
-  }, [fetchData]);
-
-  // Set up polling
   useEffect(() => {
-    mountedRef.current = true;
+    if (!enabled) return;
 
-    if (!enabled) {
-      return () => {
-        mountedRef.current = false;
-      };
+    const listener: Listener = (newState) => {
+      setState(newState);
+    };
+    listeners.add(listener);
+
+    if (listeners.size === 1) {
+      if (typeof document !== "undefined") {
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+      }
+      if (typeof document === "undefined" || !document.hidden) {
+        fetchStatusShared();
+        startSharedPolling(pollInterval);
+      }
+    } else {
+      setState(sharedState);
     }
-
-    // Fetch immediately on mount
-    fetchData();
-
-    // Set up interval
-    intervalRef.current = setInterval(fetchData, pollInterval);
 
     return () => {
-      mountedRef.current = false;
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        stopSharedPolling();
+        if (typeof document !== "undefined") {
+          document.removeEventListener("visibilitychange", handleVisibilityChange);
+        }
       }
     };
-  }, [fetchData, pollInterval, enabled]);
+  }, [enabled, pollInterval]);
 
-  return { data, isLoading, isStale, receivedAtMs, error, refresh };
+  const refresh = useCallback(() => {
+    fetchStatusShared();
+  }, []);
+
+  return {
+    data: state.data,
+    isLoading: state.isLoading,
+    isStale: state.isStale,
+    receivedAtMs: state.receivedAtMs,
+    error: state.error,
+    refresh,
+  };
 }

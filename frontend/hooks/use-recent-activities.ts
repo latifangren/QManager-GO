@@ -105,14 +105,43 @@ export function useRecentActivities(
       };
     }
 
-    fetchEvents();
-    intervalRef.current = setInterval(fetchEvents, pollInterval);
+    const startPolling = () => {
+      if (!intervalRef.current) {
+        intervalRef.current = setInterval(fetchEvents, pollInterval);
+      }
+    };
 
-    return () => {
-      mountedRef.current = false;
+    const stopPolling = () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (typeof document === "undefined") return;
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        fetchEvents();
+        startPolling();
+      }
+    };
+
+    if (typeof document === "undefined" || !document.hidden) {
+      fetchEvents();
+      startPolling();
+    }
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    return () => {
+      mountedRef.current = false;
+      stopPolling();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
       }
     };
   }, [fetchEvents, pollInterval, enabled]);
@@ -120,9 +149,12 @@ export function useRecentActivities(
   const refresh = useCallback(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
     fetchEvents();
-    intervalRef.current = setInterval(fetchEvents, pollInterval);
+    if (typeof document === "undefined" || !document.hidden) {
+      intervalRef.current = setInterval(fetchEvents, pollInterval);
+    }
   }, [fetchEvents, pollInterval]);
 
   return { events, isLoading, isRefreshing, error, refresh };

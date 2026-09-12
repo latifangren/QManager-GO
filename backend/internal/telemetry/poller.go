@@ -1135,7 +1135,7 @@ func (p *Poller) poll() {
 }
 
 func writeStatusFile(path string, status *ModemStatus) error {
-	data, err := json.MarshalIndent(status, "", "  ")
+	data, err := json.Marshal(status)
 	if err != nil {
 		return err
 	}
