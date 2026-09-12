@@ -17,6 +17,7 @@ import (
 	"qmanager/internal/config"
 	"qmanager/internal/platform"
 	"qmanager/internal/telemetry"
+	"qmanager/internal/telemetry/bandwidth"
 )
 
 // AppServices bundles all backend dependencies.
@@ -26,6 +27,7 @@ type AppServices struct {
 	Prober        *telemetry.PingProber
 	Watchdog      *telemetry.Watchdog
 	ConfigMgr     *config.Manager
+	Bandwidth     *bandwidth.Collector
 	Identity      platform.Identity
 	DistFS        embed.FS
 	ConfigDir     string
@@ -115,7 +117,14 @@ func NewRouter(s AppServices) http.Handler {
 	historyH := handlers.NewHistoryHandler()
 	qualityH := handlers.NewQualityThresholdsHandler(filepath.Join(configDir, "quality_thresholds.json"))
 	pingProfH := handlers.NewPingProfileHandler(s.Prober, filepath.Join(configDir, "ping_profile.json"))
-	webConsoleH := handlers.NewWebConsoleHandler()
+	webConsoleH := handlers.NewWebConsoleHandler(authH.ValidateRequest)
+	streamH := handlers.NewTelemetryStreamHandler(s.Poller)
+
+	bwCollector := s.Bandwidth
+	if bwCollector == nil {
+		bwCollector = bandwidth.NewCollector(filepath.Join(configDir, "bandwidth.json"))
+	}
+	bwH := handlers.NewBandwidthHandler(bwCollector)
 
 	// Web Console WebSocket bridge
 	r.Get("/console/ws", webConsoleH.HandleWS)
@@ -140,6 +149,7 @@ func NewRouter(s AppServices) http.Handler {
 		api.Get("/telemetry/history/signal", historyH.FetchSignalHistory)
 		api.Get("/telemetry/history/ping", historyH.FetchPingHistory)
 		api.Get("/telemetry/events", historyH.FetchEvents)
+		api.Get("/telemetry/stream", streamH.StreamStatus)
 
 		// Protected Routes
 		api.Group(func(prot chi.Router) {
@@ -238,6 +248,8 @@ func NewRouter(s AppServices) http.Handler {
 			prot.Post("/monitoring/watchdog", watchdogH.HandleWatchdog)
 			prot.Get("/monitoring/alerts", alertsH.HandleAlerts)
 			prot.Post("/monitoring/alerts", alertsH.HandleAlerts)
+			prot.Get("/monitoring/bandwidth", bwH.GetBandwidth)
+			prot.Post("/monitoring/bandwidth/reset", bwH.ResetBandwidth)
 
 			// SMS
 			prot.Get("/sms", smsH.ListSMS)
@@ -254,6 +266,8 @@ func NewRouter(s AppServices) http.Handler {
 			// System, SIM Registry, Language Packs, Health Check, OTA & Logs
 			prot.Get("/system/config", sysH.GetConfig)
 			prot.Post("/system/config", sysH.SaveConfig)
+			prot.Get("/system/polling", sysH.GetPollingMode)
+			prot.Post("/system/polling", sysH.SetPollingMode)
 			prot.Get("/system/sim-registry", simRegH.HandleRegistry)
 			prot.Post("/system/sim-registry", simRegH.HandleRegistry)
 			prot.Get("/system/language-packs/list", langPacksH.List)
@@ -268,6 +282,7 @@ func NewRouter(s AppServices) http.Handler {
 			prot.Get("/system/update", updateH.CheckUpdate)
 			prot.Post("/system/update", updateH.HandleUpdateAction)
 			prot.Get("/system/logs", logsH.GetLogs)
+			prot.Get("/system/logs/download", logsH.DownloadLogs)
 			prot.Post("/system/logs", logsH.HandleLogsAction)
 			prot.Get("/system/modem-subsys", logsH.ModemSubsys)
 
@@ -283,6 +298,8 @@ func NewRouter(s AppServices) http.Handler {
 	r.Route("/cgi-bin/quecmanager", func(cgi chi.Router) {
 		// Telemetry & AT
 		cgi.Get("/at_cmd/fetch_data.sh", cellH.Status)
+		cgi.Get("/api/stream/status", streamH.StreamStatus)
+		cgi.Get("/telemetry_stream.sh", streamH.StreamStatus)
 		cgi.Post("/at_cmd/send_command.sh", cellH.SendCommand)
 		cgi.Get("/at_cmd/fetch_signal_history.sh", historyH.FetchSignalHistory)
 		cgi.Get("/at_cmd/fetch_ping_history.sh", historyH.FetchPingHistory)
@@ -384,6 +401,8 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Post("/monitoring/watchdog.sh", watchdogH.HandleWatchdog)
 		cgi.Get("/monitoring/alerts.sh", alertsH.HandleAlerts)
 		cgi.Post("/monitoring/alerts.sh", alertsH.HandleAlerts)
+		cgi.Get("/monitoring/bandwidth.sh", bwH.GetBandwidth)
+		cgi.Post("/monitoring/bandwidth_reset.sh", bwH.ResetBandwidth)
 
 		// SMS Center & Forwarding CGI endpoints
 		cgi.Get("/cellular/sms.sh", smsH.GetSMSCenter)
@@ -408,6 +427,8 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Get("/device/about.sh", sysH.Info)
 		cgi.Get("/system/settings.sh", sysH.GetConfig)
 		cgi.Post("/system/settings.sh", sysH.SaveConfig)
+		cgi.Get("/system/polling.sh", sysH.GetPollingMode)
+		cgi.Post("/system/polling.sh", sysH.SetPollingMode)
 		cgi.Get("/settings/quality_thresholds.sh", qualityH.Handle)
 		cgi.Post("/settings/quality_thresholds.sh", qualityH.Handle)
 		cgi.Get("/settings/ping_profile.sh", pingProfH.Handle)
@@ -420,6 +441,7 @@ func NewRouter(s AppServices) http.Handler {
 		cgi.Get("/system/update.sh", updateH.CheckUpdate)
 		cgi.Post("/system/update.sh", updateH.HandleUpdateAction)
 		cgi.Get("/system/logs.sh", logsH.GetLogs)
+		cgi.Get("/system/logs_download.sh", logsH.DownloadLogs)
 		cgi.Post("/system/logs.sh", logsH.HandleLogsAction)
 		cgi.Get("/system/modem-subsys.sh", logsH.ModemSubsys)
 	})

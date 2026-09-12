@@ -658,6 +658,15 @@ func (h *AuthHandler) ValidateToken(token string) bool {
 	return h.validateToken(token)
 }
 
+// ValidateRequest checks if the request carries a valid session token (via header, cookie, or query param).
+func (h *AuthHandler) ValidateRequest(r *http.Request) bool {
+	token := h.extractToken(r)
+	if token == "" {
+		return false
+	}
+	return h.validateToken(token)
+}
+
 func (h *AuthHandler) validateToken(token string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -683,6 +692,9 @@ func (h *AuthHandler) extractToken(r *http.Request) string {
 	}
 	if cookie, err := r.Cookie("qm_auth_token"); err == nil {
 		return cookie.Value
+	}
+	if tok := r.URL.Query().Get("token"); tok != "" {
+		return tok
 	}
 	return ""
 }

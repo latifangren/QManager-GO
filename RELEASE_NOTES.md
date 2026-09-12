@@ -1,77 +1,66 @@
-# QManager-GO v1.0.0-beta Release Notes
+# QManager-GO v1.1.0-beta Release Notes
 
-Welcome to the **v1.0.0-beta** release of **QManager-GO**! 🎉
+Welcome to the **v1.1.0-beta** release of **QManager-GO**! 🎉
 
-This release marks a complete architectural overhaul of the QManager modem appliance management suite. The entire legacy stack (Lighttpd, PHP, bash CGI wrappers, and external daemons) has been replaced by a **single, unified, standalone Go binary** (`qmanager-armv7`) with an embedded Next.js 16 WebUI.
-
----
-
-## 🌟 Major Highlights
-
-### ⚡ Single-Binary Pure Go Architecture
-- Replaces legacy multi-component dependencies (Lighttpd, PHP-FPM, shell CGI scripts, ttyd) with a lightweight, high-performance Go binary.
-- Dramatically lowers idle resource consumption (~18–25 MB RAM total) with ultra-fast sub-millisecond API response times.
-- Simple one-file deployment to `/usrdata/qmanager/qmanager`.
-
-### 🛡 Zero Flash Wear (RAM-First Lifecycle)
-- Designed specifically for Qualcomm NAND flash memory (UBIFS) safety on Quectel RG501Q-EU and RM520N-GL modems.
-- Telemetry streams, real-time signal metrics, circular syslog buffers (1000 lines), latency benchmarks, and DPI traffic proxies operate strictly in RAM (`/tmp` / tmpfs).
-- Persistent storage writes occur solely on explicit user configuration changes via atomic temporary-file-and-rename semantics.
-
-### 🚀 Traffic Engine (DPI Bypass & Video Optimizer)
-- Embedded in-memory `tpws` binary engine with safe automated lifecycle management.
-- Supports **Full Bypass Mode**, **Video Optimizer (YouTube DPI Fix)**, and **Force TCP Mode**.
-- Automated iptables redirection and packet mangling without interfering with modem routing rules.
-- Built-in real-time DPI verification tester.
-
-### 💻 Native Web Console (PTY Terminal)
-- Built-in root shell terminal accessible directly within the browser.
-- Uses native Go Pseudo-Terminal (PTY) over WebSockets (`/console/ws`), completely eliminating the need for external `ttyd` daemons.
-- Full xterm.js compatibility with keyboard navigation, copy/paste, ANSI color rendering, and dynamic window resizing.
-
-### 📡 AT Command Terminal & Smart Command Palette
-- Redesigned 2-line responsive command popover palette.
-- **43 Pre-configured Quectel Diagnostic Presets** categorized into 8 functional groups:
-  - *Modem & Hardware*: Temperature monitoring (`AT+QTEMP`), firmware revision (`AT+QGMR`), model identification (`ATI`).
-  - *Network & Registration*: Mode preference, SA/NSA toggling, operator registration (`AT+COPS?`, `AT+CEREG?`, `AT+C5GREG?`).
-  - *Signal & RF Quality*: Detailed serving cell metrics (`AT+QENG="servingcell"`), neighbour cells, Carrier Aggregation (`AT+QCAINFO`), signal strength (`AT+CSQ`).
-  - *SIM Management*: Dual SIM switching (`AT+QUIMSLOT`), ICCID query (`AT+CCID`), PIN status (`AT+CPIN?`).
-  - *APN & Data*: APN profile manager, PDP context IP address (`AT+CGPADDR=1`).
-  - *Band Locking & Cell Lock*: LTE/5G band query, cell lock configuration and reset (`AT+QNWLOCK`).
-  - *IP Passthrough & USB*: USB network composition mode (`AT+QCFG="usbnet"`), MPDN passthrough.
-
-### 🔒 On-Demand Tailscale VPN
-- Modular host management for `tailscaled` service.
-- Automatic background installer downloads official ARMv7 binaries on demand without bloating the main QManager binary.
-- Complete lifecycle controls: Connect (with browser Auth URL / QR code), Disconnect, Logout, Boot Persistence, and Tailscale SSH toggle.
-
-### 🩺 Comprehensive Subsystem Diagnostics (Health Check)
-- 26 native Go diagnostic probes across 8 critical subsystem categories:
-  - System Core, Cellular Radio, AT Engine, Network & Routing, SIM & Security, Storage & Flash, Hardware & Thermal, Telemetry.
-- One-click **Support Diagnostics Bundle** export (`.tar.gz`) for streamlined bug reporting.
-
-### 🌐 Custom DNS & Public Presets
-- 1-click selector for 9 popular secure DNS providers (Cloudflare, Google, AdGuard, Quad9, Mullvad, OpenDNS, Control D, NextDNS, Level3).
-- Full custom IPv4/IPv6 manual DNS entry support.
-
-### 🔐 Root SSH Password Management
-- Secure password updater using embedded `openssl passwd -1` (MD5-crypt) and atomic `/etc/shadow` rewrite.
-- Verified for Linux Yocto environments lacking legacy `chpasswd`/`usermod` utilities.
-
-### 🌍 Internationalization (i18n)
-- Comprehensive multi-language translations across 5 languages:
-  - English, Bahasa Indonesia, 简体中文, 繁體中文, Italiano.
+This release delivers major performance breakthroughs, native POSIX syscall AT transport, full embedded binary self-healing, real-time vnStat bandwidth telemetry with SSE streaming, and core security hardening.
 
 ---
 
-## 📦 Release Artifacts
-- `qmanager-linux-armv7.tar.gz`: Pre-packaged bundle for Quectel RG501Q-EU (SDX55) and RM520N-GL (SDX65).
-- `qmanager-linux-arm64.tar.gz`: Pre-packaged bundle for AArch64 appliances and modems.
-- `qmanager-linux-amd64.tar.gz`: Pre-packaged bundle for x86_64 development and testing.
-- `SHA256SUMS.txt`: SHA256 integrity checksums for all release binaries.
+## 🌟 Major Highlights & New Features
+
+### ⚡ Direct POSIX Syscall AT Transport (Zero-Fork In-Process Engine)
+* **Eliminated Kernel Fork Overhead:** Replaced legacy shell wrappers (`/usr/bin/qcmd`) and high-frequency child processes with an in-process native Go AT engine communicating directly via POSIX raw syscalls (`syscall.Open`, `syscall.Write`, `syscall.Select`) over `/dev/smd11`.
+* **Massive CPU Load Reduction:** Reduced kernel process fork rate from **67 forks/sec down to 1 fork/sec**. Modem CPU idle increased from ~10–15% up to **80%–85% idle** (total system load dropped to ~15%, QManager process consuming only 4%–9% CPU).
+* **Multi-Tier Fallback & Self-Healing:** Integrated 3-tier transport mechanism:
+  1. *Tier 1 (Primary):* Native Go POSIX Syscalls over `/dev/smd11`.
+  2. *Tier 2 (Fail-safe):* Embedded native `atcli_smd11` (Rust utility from `1alessandro1/atcli_rust`).
+  3. *Tier 3 (Legacy):* Shell-based invocation fallback.
+* **Auto-Restoration:** If `atcli_smd11` or `sms_tool` is missing from the modem filesystem (e.g. after a factory reset), the Go binary automatically restores them from embedded memory on boot.
+
+### 📊 Real-Time vnStat Bandwidth Monitoring & Telemetry SSE Stream
+* **Live Bandwidth Metrics:** Real-time upload/download bitrate (bps/Kbps/Mbps) and traffic counters queried via kernel `/proc/net/dev` and `vnstat` integration.
+* **Server-Sent Events (SSE):** Added lightweight streaming endpoint (`/api/v1/telemetry/stream` & `/api/v1/monitoring/bandwidth`) for live reactive frontend updates without heavy HTTP request polling.
+
+### 📱 Robust SMS Engine & UCS-2 / PDU Reassembly
+* **Embedded `sms_tool`:** Statically embedded `sms_tool` binary with automatic extraction on clean rootfs.
+* **UCS-2 / UTF-16 Hex Fallback Parser:** Added automatic hex-to-UTF-8 decoding for UCS-2 formatted incoming SMS strings (`00530065...` $\rightarrow$ "Selamat...").
+* **Multipart SMS Concatenation:** Correctly parses and stitches multi-segment SMS messages seamlessly in WebUI.
+
+### ⏱ Dynamic Adaptive Polling Synchronization
+* **Two-Way Polling Cadence Sync:** Added `/api/v1/system/polling` and `/cgi-bin/quecmanager/system/polling.sh` endpoints.
+* Frontend power modes (`Active: 1s`, `Balanced: 2s`, `Low Power: 5s`) dynamically adjust the backend telemetry poller timer on the fly to conserve CPU cycles when WebUI is backgrounded.
+
+### 🔒 Security Hardening & Session Authentication
+* **Web Console PTY Auth:** Enforced strict session authentication token checks on WebSocket console connections (`/console/ws`).
+* **Cross-Platform Build Tagging:** Hardened OS/architecture build constraints for POSIX locking and terminal controls.
+* **API Response Contract Alignment:** Normalized JSON response envelopes across `/api/v1/cellular/ping-profile`, `/api/v1/cellular/quality-thresholds`, and system telemetry endpoints.
 
 ---
 
-## 🤝 Upstream & Credits
-- **Main Repository**: [latifangren/QManager-GO](https://github.com/latifangren/QManager-GO)
-- **Frontend UI Foundation**: [dr-dolomite/QManager-RM520N](https://github.com/dr-dolomite/QManager-RM520N)
+## 📋 Full Changelog (Since v1.0.0-beta)
+
+* `42ee6250` - **feat(sms):** embed `sms_tool` with auto-restoration and update transport docs
+* `9352ae7c` - **feat(telemetry):** optimize atengine with native syscall transport and adaptive polling sync
+* `ede6d5e5` - **feat(monitoring):** add vnstat bandwidth monitoring and sse telemetry stream
+* `48daea78` - **fix(handlers):** align ping-profile and quality-thresholds responses with frontend contract
+* `0f8682db` - **fix(frontend):** calculate data staleness using unix timestamp in seconds
+* `99f08ac9` - **perf(core):** optimize single-core CPU usage across backend and frontend
+* `2f64b2ec` - **test(backend):** boost test coverage to 83.9% and harden logs/dpi handlers
+* `3028a604` - **fix(security):** enforce session authentication on web console and fix cross-platform build tags
+
+---
+
+## 📦 Deployment & Installation
+
+### Automated Install via SSH/ADB:
+```sh
+mkdir -p /tmp/qmanager_pkg && cd /tmp/qmanager_pkg
+tar -xzf qmanager-armv7.tar.gz
+chmod +x install.sh
+./install.sh
+```
+
+### Verified Compatible Hardware:
+* **Quectel RG501Q-EU** (Qualcomm Snapdragon X55, Cortex-A7 @ 1.0 GHz, Linux 4.14 Yocto)
+* **Quectel RM520N-GL** (Qualcomm Snapdragon X65, Cortex-A7 @ 1.5 GHz, Linux 5.4 Yocto)
+* **Quectel RM551E-GL** (Qualcomm Snapdragon X72/X75 ARM64/ARMv8)

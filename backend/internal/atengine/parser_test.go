@@ -462,3 +462,172 @@ OK`
 	}
 }
 
+func TestParseCFUN(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected int
+	}{
+		{
+			name:     "CFUN 1",
+			input:    "+CFUN: 1\r\nOK",
+			expected: 1,
+		},
+		{
+			name:     "CFUN 4",
+			input:    "+CFUN: 4\r\nOK",
+			expected: 4,
+		},
+		{
+			name:     "CFUN 0",
+			input:    "+CFUN: 0\r\nOK",
+			expected: 0,
+		},
+		{
+			name:     "invalid",
+			input:    "ERROR\r\n",
+			expected: 1,
+		},
+		{
+			name:     "missing prefix",
+			input:    "OK\r\n",
+			expected: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseCFUN(tt.input)
+			if got != tt.expected {
+				t.Errorf("ParseCFUN(%q) = %d, want %d", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParseTimeAdvance(t *testing.T) {
+	// 1. LTE NTA scaling: 1344 (> 1282) / 16 = 84
+	rawLTE_NTA := `+QNWCFG: "lte_time_advance",1,1344`
+	gotLTE_NTA := ParseTimeAdvance(rawLTE_NTA, false)
+	if gotLTE_NTA == nil || *gotLTE_NTA != 84 {
+		t.Errorf("expected TA=84 for 1344 NTA, got %v", gotLTE_NTA)
+	}
+
+	// 2. LTE standard (<= 1282): 50 -> 50
+	rawLTE_Std := `+QNWCFG: "lte_time_advance",1,50`
+	gotLTE_Std := ParseTimeAdvance(rawLTE_Std, false)
+	if gotLTE_Std == nil || *gotLTE_Std != 50 {
+		t.Errorf("expected TA=50, got %v", gotLTE_Std)
+	}
+
+	// 3. NR5G: 250 (isNR = true) -> 250 (not divided by 16)
+	rawNR := `+QNWCFG: "nr5g_time_advance",1,250`
+	gotNR := ParseTimeAdvance(rawNR, true)
+	if gotNR == nil || *gotNR != 250 {
+		t.Errorf("expected TA=250 for NR, got %v", gotNR)
+	}
+
+	// 4. Non-matching or malformed -> returns nil
+	if got := ParseTimeAdvance("OK", false); got != nil {
+		t.Errorf("expected nil for non-matching line, got %v", got)
+	}
+	if got := ParseTimeAdvance(`+QNWCFG: "lte_time_advance",1,0`, false); got != nil {
+		t.Errorf("expected nil for 0 value, got %v", got)
+	}
+	if got := ParseTimeAdvance(`+QNWCFG: "lte_time_advance",1,abc`, false); got != nil {
+		t.Errorf("expected nil for non-numeric value, got %v", got)
+	}
+}
+
+func TestParseQCCID(t *testing.T) {
+	// 1. Standard +QCCID: prefix
+	raw1 := "+QCCID: 89860401101903000000\r\nOK"
+	if got := ParseQCCID(raw1); got != "89860401101903000000" {
+		t.Errorf("ParseQCCID with prefix got %q, want %q", got, "89860401101903000000")
+	}
+
+	// 2. Standalone line with 19-20 digits
+	raw2 := "89860401101903000000\r\nOK"
+	if got := ParseQCCID(raw2); got != "89860401101903000000" {
+		t.Errorf("ParseQCCID standalone got %q, want %q", got, "89860401101903000000")
+	}
+
+	// 3. Empty and non-matching lines
+	if got := ParseQCCID(""); got != "" {
+		t.Errorf("expected empty string for empty input, got %q", got)
+	}
+	if got := ParseQCCID("OK\r\nERROR\r\n"); got != "" {
+		t.Errorf("expected empty string for non-matching input, got %q", got)
+	}
+	if got := ParseQCCID("AT+QCCID\r\nOK"); got != "" {
+		t.Errorf("expected empty string for command echo, got %q", got)
+	}
+}
+
+func TestParseBandwidthMHz(t *testing.T) {
+	// 1. LTE bw codes: "0", "1", "2", "3", "4", "5"
+	lteCodeTests := []struct {
+		code     string
+		expected int
+	}{
+		{"0", 1},
+		{"1", 3},
+		{"2", 5},
+		{"3", 10},
+		{"4", 15},
+		{"5", 20},
+	}
+	for _, tt := range lteCodeTests {
+		t.Run("LTE_Code_"+tt.code, func(t *testing.T) {
+			got := ParseBandwidthMHz(tt.code, "LTE")
+			if got != tt.expected {
+				t.Errorf("ParseBandwidthMHz(%q, LTE) = %d, want %d", tt.code, got, tt.expected)
+			}
+		})
+	}
+
+	// 2. NR bw codes and RBs
+	nrTests := []struct {
+		input    string
+		expected int
+	}{
+		{"273", 100},
+		{"217", 80},
+		{"216", 80},
+		{"162", 60},
+		{"135", 50},
+		{"106", 40},
+		{"79", 15},
+		{"51", 20},
+		{"25", 10},
+		{"100MHz", 100},
+		{"80000kHz", 80},
+		{"20M", 20},
+	}
+	for _, tt := range nrTests {
+		t.Run("NR_"+tt.input, func(t *testing.T) {
+			got := ParseBandwidthMHz(tt.input, "NR")
+			if got != tt.expected {
+				t.Errorf("ParseBandwidthMHz(%q, NR) = %d, want %d", tt.input, got, tt.expected)
+			}
+		})
+	}
+
+	// 3. Unknown/invalid inputs
+	invalidTests := []struct {
+		input string
+		tech  string
+	}{
+		{"", "LTE"},
+		{"", "NR"},
+		{"invalid", "LTE"},
+		{"-10", "NR"},
+	}
+	for _, tt := range invalidTests {
+		got := ParseBandwidthMHz(tt.input, tt.tech)
+		if got != 0 {
+			t.Errorf("ParseBandwidthMHz(%q, %s) = %d, want 0", tt.input, tt.tech, got)
+		}
+	}
+}
+

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -176,27 +175,30 @@ func fetchPublicIPs() (string, string) {
 		return cachedPublicIPv4, cachedPublicIPv6
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+	}
 
 	// Try IPv4
-	cmd4 := exec.CommandContext(ctx, "curl", "-s", "-m", "2", "https://api.ipify.org")
-	if out, err := cmd4.Output(); err == nil && len(out) > 0 {
-		cachedPublicIPv4 = strings.TrimSpace(string(out))
-	} else {
-		// Fallback to rmnet_data0 if interface bound
-		cmd4Fallback := exec.CommandContext(ctx, "curl", "--interface", "rmnet_data0", "-s", "-m", "2", "http://api.ipify.org")
-		if outF, errF := cmd4Fallback.Output(); errF == nil && len(outF) > 0 {
-			cachedPublicIPv4 = strings.TrimSpace(string(outF))
+	if resp4, err := client.Get("https://api.ipify.org"); err == nil {
+		defer resp4.Body.Close()
+		if resp4.StatusCode == http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp4.Body, 128))
+			if ip := strings.TrimSpace(string(body)); ip != "" {
+				cachedPublicIPv4 = ip
+			}
 		}
 	}
 
 	// Try IPv6
-	cmd6 := exec.CommandContext(ctx, "curl", "-s", "-m", "2", "https://api64.ipify.org")
-	if out, err := cmd6.Output(); err == nil && len(out) > 0 {
-		res := strings.TrimSpace(string(out))
-		if strings.Contains(res, ":") {
-			cachedPublicIPv6 = res
+	if resp6, err := client.Get("https://api64.ipify.org"); err == nil {
+		defer resp6.Body.Close()
+		if resp6.StatusCode == http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp6.Body, 128))
+			ip := strings.TrimSpace(string(body))
+			if strings.Contains(ip, ":") {
+				cachedPublicIPv6 = ip
+			}
 		}
 	}
 
@@ -412,6 +414,46 @@ func (h *SystemHandler) SaveConfig(w http.ResponseWriter, r *http.Request) {
 
 		Success(w, map[string]string{"message": "Configuration saved"})
 	}
+}
+
+// GetPollingMode returns current active polling mode and interval.
+func (h *SystemHandler) GetPollingMode(w http.ResponseWriter, r *http.Request) {
+	mode := "balanced"
+	intervalSec := 2
+	if h.poller != nil {
+		mode = h.poller.GetPollingMode()
+		intervalSec = int(h.poller.GetInterval().Seconds())
+	}
+	Success(w, map[string]interface{}{
+		"mode":         mode,
+		"interval_sec": intervalSec,
+	})
+}
+
+// SetPollingMode updates the active polling mode ("active", "balanced", "low_power").
+func (h *SystemHandler) SetPollingMode(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Mode string `json:"mode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		Error(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(body.Mode))
+	if mode != "active" && mode != "balanced" && mode != "low_power" {
+		Error(w, http.StatusBadRequest, "Invalid mode: must be 'active', 'balanced', or 'low_power'")
+		return
+	}
+
+	if h.poller != nil {
+		h.poller.SetPollingMode(mode)
+	}
+
+	Success(w, map[string]interface{}{
+		"message": "Polling mode updated",
+		"mode":    mode,
+	})
 }
 
 // Reboot safely reboots modem.

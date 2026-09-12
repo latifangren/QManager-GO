@@ -284,6 +284,18 @@ func TestGetSystemMetrics(t *testing.T) {
 	if metrics.Network == nil {
 		t.Errorf("expected non-nil Network map in SystemMetrics")
 	}
+
+	if metrics.UptimeSeconds < 0 {
+		t.Errorf("expected UptimeSeconds >= 0, got %f", metrics.UptimeSeconds)
+	}
+
+	if metrics.CPUUsage < 0 || metrics.CPUUsage > 100 {
+		t.Errorf("expected CPUUsage between 0 and 100, got %f", metrics.CPUUsage)
+	}
+
+	if metrics.CpuTempC < 0 {
+		t.Errorf("expected CpuTempC >= 0, got %f", metrics.CpuTempC)
+	}
 }
 
 func TestGetSystemMetrics_MemUsageCalculation(t *testing.T) {
@@ -298,34 +310,136 @@ func TestGetSystemMetrics_MemUsageCalculation(t *testing.T) {
 	}
 }
 
-func TestPlatformHelpers(t *testing.T) {
-	// 1. GetHostname
-	hn := GetHostname()
-	if hn == "" {
-		t.Errorf("expected non-empty hostname")
+func TestReadCPUUsage(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// 1. Test missing path returns 0
+	missingFile := filepath.Join(tmpDir, "missing_stat")
+	if usage := ReadCPUUsage(missingFile); usage != 0 {
+		t.Errorf("expected 0 for missing path, got %f", usage)
 	}
 
-	// 2. GetKernelVersion
+	// 2. Test empty file returns 0
+	emptyFile := filepath.Join(tmpDir, "empty_stat")
+	if err := os.WriteFile(emptyFile, []byte(""), 0644); err != nil {
+		t.Fatalf("failed to write empty file: %v", err)
+	}
+	if usage := ReadCPUUsage(emptyFile); usage != 0 {
+		t.Errorf("expected 0 for empty file, got %f", usage)
+	}
+
+	// 3. Test invalid header (first token != "cpu") returns 0
+	invalidHeaderFile := filepath.Join(tmpDir, "invalid_header_stat")
+	if err := os.WriteFile(invalidHeaderFile, []byte("intr 100 200 300 400 500\n"), 0644); err != nil {
+		t.Fatalf("failed to write invalid header file: %v", err)
+	}
+	if usage := ReadCPUUsage(invalidHeaderFile); usage != 0 {
+		t.Errorf("expected 0 for invalid header, got %f", usage)
+	}
+
+	// 4. Test fewer than 5 fields returns 0
+	fewFieldsFile := filepath.Join(tmpDir, "few_fields_stat")
+	if err := os.WriteFile(fewFieldsFile, []byte("cpu 100 200 300\n"), 0644); err != nil {
+		t.Fatalf("failed to write few fields file: %v", err)
+	}
+	if usage := ReadCPUUsage(fewFieldsFile); usage != 0 {
+		t.Errorf("expected 0 for fewer than 5 fields, got %f", usage)
+	}
+
+	// Reset prevCPUTotal so first read initializes state
+	cpuMu.Lock()
+	prevCPUTotal = 0
+	prevCPUIdle = 0
+	cpuMu.Unlock()
+
+	// 5. Test valid first read returns 0 (prevCPUTotal initialized)
+	statFile := filepath.Join(tmpDir, "stat_valid")
+	if err := os.WriteFile(statFile, []byte("cpu 100 20 50 800 10 5 2 0\n"), 0644); err != nil {
+		t.Fatalf("failed to write valid stat file: %v", err)
+	}
+	if usage := ReadCPUUsage(statFile); usage != 0 {
+		t.Errorf("expected 0 for first read, got %f", usage)
+	}
+
+	// 6. Test valid second read with updated ticks returns calculated percentage (0 <= usage <= 100)
+	if err := os.WriteFile(statFile, []byte("cpu 150 25 75 850 15 8 4 0\n"), 0644); err != nil {
+		t.Fatalf("failed to update stat file: %v", err)
+	}
+	usage := ReadCPUUsage(statFile)
+	if usage < 0 || usage > 100 {
+		t.Errorf("expected 0 <= usage <= 100, got %f", usage)
+	}
+	if usage != 61 {
+		t.Errorf("expected usage 61%%, got %f", usage)
+	}
+
+	// 7. Test valid second read with same ticks (diffTotal == 0) returns 0
+	if usageSame := ReadCPUUsage(statFile); usageSame != 0 {
+		t.Errorf("expected 0 for same ticks (diffTotal == 0), got %f", usageSame)
+	}
+}
+
+func TestGetKernelVersion(t *testing.T) {
 	kv := GetKernelVersion()
 	if kv == "" {
 		t.Errorf("expected non-empty kernel version")
 	}
+}
 
-	// 3. GetOSVersion
+func TestGetHostname(t *testing.T) {
+	hn := GetHostname()
+	if hn == "" {
+		t.Errorf("expected non-empty hostname")
+	}
+}
+
+func TestGetOSVersion(t *testing.T) {
 	osv := GetOSVersion()
 	if osv == "" {
 		t.Errorf("expected non-empty OS version")
 	}
+}
 
-	// 4. GetDefaultGatewayIP
+func TestGetStorageStats(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Call GetStorageStats(t.TempDir()), assert total > 0 or at least valid numbers without error/panic
+	stats := GetStorageStats(tmpDir)
+	if stats == nil {
+		t.Fatalf("expected non-nil StorageStats for temp dir")
+	}
+	if stats.TotalKB == 0 {
+		t.Errorf("expected TotalKB > 0, got %d", stats.TotalKB)
+	}
+	if stats.Mount == "" {
+		t.Errorf("expected non-empty Mount field")
+	}
+
+	// Call GetStorageStats("non_existent_dir_12345")
+	nonExistentStats := GetStorageStats("non_existent_dir_12345")
+	if nonExistentStats != nil {
+		if nonExistentStats.TotalKB == 0 {
+			t.Errorf("expected TotalKB > 0 for fallback storage stats, got %d", nonExistentStats.TotalKB)
+		}
+	}
+
+	// Test empty path
+	defaultStats := GetStorageStats("")
+	if defaultStats != nil && defaultStats.TotalKB == 0 {
+		t.Errorf("expected TotalKB > 0 for default storage stats, got %d", defaultStats.TotalKB)
+	}
+}
+
+func TestGetInterfaceIPAndGateway(t *testing.T) {
+	// Call GetInterfaceIP("nonexistent_iface_999") and check it returns ("", "")
+	ip4, ip6 := GetInterfaceIP("nonexistent_iface_999")
+	if ip4 != "" || ip6 != "" {
+		t.Errorf("expected empty IPs for nonexistent interface, got ip4=%q ip6=%q", ip4, ip6)
+	}
+
+	// Call GetDefaultGatewayIP(), assert it returns a valid/non-empty IP string
 	gw := GetDefaultGatewayIP()
 	if gw == "" {
 		t.Errorf("expected non-empty default gateway IP")
-	}
-
-	// 5. GetInterfaceIP on invalid interface
-	ip4, ip6 := GetInterfaceIP("nonexistent_iface_xyz")
-	if ip4 != "" || ip6 != "" {
-		t.Errorf("expected empty IPs for non-existent interface, got ip4=%s ip6=%s", ip4, ip6)
 	}
 }

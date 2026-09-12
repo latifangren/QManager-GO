@@ -128,3 +128,107 @@ func TestPingProber_StartStop(t *testing.T) {
 	prober.Stop()
 	prober.Stop() // Idempotent stop
 }
+
+func TestParsePingOutput(t *testing.T) {
+	// 1. time= line
+	timeLine := "64 bytes from 1.1.1.1: icmp_seq=1 ttl=58 time=14.2 ms"
+	lat1, ok1 := parsePingOutput(timeLine)
+	if !ok1 || lat1 != 14.2 {
+		t.Errorf("expected (14.2, true), got (%f, %v)", lat1, ok1)
+	}
+
+	// 2. rtt summary line
+	rttLine := "rtt min/avg/max/mdev = 12.100/15.340/18.900/2.100 ms"
+	lat2, ok2 := parsePingOutput(rttLine)
+	if !ok2 || lat2 != 15.34 {
+		t.Errorf("expected (15.34, true), got (%f, %v)", lat2, ok2)
+	}
+
+	// 3. malformed or non-matching string
+	malformed := "ping: unknown host example.invalid"
+	lat3, ok3 := parsePingOutput(malformed)
+	if ok3 || lat3 != 0 {
+		t.Errorf("expected (0, false) for malformed output, got (%f, %v)", lat3, ok3)
+	}
+
+	empty := ""
+	lat4, ok4 := parsePingOutput(empty)
+	if ok4 || lat4 != 0 {
+		t.Errorf("expected (0, false) for empty output, got (%f, %v)", lat4, ok4)
+	}
+}
+
+func TestGetPingBinary(t *testing.T) {
+	bin := getPingBinary()
+	if bin == "" {
+		t.Errorf("expected non-empty ping binary path")
+	}
+}
+
+func TestFindWanInterface(t *testing.T) {
+	iface := findWanInterface()
+	if iface == "" {
+		t.Errorf("expected non-empty WAN interface name")
+	}
+}
+
+func TestPingProber_SetTarget(t *testing.T) {
+	p := NewPingProber("1.1.1.1:53", 1*time.Second)
+	if p.target != "1.1.1.1:53" {
+		t.Errorf("expected target 1.1.1.1:53, got %s", p.target)
+	}
+
+	// Update target
+	p.SetTarget("8.8.8.8:53")
+	p.mu.RLock()
+	newTarget := p.target
+	p.mu.RUnlock()
+	if newTarget != "8.8.8.8:53" {
+		t.Errorf("expected updated target 8.8.8.8:53, got %s", newTarget)
+	}
+
+	// Empty target should be ignored
+	p.SetTarget("")
+	p.mu.RLock()
+	ignoredTarget := p.target
+	p.mu.RUnlock()
+	if ignoredTarget != "8.8.8.8:53" {
+		t.Errorf("expected target to remain 8.8.8.8:53 when empty passed, got %s", ignoredTarget)
+	}
+}
+
+func TestPingProber_ProbeOnce(t *testing.T) {
+	// 1. Success against local TCP listener
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start listener: %v", err)
+	}
+	defer listener.Close()
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	proberLive := NewPingProber(listener.Addr().String(), 1*time.Second)
+	sLive := proberLive.ProbeOnce()
+	if !sLive.Success {
+		t.Errorf("expected probe against live listener to succeed")
+	}
+	if sLive.LatencyMs < 0 {
+		t.Errorf("expected non-negative latency, got %f", sLive.LatencyMs)
+	}
+
+	// 2. Unreachable address
+	proberDead := NewPingProber("127.0.0.1:1", 1*time.Second)
+	proberDead.dialTimeout = 50 * time.Millisecond
+	sDead := proberDead.ProbeOnce()
+	if sDead.Success {
+		t.Errorf("expected probe against unreachable address to fail")
+	}
+}

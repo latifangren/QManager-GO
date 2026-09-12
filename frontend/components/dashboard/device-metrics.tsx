@@ -44,6 +44,8 @@ import {
 import { useUnitPreferences } from "@/hooks/use-system-settings";
 import { useDataUsed } from "@/hooks/use-data-used";
 import { useModemSubsys } from "@/hooks/use-modem-subsys";
+import { useBandwidth, formatBps } from "@/hooks/use-bandwidth";
+import Link from "next/link";
 import { DUR, staggerRows, staggerRowItem } from "@/lib/motion";
 import {
   ABSENT,
@@ -122,11 +124,14 @@ function MeterRow({
  * It used to draw TEN generic rows for a body of seven, so the card lost height
  * the instant data landed and dragged its grid siblings with it.
  */
+const SKELETON_METERS = ["meter-temp", "meter-cpu", "meter-mem", "meter-storage"] as const;
+const SKELETON_PILLS = ["pill-traffic", "pill-lte", "pill-nr"] as const;
+
 function MetricsSkeleton() {
   return (
     <div className="flex flex-col gap-3.5">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="flex flex-col gap-1.5">
+      {SKELETON_METERS.map((key) => (
+        <div key={key} className="flex flex-col gap-1.5">
           <div className="flex h-5 items-center justify-between gap-2">
             <Skeleton className="h-4 w-32" />
             <Skeleton className="h-4 w-20" />
@@ -134,9 +139,12 @@ function MetricsSkeleton() {
           <Skeleton className={cn(METER_H, "w-full rounded-pill")} />
         </div>
       ))}
-      {Array.from({ length: 3 }).map((_, i) => (
-        <Skeleton key={i} className="h-10 w-full rounded-pill" />
+      {SKELETON_PILLS.map((key) => (
+        <Skeleton key={key} className="h-10 w-full rounded-pill" />
       ))}
+      <div className="flex items-center justify-end px-1">
+        <Skeleton className="h-4 w-36 rounded-pill" />
+      </div>
     </div>
   );
 }
@@ -170,6 +178,8 @@ const DeviceMetricsComponent = ({
 
   // Persistent data-usage counter — polled independently at 2 s cadence
   const { data: dataUsed, isResetting, resetCounter } = useDataUsed();
+  // Live bandwidth rates and today's total volume from bandwidth monitoring
+  const { currentIface } = useBandwidth();
 
   // /usrdata partition usage — sourced from the poller cache via modem-subsys
   const { data: subsysData } = useModemSubsys();
@@ -373,54 +383,62 @@ const DeviceMetricsComponent = ({
           </span>
         </MeterRow>
 
-        {/* ── Data Used (cumulative counter from AT+QGDCNT/QGDNRCNT) ────── */}
+        {/* ── Data Used & Live Speed (AT+QGDCNT / vnStat collector) ────── */}
         <PillRow
           label={
-            <>
-              <span className="truncate">{t("metrics.data_used_label")}</span>
-              <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-5 rounded-pill text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-                    aria-label={t("metrics.reset_counter_aria")}
-                    disabled={isResetting}
-                  >
-                    <MaterialSymbol name="restart_alt" size={14} />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      {t("metrics.reset_confirm_title")}
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {t("metrics.reset_confirm_desc")}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>{tc("actions.cancel")}</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleResetConfirm}>
-                      {t("metrics.reset_confirm_button")}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate">{t("metrics.data_used_label")}</span>
+                  <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-5 rounded-pill text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                        aria-label={t("metrics.reset_counter_aria")}
+                        disabled={isResetting}
+                      >
+                        <MaterialSymbol name="restart_alt" size={14} />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>
+                          {t("metrics.reset_confirm_title")}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t("metrics.reset_confirm_desc")}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{tc("actions.cancel")}</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleResetConfirm}>
+                          {t("metrics.reset_confirm_button")}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+                <span className="text-[0.6875rem] font-medium text-on-surface-variant">
+                  Today:{" "}
+                  {formatBytes(
+                    (currentIface?.today_rx_bytes ?? 0) +
+                      (currentIface?.today_tx_bytes ?? 0) > 0
+                      ? (currentIface?.today_rx_bytes ?? 0) +
+                        (currentIface?.today_tx_bytes ?? 0)
+                      : (dataUsed?.accumulated_rx_bytes ?? 0) +
+                        (dataUsed?.accumulated_tx_bytes ?? 0)
+                  )}
+                </span>
+              </div>
+            </div>
           }
         >
           {/* Down/up are the one place a solid role colour is right on a
               container: they are accent GLYPHS, not text, and the figure beside
               each keeps the container's ink. Both take the `-on-surface`
-              variant, which is the tinted-ink token sized for a plain card.
-
-              Download used to be `text-primary` here — the 5G NR identity hue
-              on a figure that counts every byte the modem has received on any
-              radio. It is Downlink Rose now, and this tile is the one place in
-              the product that was already half-right: upload has been Uplink
-              Cyan here all along while the speedtest dialog and the AMBR chips
-              painted it Carrier Violet. All three agree now. */}
+              variant, which is the tinted-ink token sized for a plain card. */}
           <span className={cn(VALUE_CLASS, "flex items-center gap-1")}>
             <MaterialSymbol
               name="arrow_circle_down"
@@ -428,8 +446,8 @@ const DeviceMetricsComponent = ({
               filled
               className="shrink-0 text-downlink-on-surface"
             />
-            <TickingValue value={dataUsed?.accumulated_rx_bytes ?? 0}>
-              {formatBytes(dataUsed?.accumulated_rx_bytes ?? 0)}
+            <TickingValue value={currentIface?.current_rx_bps ?? 0}>
+              {formatBps(currentIface?.current_rx_bps ?? 0)}
             </TickingValue>
           </span>
           <span className="text-on-surface-variant/40 select-none">/</span>
@@ -440,8 +458,8 @@ const DeviceMetricsComponent = ({
               filled
               className="shrink-0 text-uplink-on-surface"
             />
-            <TickingValue value={dataUsed?.accumulated_tx_bytes ?? 0}>
-              {formatBytes(dataUsed?.accumulated_tx_bytes ?? 0)}
+            <TickingValue value={currentIface?.current_tx_bps ?? 0}>
+              {formatBps(currentIface?.current_tx_bps ?? 0)}
             </TickingValue>
           </span>
         </PillRow>
@@ -507,6 +525,21 @@ const DeviceMetricsComponent = ({
             <TickingValue value={nrDistance}>{nrDistance}</TickingValue>
           </span>
         </PillRow>
+
+        {/* ── Bandwidth Detail Navigation Action ─────────────────────────── */}
+        <motion.div variants={staggerRowItem} className="flex items-center justify-end px-1 pt-1">
+          <Link
+            href="/monitoring/bandwidth"
+            className={cn(
+              "group inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary/80 transition-colors",
+              FOCUS_RING,
+              "rounded-pill px-2.5 py-1 hover:bg-surface-container-high"
+            )}
+          >
+            <span>Detail Bandwidth & vnStat</span>
+            <span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">→</span>
+          </Link>
+        </motion.div>
       </motion.div>
     </TickGroup>
   );

@@ -66,6 +66,9 @@ func (h *VideoOptimizerHandler) HandleGet(w http.ResponseWriter, r *http.Request
 	case "hostlist":
 		h.getHostlist(w)
 		return
+	case "hostlist_section":
+		h.getHostlistSection(w)
+		return
 	}
 
 	if section == "hostlist" {
@@ -139,7 +142,7 @@ func (h *VideoOptimizerHandler) HandlePost(w http.ResponseWriter, r *http.Reques
 	}
 
 	switch payload.Action {
-	case "save":
+	case "save", "save_video_optimizer":
 		h.handleSaveVideoOptimizer(w, payload)
 	case "save_full_bypass", "save_masquerade":
 		h.handleSaveFullBypass(w, payload)

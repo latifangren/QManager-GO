@@ -4,7 +4,6 @@ package atengine
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -33,9 +32,9 @@ func isEBUSY(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, syscall.EBUSY)
+	return false
 }
 
-func readDeviceResponse(ctx context.Context, f *os.File) (string, error) {
-	return readResponse(ctx, f)
+func readDeviceRawResponse(ctx context.Context, fd int) (string, error) {
+	return "", ErrNoDevice
 }

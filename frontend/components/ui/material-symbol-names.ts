@@ -122,6 +122,7 @@ export const MATERIAL_SYMBOL_NAMES = [
   "priority_high",
   "progress_activity",
   "public",
+  "query_stats",
   "radar",
   "refresh",
   "restart_alt",

@@ -3,6 +3,8 @@ package telemetry
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	"qmanager/internal/atengine"
 	"qmanager/internal/config"
@@ -133,7 +136,10 @@ func NewSMSForwarder(engine *atengine.Engine, cfgMgr *config.Manager) *SMSForwar
 	}
 	toolPath := os.Getenv("SMS_TOOL_PATH")
 	if toolPath == "" {
-		toolPath = DefaultSMSToolPath
+		toolPath = EnsureSMSToolBinary()
+		if toolPath == "" {
+			toolPath = DefaultSMSToolPath
+		}
 	}
 	atDev := os.Getenv("SMS_AT_DEVICE")
 	if atDev == "" {
@@ -505,6 +511,7 @@ func ParseSmsToolOutput(out []byte) []RawSmsToolItem {
 
 // FetchInboxAndStorage reads inbox messages and storage statistics across ME and SM storage pools.
 func FetchInboxAndStorage(ctx context.Context, smsToolPath, atDevice string, engine *atengine.Engine) ([]SMSMessage, SMSStorage, error) {
+	// 1. Primary: If sms_tool is available on host, use it for complete PDU decoding and multipart reassembly
 	if _, err := os.Stat(smsToolPath); err == nil {
 		cmdInit := exec.CommandContext(ctx, smsToolPath, "-d", atDevice, "at", `AT+CPMS="ME","ME","ME"`)
 		_ = cmdInit.Run()
@@ -540,6 +547,7 @@ func FetchInboxAndStorage(ctx context.Context, smsToolPath, atDevice string, eng
 		}, nil
 	}
 
+	// 2. Fallback: Use AT Engine directly if sms_tool binary is not installed
 	if engine != nil {
 		_, _ = engine.ExecContext(ctx, `AT+CPMS="ME","ME","ME"`)
 		resCPMS, _ := engine.ExecContext(ctx, "AT+CPMS?")
@@ -759,7 +767,7 @@ func ParseCMGLText(raw string, storage string) []SMSMessage {
 		}
 
 		idx, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
-		sender := strings.Trim(strings.TrimSpace(parts[2]), `"`)
+		sender := decodeUCS2HexString(strings.Trim(strings.TrimSpace(parts[2]), `"`))
 		timestamp := ""
 		if len(parts) >= 5 {
 			timestamp = strings.Trim(strings.TrimSpace(parts[4]), `"`)
@@ -767,7 +775,7 @@ func ParseCMGLText(raw string, storage string) []SMSMessage {
 
 		content := ""
 		if i+1 < len(lines) {
-			content = strings.TrimSpace(lines[i+1])
+			content = decodeUCS2HexString(strings.TrimSpace(lines[i+1]))
 			i++
 		}
 
@@ -781,6 +789,22 @@ func ParseCMGLText(raw string, storage string) []SMSMessage {
 	}
 
 	return list
+}
+
+// decodeUCS2HexString decodes hex-encoded UTF-16BE / UCS2 strings often returned in AT+CMGL when +CSCS="UCS2"
+func decodeUCS2HexString(hexStr string) string {
+	hexStr = strings.TrimSpace(hexStr)
+	if len(hexStr) >= 4 && len(hexStr)%4 == 0 {
+		b, err := hex.DecodeString(hexStr)
+		if err == nil && len(b)%2 == 0 {
+			u16 := make([]uint16, len(b)/2)
+			for i := 0; i < len(u16); i++ {
+				u16[i] = binary.BigEndian.Uint16(b[i*2 : i*2+2])
+			}
+			return string(utf16.Decode(u16))
+		}
+	}
+	return hexStr
 }
 
 // SortSMSMessages sorts SMS messages newest-first.

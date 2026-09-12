@@ -250,3 +250,38 @@ func TestScheduler_LifecycleAndTowerTransitions(t *testing.T) {
 		t.Errorf("expected 1 tower clear action at 08:00, got %d", towerClearCount)
 	}
 }
+
+func TestNewScheduler(t *testing.T) {
+	mock := atengine.NewMockTransport()
+	eng := atengine.NewEngine(mock)
+	defer eng.Close()
+
+	confPath := filepath.Join(t.TempDir(), "qmanager.conf")
+	cfgMgr, err := config.NewManager(confPath)
+	if err != nil {
+		t.Fatalf("failed to init config manager: %v", err)
+	}
+
+	sched := NewScheduler(eng, cfgMgr)
+	if sched == nil {
+		t.Fatalf("expected non-nil Scheduler")
+	}
+	if sched.engine != eng {
+		t.Errorf("expected engine to match")
+	}
+	if sched.cfgMgr != cfgMgr {
+		t.Errorf("expected cfgMgr to match")
+	}
+	if sched.towerCfg != "/etc/qmanager/tower_lock.json" {
+		t.Errorf("expected default towerCfg, got %s", sched.towerCfg)
+	}
+	if sched.stopCh == nil {
+		t.Errorf("expected non-nil stopCh")
+	}
+	if sched.executor.GetTimeFunc == nil {
+		t.Errorf("expected initialized GetTimeFunc")
+	}
+	if sched.executor.GetUptimeFunc == nil {
+		t.Errorf("expected initialized GetUptimeFunc")
+	}
+}
