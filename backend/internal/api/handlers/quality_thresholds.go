@@ -34,9 +34,13 @@ type LossThresholdConfig struct {
 
 // QualityThresholdsResponse represents the GET/POST output envelope.
 type QualityThresholdsResponse struct {
-	Latency   LatencyThresholdConfig `json:"latency"`
-	Loss      LossThresholdConfig    `json:"loss"`
-	IsDefault bool                   `json:"is_default"`
+	Success   bool                       `json:"success"`
+	Settings  *QualityThresholdsSettings `json:"settings,omitempty"`
+	Latency   LatencyThresholdConfig     `json:"latency"`
+	Loss      LossThresholdConfig        `json:"loss"`
+	IsDefault bool                       `json:"is_default"`
+	Error     string                     `json:"error,omitempty"`
+	Detail    string                     `json:"detail,omitempty"`
 }
 
 // QualityThresholdsSettings represents the persisted config in JSON.
@@ -78,7 +82,7 @@ var (
 	}
 )
 
-// NewQualityThresholdsHandler creates a new QualityThresholdsHandler.
+// NewQualityThresholdsHandler creates a QualityThresholdsHandler.
 func NewQualityThresholdsHandler(optionalPath ...string) *QualityThresholdsHandler {
 	path := defaultQualityThresholdsPath
 	if len(optionalPath) > 0 && optionalPath[0] != "" {
@@ -95,7 +99,7 @@ func NewQualityThresholdsHandler(optionalPath ...string) *QualityThresholdsHandl
 	return h
 }
 
-// SetFilePath updates storage path and reloads settings.
+// SetFilePath updates the underlying config path and reloads.
 func (h *QualityThresholdsHandler) SetFilePath(path string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -121,21 +125,23 @@ func (h *QualityThresholdsHandler) loadConfig() error {
 			h.latencyPreset = cfg.Latency.Preset
 		}
 	}
+
 	if cfg.Loss.Preset != "" {
 		if _, ok := lossPresets[cfg.Loss.Preset]; ok {
 			h.lossPreset = cfg.Loss.Preset
 		}
 	}
+
 	return nil
 }
 
 func (h *QualityThresholdsHandler) saveConfig() error {
 	dir := filepath.Dir(h.filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed creating dir %s: %w", dir, err)
+		return fmt.Errorf("failed creating config dir %s: %w", dir, err)
 	}
 
-	cfg := QualityThresholdsSettings{}
+	var cfg QualityThresholdsSettings
 	cfg.Latency.Preset = h.latencyPreset
 	cfg.Loss.Preset = h.lossPreset
 
@@ -145,26 +151,8 @@ func (h *QualityThresholdsHandler) saveConfig() error {
 	}
 
 	tmpPath := fmt.Sprintf("%s.tmp.%d", h.filePath, time.Now().UnixNano())
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("failed opening temp file %s: %w", tmpPath, err)
-	}
-
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmpPath)
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return fmt.Errorf("failed writing data: %w", err)
-	}
-
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("failed fsync: %w", err)
-	}
-
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("failed closing temp file: %w", err)
 	}
 
 	if err := os.Rename(tmpPath, h.filePath); err != nil {
@@ -210,6 +198,15 @@ func (h *QualityThresholdsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	isDefault := latPreset == "tolerant" && lossPreset == "tolerant"
 
 	resp := QualityThresholdsResponse{
+		Success: true,
+		Settings: &QualityThresholdsSettings{
+			Latency: struct {
+				Preset string `json:"preset"`
+			}{Preset: latPreset},
+			Loss: struct {
+				Preset string `json:"preset"`
+			}{Preset: lossPreset},
+		},
 		Latency: LatencyThresholdConfig{
 			Preset:     latPreset,
 			WarningMs:  latCfg.warning,
@@ -229,6 +226,7 @@ func (h *QualityThresholdsHandler) Get(w http.ResponseWriter, r *http.Request) {
 // Save receives updated presets and persists them.
 func (h *QualityThresholdsHandler) Save(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
+		Action  string `json:"action"`
 		Latency struct {
 			Preset string `json:"preset"`
 		} `json:"latency"`
@@ -271,6 +269,15 @@ func (h *QualityThresholdsHandler) Save(w http.ResponseWriter, r *http.Request) 
 	isDefault := h.latencyPreset == "tolerant" && h.lossPreset == "tolerant"
 
 	resp := QualityThresholdsResponse{
+		Success: true,
+		Settings: &QualityThresholdsSettings{
+			Latency: struct {
+				Preset string `json:"preset"`
+			}{Preset: h.latencyPreset},
+			Loss: struct {
+				Preset string `json:"preset"`
+			}{Preset: h.lossPreset},
+		},
 		Latency: LatencyThresholdConfig{
 			Preset:     h.latencyPreset,
 			WarningMs:  latCfg.warning,
