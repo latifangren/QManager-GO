@@ -22,20 +22,21 @@ import (
 )
 
 const (
-	CurrentQManagerVersion = "1.1.0-beta"
+	CurrentQManagerVersion = "1.2.0"
 	DefaultGitHubRepo      = "latifangren/QManager-GO"
 	DefaultUpdateLockFile  = "/tmp/qmanager_update.lock"
 	DefaultUpdateDir       = "/tmp/qmanager_update"
 	DefaultBinaryPath      = "/usrdata/qmanager/qmanager"
 )
 
-const DefaultInitialChangelog = `### QManager-GO v1.1.0-beta
-- **Direct POSIX Syscall AT Transport**: In-process /dev/smd11 AT engine with zero process fork overhead (CPU idle 80-85%).
-- **Multi-Tier Fallback & Embedded Restoration**: Auto-restores atcli_smd11 and sms_tool binaries on clean rootfs.
-- **vnStat Live Bandwidth Monitoring & SSE**: Real-time traffic metrics and event stream telemetry.
-- **Robust SMS Engine**: UCS-2 hex decoder and automatic multipart SMS concatenation.
-- **Adaptive Polling Sync**: Dynamic frontend-to-backend telemetry interval cadence synchronization.
-- **Security Hardening**: Session-authenticated Web Console PTY WebSocket and robust API envelopes.`
+const DefaultInitialChangelog = `### QManager-GO v1.2.0 (Official Stable Release)
+- **Standalone Native Go SSH Server**: Built-in SSH server on port 22 with dynamic shadow authentication.
+- **Zero-Touch Auto TLS**: Dual HTTP (:80) and HTTPS (:443) listener with on-the-fly self-signed certificates.
+- **Self-Healing LAN Provisioning**: Auto bridge0 & PCIe eth0 binding, dynamic dnsmasq, and WWAN backhaul routing.
+- **Native Speedtest Engine**: Pure Go speedtest without Ookla CLI dependency.
+- **Pure Go SMS PDU Engine**: 100% pure Go PDU decoder/encoder with multi-part UDH reassembly (removed sms_tool binary).
+- **In-Process ICMP Latency Engine**: Sub-millisecond raw ICMP socket probe without process forking.
+- **Direct Linux Kernel Syscalls**: Atomic kernel reboot, direct SIGHUP/SIGKILL signals, and /dev/kmsg log streaming.`
 
 // UpdateSettings holds update preferences.
 type UpdateSettings struct {
