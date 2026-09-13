@@ -102,6 +102,18 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      - name: Determine Prerelease Status
+        id: prerelease_check
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          if echo "$TAG_NAME" | grep -qiE 'beta|alpha|rc|pre'; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "Release is marked as PRERELEASE"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "Release is marked as OFFICIAL STABLE"
+          fi
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -109,4 +121,5 @@ jobs:
           generate_release_notes: false
           body_path: RELEASE_NOTES.md
           draft: false
-          prerelease: true
+          prerelease: ${{ steps.prerelease_check.outputs.is_prerelease }}
+          make_latest: ${{ steps.prerelease_check.outputs.is_prerelease == 'false' }}
