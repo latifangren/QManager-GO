@@ -30,6 +30,11 @@ This release delivers major performance breakthroughs, native POSIX syscall AT t
 * **Two-Way Polling Cadence Sync:** Added `/api/v1/system/polling` and `/cgi-bin/quecmanager/system/polling.sh` endpoints.
 * Frontend power modes (`Active: 1s`, `Balanced: 2s`, `Low Power: 5s`) dynamically adjust the backend telemetry poller timer on the fly to conserve CPU cycles when WebUI is backgrounded.
 
+### 🚀 Native Pure Go Speedtest Engine (Zero External Ookla Binary)
+* **Zero CLI Dependency:** Replaced external proprietary Ookla binary (`speedtest-cli`) execution with a 100% native Go speedtest engine (`github.com/showwin/speedtest-go`).
+* **RAM-First In-Memory Progress:** Ping, latency jitter, download/upload streams, and final results are handled directly in RAM matching exact frontend contract schemas without persistent disk writes.
+* **Instant Availability:** Speed test is always available out-of-the-box regardless of whether external binary downloads succeeded or failed during installation.
+
 ### 🛡️ Standalone Native Go SSH Server (Zero Entware Dependency)
 * **Pure Go SSH Server Daemon:** Built-in standalone SSH server listening on Port 22 (or user-defined custom port) using `golang.org/x/crypto/ssh` and `creack/pty`.
 * **Dynamic Shadow Authentication:** Direct authentication against Linux `/etc/shadow` (MD5 crypt `$1$`) with zero CGO dependencies.
