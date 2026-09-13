@@ -30,6 +30,12 @@ This release delivers major performance breakthroughs, native POSIX syscall AT t
 * **Two-Way Polling Cadence Sync:** Added `/api/v1/system/polling` and `/cgi-bin/quecmanager/system/polling.sh` endpoints.
 * Frontend power modes (`Active: 1s`, `Balanced: 2s`, `Low Power: 5s`) dynamically adjust the backend telemetry poller timer on the fly to conserve CPU cycles when WebUI is backgrounded.
 
+### 📨 Native Pure Go SMS & PDU Engine (Zero `sms_tool` Dependency)
+* **Zero Fork SMS Operations:** Replaced legacy execution of `sms_tool` child process with an in-process native 3GPP PDU/Text AT Engine (`internal/telemetry/sms_pdu.go`).
+* **GSM-7, 8-bit & UCS2 Decoders:** Native Go decoding for 7-bit packed GSM septets, alphanumeric sender names, 8-bit binary, and 16-bit UCS2/UTF-16.
+* **In-Memory Multipart UDH Reassembly:** Automatic grouping and reassembly of concatenated SMS messages using User Data Header (UDH 0x00 & 0x08) references directly in RAM.
+* **Stripped Embedded Bloat:** Removed embedded 430 KB C binary `sms_tool` (`embeds/sms_tool`) from the final compiled Go executable.
+
 ### 🚀 Native Pure Go Speedtest Engine (Zero External Ookla Binary)
 * **Zero CLI Dependency:** Replaced external proprietary Ookla binary (`speedtest-cli`) execution with a 100% native Go speedtest engine (`github.com/showwin/speedtest-go`).
 * **RAM-First In-Memory Progress:** Ping, latency jitter, download/upload streams, and final results are handled directly in RAM matching exact frontend contract schemas without persistent disk writes.

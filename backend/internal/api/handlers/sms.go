@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,7 +22,7 @@ type SMSCenterResponse struct {
 	Detail   string                 `json:"detail,omitempty"`
 }
 
-// SMSHandler handles SMS reading, sending, and deletion.
+// SMSHandler handles native in-process SMS reading, sending, and deletion via AT Engine.
 type SMSHandler struct {
 	engine      *atengine.Engine
 	smsToolPath string
@@ -34,21 +32,9 @@ type SMSHandler struct {
 
 // NewSMSHandler creates a new SMSHandler.
 func NewSMSHandler(eng *atengine.Engine) *SMSHandler {
-	tool := os.Getenv("SMS_TOOL_PATH")
-	if tool == "" {
-		tool = telemetry.EnsureSMSToolBinary()
-		if tool == "" {
-			tool = telemetry.DefaultSMSToolPath
-		}
-	}
-	dev := os.Getenv("SMS_AT_DEVICE")
-	if dev == "" {
-		dev = telemetry.DefaultSMSATDevice
-	}
 	return &SMSHandler{
-		engine:      eng,
-		smsToolPath: tool,
-		atDevice:    dev,
+		engine:   eng,
+		atDevice: "/dev/smd11",
 	}
 }
 
@@ -57,7 +43,7 @@ func (h *SMSHandler) GetSMSCenter(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	messages, storage, err := telemetry.FetchInboxAndStorage(r.Context(), h.smsToolPath, h.atDevice, h.engine)
+	messages, storage, err := telemetry.FetchInboxAndStorage(r.Context(), "", h.atDevice, h.engine)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(SMSCenterResponse{
@@ -188,32 +174,10 @@ func (h *SMSHandler) handleSend(w http.ResponseWriter, ctx context.Context, rawP
 		return
 	}
 
-	if h.hasSmsTool() {
-		cleanPhone := strings.TrimPrefix(phone, "+")
-		cmd := exec.CommandContext(ctx, h.smsToolPath, "-d", h.atDevice, "send", cleanPhone, message)
-		out, err := cmd.CombinedOutput()
-		if err == nil {
-			Success(w, map[string]interface{}{
-				"success": true,
-				"detail":  "SMS sent successfully",
-			})
-			return
-		}
-		outStr := strings.TrimSpace(string(out))
-		if h.engine == nil {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"success": false,
-				"error":   "send_failed",
-				"detail":  outStr,
-			})
-			return
-		}
-	}
-
 	if h.engine != nil {
+		cleanPhone := strings.TrimPrefix(phone, "+")
 		_, _ = h.engine.ExecContext(ctx, "AT+CMGF=1")
-		cmgsCmd := fmt.Sprintf("AT+CMGS=\"%s\"\r%s\x1A", phone, message)
+		cmgsCmd := fmt.Sprintf("AT+CMGS=\"%s\"\r%s\x1A", cleanPhone, message)
 		res, err := h.engine.ExecContext(ctx, cmgsCmd)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -258,27 +222,6 @@ func (h *SMSHandler) handleDelete(w http.ResponseWriter, ctx context.Context, st
 		storage = "ME"
 	}
 
-	if h.hasSmsTool() {
-		var failed []string
-		for _, idx := range indexes {
-			cmd := exec.CommandContext(ctx, h.smsToolPath, "-d", h.atDevice, "-s", storage, "delete", strconv.Itoa(idx))
-			if out, err := cmd.CombinedOutput(); err != nil {
-				failed = append(failed, fmt.Sprintf("%d: %s", idx, strings.TrimSpace(string(out))))
-			}
-		}
-		if len(failed) > 0 {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"success": false,
-				"error":   "delete_failed",
-				"detail":  fmt.Sprintf("Failed to delete indexes: %s", strings.Join(failed, ", ")),
-			})
-			return
-		}
-		Success(w, map[string]interface{}{"success": true})
-		return
-	}
-
 	if h.engine != nil {
 		_, _ = h.engine.ExecContext(ctx, fmt.Sprintf(`AT+CPMS="%s","%s","%s"`, storage, storage, storage))
 		for _, idx := range indexes {
@@ -293,18 +236,9 @@ func (h *SMSHandler) handleDelete(w http.ResponseWriter, ctx context.Context, st
 }
 
 func (h *SMSHandler) handleDeleteAll(w http.ResponseWriter, ctx context.Context) {
-	if h.hasSmsTool() {
-		cmdME := exec.CommandContext(ctx, h.smsToolPath, "-d", h.atDevice, "-s", "ME", "delete", "all")
-		_, _ = cmdME.CombinedOutput()
-		cmdSM := exec.CommandContext(ctx, h.smsToolPath, "-d", h.atDevice, "-s", "SM", "delete", "all")
-		_, _ = cmdSM.CombinedOutput()
-		Success(w, map[string]interface{}{"success": true})
-		return
-	}
-
 	if h.engine != nil {
-		for _, st := range []string{"ME", "SM"} {
-			_, _ = h.engine.ExecContext(ctx, fmt.Sprintf(`AT+CPMS="%s","%s","%s"`, st, st, st))
+		for _, storage := range []string{"ME", "SM"} {
+			_, _ = h.engine.ExecContext(ctx, fmt.Sprintf(`AT+CPMS="%s","%s","%s"`, storage, storage, storage))
 			_, _ = h.engine.ExecContext(ctx, "AT+CMGD=1,4")
 		}
 		Success(w, map[string]interface{}{"success": true})
@@ -312,11 +246,4 @@ func (h *SMSHandler) handleDeleteAll(w http.ResponseWriter, ctx context.Context)
 	}
 
 	Error(w, http.StatusInternalServerError, "No SMS transport available")
-}
-
-func (h *SMSHandler) hasSmsTool() bool {
-	if _, err := os.Stat(h.smsToolPath); err == nil {
-		return true
-	}
-	return false
 }

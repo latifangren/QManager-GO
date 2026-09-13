@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"net/smtp"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -25,15 +25,13 @@ import (
 )
 
 const (
-	DefaultSMSToolPath         = "/usr/bin/sms_tool"
-	DefaultSMSATDevice         = "/dev/smd11"
-	DefaultSMSForwardConfig    = "/etc/qmanager/sms_forwarding.json"
-	DefaultSMSForwardFailures  = "/tmp/qmanager_sms_forward_failures.json"
-	DefaultSMSForwardSeen      = "/tmp/qmanager_sms_forward_seen"
-	DefaultSMSForwardReload    = "/tmp/qmanager_sms_forward_reload"
-	DefaultSMSForwardUnitName  = "qmanager-sms-forward.service"
-	DefaultSMSPollInterval     = 15 * time.Second
-	MaxSMSForwardFailures      = 20
+	DefaultSMSForwardConfig   = "/etc/qmanager/sms_forwarding.json"
+	DefaultSMSForwardFailures = "/tmp/qmanager_sms_forward_failures.json"
+	DefaultSMSForwardSeen     = "/tmp/qmanager_sms_forward_seen"
+	DefaultSMSForwardReload   = "/tmp/qmanager_sms_forward_reload"
+	DefaultSMSForwardUnitName = "qmanager-sms-forward.service"
+	DefaultSMSPollInterval    = 15 * time.Second
+	MaxSMSForwardFailures     = 20
 )
 
 // SMSMessage represents a single or concatenated SMS message.
@@ -64,24 +62,34 @@ type SMSForwardingRule struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
 	Enabled        bool   `json:"enabled"`
-	MatchSender    string `json:"match_sender,omitempty"`    // Exact sender or regex
-	MatchKeyword   string `json:"match_keyword,omitempty"`   // Keyword substring or regex
-	TargetType     string `json:"target_type"`               // "phone", "email", "webhook"
-	TargetEndpoint string `json:"target_endpoint"`           // Phone number, Email, Webhook URL
-	CustomTemplate string `json:"custom_template,omitempty"` // Template with {sender}, {content}, {timestamp}
+	MatchSender    string `json:"match_sender,omitempty"`
+	MatchKeyword   string `json:"match_keyword,omitempty"`
+	TargetType     string `json:"target_type"` // "phone", "email", "webhook"
+	TargetEndpoint string `json:"target_endpoint"`
+	ConditionField string `json:"condition_field,omitempty"` // "sender", "content", "any"
+	ConditionOp    string `json:"condition_op,omitempty"`    // "contains", "equals", "starts_with", "regex"
+	ConditionValue string `json:"condition_value,omitempty"`
+	CustomTemplate string `json:"custom_template,omitempty"`
 }
 
-// SMSForwardingSettings holds the configuration stored in /etc/qmanager/sms_forwarding.json.
+// SMSForwardingSettings matches settings persisted in JSON.
 type SMSForwardingSettings struct {
 	Enabled        bool                `json:"enabled"`
-	TargetPhone    string              `json:"target_phone"`
+	TargetPhone    string              `json:"target_phone,omitempty"`
 	EmailEnabled   bool                `json:"email_enabled,omitempty"`
 	EmailAddress   string              `json:"email_address,omitempty"`
+	SMTPServer     string              `json:"smtp_server,omitempty"`
+	SMTPPort       int                 `json:"smtp_port,omitempty"`
+	SMTPUser       string              `json:"smtp_user,omitempty"`
+	SMTPPass       string              `json:"smtp_pass,omitempty"`
 	WebhookEnabled bool                `json:"webhook_enabled,omitempty"`
 	WebhookURL     string              `json:"webhook_url,omitempty"`
 	KeywordFilter  string              `json:"keyword_filter,omitempty"`
 	Rules          []SMSForwardingRule `json:"rules,omitempty"`
 }
+
+// SMSForwardingConfig is alias for SMSForwardingSettings.
+type SMSForwardingConfig = SMSForwardingSettings
 
 // SMSForwardingFailure records a failed SMS forwarding attempt.
 type SMSForwardingFailure struct {
@@ -90,7 +98,7 @@ type SMSForwardingFailure struct {
 	Error     string `json:"error"`
 }
 
-// RawSmsToolItem matches the JSON output from `sms_tool -j recv`.
+// RawSmsToolItem matches legacy JSON structure for backwards compatibility.
 type RawSmsToolItem struct {
 	Index     interface{} `json:"index"`
 	Sender    string      `json:"sender"`
@@ -109,8 +117,6 @@ type SMSForwarder struct {
 	configPath   string
 	failuresPath string
 	seenPath     string
-	smsToolPath  string
-	atDevice     string
 	interval     time.Duration
 	httpClient   *http.Client
 
@@ -134,17 +140,6 @@ func NewSMSForwarder(engine *atengine.Engine, cfgMgr *config.Manager) *SMSForwar
 	if seenPath == "" {
 		seenPath = DefaultSMSForwardSeen
 	}
-	toolPath := os.Getenv("SMS_TOOL_PATH")
-	if toolPath == "" {
-		toolPath = EnsureSMSToolBinary()
-		if toolPath == "" {
-			toolPath = DefaultSMSToolPath
-		}
-	}
-	atDev := os.Getenv("SMS_AT_DEVICE")
-	if atDev == "" {
-		atDev = DefaultSMSATDevice
-	}
 
 	return &SMSForwarder{
 		engine:       engine,
@@ -152,8 +147,6 @@ func NewSMSForwarder(engine *atengine.Engine, cfgMgr *config.Manager) *SMSForwar
 		configPath:   cfgPath,
 		failuresPath: failPath,
 		seenPath:     seenPath,
-		smsToolPath:  toolPath,
-		atDevice:     atDev,
 		interval:     DefaultSMSPollInterval,
 		httpClient:   &http.Client{Timeout: 10 * time.Second},
 		seenMap:      make(map[string]bool),
@@ -161,7 +154,7 @@ func NewSMSForwarder(engine *atengine.Engine, cfgMgr *config.Manager) *SMSForwar
 	}
 }
 
-// Start begins the forwarder loop in background.
+// Start begins periodic background polling for incoming SMS messages.
 func (f *SMSForwarder) Start() {
 	f.mu.Lock()
 	if f.running {
@@ -169,41 +162,47 @@ func (f *SMSForwarder) Start() {
 		return
 	}
 	f.running = true
-	f.loadSeenSet()
+	f.stopCh = make(chan struct{})
 	f.mu.Unlock()
 
-	go f.loop()
+	f.loadSeen()
+
+	// Initial seed scan to prevent blasting old inbox SMS as newly forwarded on boot
+	f.pollOnce(true)
+
+	go func() {
+		ticker := time.NewTicker(f.interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-f.stopCh:
+				return
+			case <-ticker.C:
+				if _, err := os.Stat(DefaultSMSForwardReload); err == nil {
+					_ = os.Remove(DefaultSMSForwardReload)
+					f.loadSeen()
+				}
+				f.pollOnce(false)
+			}
+		}
+	}()
 }
 
-// Stop terminates the forwarder loop.
+// Stop terminates background SMS forwarder loop.
 func (f *SMSForwarder) Stop() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.running {
 		return
 	}
-	f.running = false
 	close(f.stopCh)
+	f.running = false
 }
 
-func (f *SMSForwarder) loop() {
-	// Seed-on-first-run: when seen file does not exist, seed existing inbox without forwarding
-	isFirstRun := len(f.seenMap) == 0 && !f.seenFileExists()
-	if isFirstRun {
-		f.runCycle(true)
-	}
-
-	ticker := time.NewTicker(f.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-f.stopCh:
-			return
-		case <-ticker.C:
-			f.runCycle(false)
-		}
-	}
+// runCycle runs one forwarding cycle (for testing).
+func (f *SMSForwarder) runCycle(seedOnly bool) {
+	f.pollOnce(seedOnly)
 }
 
 func (f *SMSForwarder) seenFileExists() bool {
@@ -211,51 +210,56 @@ func (f *SMSForwarder) seenFileExists() bool {
 	return err == nil
 }
 
-func (f *SMSForwarder) loadSeenSet() {
+// loadSeen loads seen fingerprint hashes from tmpfs to prevent duplicate relays.
+func (f *SMSForwarder) loadSeen() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	data, err := os.ReadFile(f.seenPath)
 	if err != nil {
 		return
 	}
-	lines := strings.Split(string(data), "\n")
-	for _, l := range lines {
-		l = strings.TrimSpace(l)
-		if l != "" {
-			f.seenMap[l] = true
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			f.seenMap[trimmed] = true
 		}
 	}
 }
 
+// markSeen appends fingerprint to seen tracking list.
 func (f *SMSForwarder) markSeen(fingerprint string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	f.seenMap[fingerprint] = true
-	fHandle, err := os.OpenFile(f.seenPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	dir := filepath.Dir(f.seenPath)
+	_ = os.MkdirAll(dir, 0755)
+	fEntry, err := os.OpenFile(f.seenPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
-		_, _ = fHandle.WriteString(fingerprint + "\n")
-		_ = fHandle.Close()
+		_, _ = fEntry.WriteString(fingerprint + "\n")
+		_ = fEntry.Close()
 	}
 }
 
+// readConfig loads current forwarding configuration from file or memory.
 func (f *SMSForwarder) readConfig() SMSForwardingSettings {
-	data, err := os.ReadFile(f.configPath)
-	if err != nil {
-		return SMSForwardingSettings{Enabled: false}
-	}
 	var cfg SMSForwardingSettings
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return SMSForwardingSettings{Enabled: false}
+	data, err := os.ReadFile(f.configPath)
+	if err == nil {
+		_ = json.Unmarshal(data, &cfg)
 	}
 	return cfg
 }
 
-func (f *SMSForwarder) runCycle(seedOnly bool) {
+// pollOnce executes a single inbox check and forwards new messages.
+func (f *SMSForwarder) pollOnce(seedOnly bool) {
 	cfg := f.readConfig()
-	if !cfg.Enabled && !seedOnly {
-		return
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	messages, _, err := FetchInboxAndStorage(ctx, f.smsToolPath, f.atDevice, f.engine)
+	messages, _, err := FetchInboxAndStorage(ctx, "", "", f.engine)
 	if err != nil {
 		return
 	}
@@ -268,6 +272,10 @@ func (f *SMSForwarder) runCycle(seedOnly bool) {
 
 		if seedOnly {
 			f.markSeen(fp)
+			continue
+		}
+
+		if !cfg.Enabled {
 			continue
 		}
 
@@ -311,17 +319,15 @@ func (f *SMSForwarder) runCycle(seedOnly bool) {
 			}
 		}
 
-		// 4. Custom Rules
-		if len(cfg.Rules) > 0 {
-			matched := EvaluateForwardingRules(msg, cfg.Rules)
-			for _, rule := range matched {
-				f.executeRule(ctx, msg, rule)
-			}
+		// 4. Custom Conditional Rules
+		matchedRules := EvaluateForwardingRules(msg, cfg.Rules)
+		for _, rule := range matchedRules {
+			f.executeRule(ctx, msg, rule)
 		}
 
-		f.markSeen(fp)
-
-		if !forwardSuccess && forwardErr != "" {
+		if forwardSuccess {
+			f.markSeen(fp)
+		} else {
 			f.recordFailure(msg.Sender, forwardErr)
 		}
 	}
@@ -361,92 +367,70 @@ func (f *SMSForwarder) sendSMSWithRetry(ctx context.Context, targetPhone, body s
 		}
 
 		cleanPhone := strings.TrimPrefix(targetPhone, "+")
-
-		if _, err := os.Stat(f.smsToolPath); err == nil {
-			cmd := exec.CommandContext(ctx, f.smsToolPath, "-d", f.atDevice, "send", cleanPhone, body)
-			out, err := cmd.CombinedOutput()
-			if err == nil {
-				return nil
-			}
-			lastErr = fmt.Errorf("sms_tool error: %s (%v)", strings.TrimSpace(string(out)), err)
-		} else if f.engine != nil {
+		if f.engine != nil {
 			_, _ = f.engine.ExecContext(ctx, "AT+CMGF=1")
-			cmgsCmd := fmt.Sprintf("AT+CMGS=\"%s\"\r%s\x1A", targetPhone, body)
+			cmgsCmd := fmt.Sprintf("AT+CMGS=\"%s\"\r%s\x1A", cleanPhone, body)
 			res, err := f.engine.ExecContext(ctx, cmgsCmd)
-			if err == nil && (res == nil || !strings.Contains(res.Raw, "ERROR")) {
+			if err == nil && !strings.Contains(res.Raw, "ERROR") {
 				return nil
 			}
-			rawMsg := ""
-			if res != nil {
-				rawMsg = res.Raw
-			}
-			lastErr = fmt.Errorf("AT CMGS error: %s (%v)", rawMsg, err)
+			lastErr = fmt.Errorf("AT engine error: %s (%v)", res.Raw, err)
+		} else {
+			lastErr = fmt.Errorf("no SMS engine transport available")
 		}
 
-		time.Sleep(3 * time.Second)
+		time.Sleep(2 * time.Second)
 	}
-
 	return lastErr
 }
 
 func isRegistered(raw string) bool {
-	lines := strings.Split(raw, "\n")
-	for _, l := range lines {
-		l = strings.TrimSpace(l)
-		if strings.Contains(l, "+CREG:") || strings.Contains(l, "+CGREG:") {
-			parts := strings.Split(l, ",")
-			if len(parts) >= 2 {
-				stat := strings.TrimSpace(parts[1])
-				if stat == "1" || stat == "5" {
-					return true
-				}
-			}
+	for _, stat := range []string{",1", ",5", ", 1", ", 5"} {
+		if strings.Contains(raw, stat) {
+			return true
 		}
 	}
 	return false
 }
 
 func (f *SMSForwarder) sendEmail(msg SMSMessage, toAddr string) error {
-	host := os.Getenv("SMTP_HOST")
-	port := os.Getenv("SMTP_PORT")
-	user := os.Getenv("SMTP_USER")
-	pass := os.Getenv("SMTP_PASS")
-	from := os.Getenv("SMTP_FROM")
-
-	if host == "" || user == "" || pass == "" {
-		return nil
-	}
-	if port == "" {
-		port = "587"
-	}
-	if from == "" {
-		from = user
+	cfg := f.readConfig()
+	if cfg.SMTPServer == "" || toAddr == "" {
+		return fmt.Errorf("SMTP server or recipient not configured")
 	}
 
-	auth := smtp.PlainAuth("", user, pass, host)
-	subject := fmt.Sprintf("SMS from %s", msg.Sender)
-	body := fmt.Sprintf("From: %s\nTo: %s\nSubject: %s\n\nSender: %s\nTimestamp: %s\nStorage: %s\n\n%s",
-		from, toAddr, subject, msg.Sender, msg.Timestamp, msg.Storage, msg.Content)
+	port := cfg.SMTPPort
+	if port == 0 {
+		port = 587
+	}
+	addr := fmt.Sprintf("%s:%d", cfg.SMTPServer, port)
 
-	addr := fmt.Sprintf("%s:%s", host, port)
-	return smtp.SendMail(addr, auth, from, []string{toAddr}, []byte(body))
+	var auth smtp.Auth
+	if cfg.SMTPUser != "" {
+		auth = smtp.PlainAuth("", cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPServer)
+	}
+
+	subject := fmt.Sprintf("[SMS Forward] From %s", msg.Sender)
+	body := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nReceived: %s\r\nFrom: %s\r\nStorage: %s\r\n\r\n%s",
+		cfg.SMTPUser, toAddr, subject, msg.Timestamp, msg.Sender, msg.Storage, msg.Content)
+
+	return smtp.SendMail(addr, auth, cfg.SMTPUser, []string{toAddr}, []byte(body))
 }
 
-func (f *SMSForwarder) sendWebhook(ctx context.Context, msg SMSMessage, endpoint string) error {
-	payload := map[string]interface{}{
+func (f *SMSForwarder) sendWebhook(ctx context.Context, msg SMSMessage, url string) error {
+	payload, err := json.Marshal(map[string]interface{}{
 		"event":     "sms_received",
 		"sender":    msg.Sender,
 		"content":   msg.Content,
 		"timestamp": msg.Timestamp,
 		"storage":   msg.Storage,
-	}
-
-	jsonBytes, err := json.Marshal(payload)
+		"indexes":   msg.Indexes,
+	})
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewBuffer(jsonBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(payload))
 	if err != nil {
 		return err
 	}
@@ -460,41 +444,40 @@ func (f *SMSForwarder) sendWebhook(ctx context.Context, msg SMSMessage, endpoint
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("webhook responded with status %d", resp.StatusCode)
+		return fmt.Errorf("webhook responded with HTTP %d", resp.StatusCode)
 	}
 	return nil
 }
 
-func (f *SMSForwarder) recordFailure(sender, errMsg string) {
+func (f *SMSForwarder) recordFailure(sender, errDetail string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	var failures []SMSForwardingFailure
 	data, err := os.ReadFile(f.failuresPath)
 	if err == nil {
 		_ = json.Unmarshal(data, &failures)
 	}
 
-	record := SMSForwardingFailure{
+	failures = append(failures, SMSForwardingFailure{
 		Sender:    sender,
 		Timestamp: time.Now().Unix(),
-		Error:     errMsg,
-	}
+		Error:     errDetail,
+	})
 
-	failures = append([]SMSForwardingFailure{record}, failures...)
 	if len(failures) > MaxSMSForwardFailures {
-		failures = failures[:MaxSMSForwardFailures]
+		failures = failures[len(failures)-MaxSMSForwardFailures:]
 	}
 
-	outBytes, err := json.MarshalIndent(failures, "", "  ")
-	if err == nil {
-		_ = os.WriteFile(f.failuresPath, outBytes, 0644)
+	if payload, err := json.Marshal(failures); err == nil {
+		_ = os.WriteFile(f.failuresPath, payload, 0644)
 	}
-	log.Printf("[SMSForwarder] Failure recorded for %s: %s", sender, errMsg)
 }
 
-// ParseSmsToolOutput parses JSON output from `sms_tool -j recv`.
-// Handles both root array `[...]` and root envelope `{"msg": [...]}`.
+// ParseSmsToolOutput parses legacy JSON format.
 func ParseSmsToolOutput(out []byte) []RawSmsToolItem {
 	var raw []RawSmsToolItem
-	if err := json.Unmarshal(out, &raw); err == nil && len(raw) > 0 {
+	if err := json.Unmarshal(out, &raw); err == nil {
 		return raw
 	}
 	var envelope struct {
@@ -509,98 +492,98 @@ func ParseSmsToolOutput(out []byte) []RawSmsToolItem {
 	return nil
 }
 
-// FetchInboxAndStorage reads inbox messages and storage statistics across ME and SM storage pools.
-func FetchInboxAndStorage(ctx context.Context, smsToolPath, atDevice string, engine *atengine.Engine) ([]SMSMessage, SMSStorage, error) {
-	// 1. Primary: If sms_tool is available on host, use it for complete PDU decoding and multipart reassembly
-	if _, err := os.Stat(smsToolPath); err == nil {
-		cmdInit := exec.CommandContext(ctx, smsToolPath, "-d", atDevice, "at", `AT+CPMS="ME","ME","ME"`)
-		_ = cmdInit.Run()
-
-		var rawME, rawSM []RawSmsToolItem
-		cmdME := exec.CommandContext(ctx, smsToolPath, "-d", atDevice, "-s", "ME", "recv", "-j")
-		if out, err := cmdME.Output(); err == nil {
-			rawME = ParseSmsToolOutput(out)
-		}
-
-		cmdSM := exec.CommandContext(ctx, smsToolPath, "-d", atDevice, "-s", "SM", "recv", "-j")
-		if out, err := cmdSM.Output(); err == nil {
-			rawSM = ParseSmsToolOutput(out)
-		}
-
-		meMsgs := ConvertRawSmsItems(rawME, "ME")
-		smMsgs := ConvertRawSmsItems(rawSM, "SM")
-
-		merged := append(meMsgs, smMsgs...)
-		SortSMSMessages(merged)
-		if merged == nil {
-			merged = []SMSMessage{}
-		}
-
-		meStat := ReadSmsToolStatus(ctx, smsToolPath, atDevice, "ME")
-		smStat := ReadSmsToolStatus(ctx, smsToolPath, atDevice, "SM")
-
-		return merged, SMSStorage{
-			Used:  meStat.Used + smStat.Used,
-			Total: meStat.Total + smStat.Total,
-			ME:    &meStat,
-			SM:    &smStat,
-		}, nil
-	}
-
-	// 2. Fallback: Use AT Engine directly if sms_tool binary is not installed
-	if engine != nil {
-		_, _ = engine.ExecContext(ctx, `AT+CPMS="ME","ME","ME"`)
-		resCPMS, _ := engine.ExecContext(ctx, "AT+CPMS?")
-		meStat, smStat := ParseCPMSStorage(resCPMS.Raw)
-
-		var allMsgs []SMSMessage
-		for _, st := range []string{"ME", "SM"} {
-			_, _ = engine.ExecContext(ctx, fmt.Sprintf(`AT+CPMS="%s","%s","%s"`, st, st, st))
-			_, _ = engine.ExecContext(ctx, "AT+CMGF=1")
-			res, err := engine.ExecContext(ctx, `AT+CMGL="ALL"`)
-			if err == nil {
-				msgs := ParseCMGLText(res.Raw, st)
-				allMsgs = append(allMsgs, msgs...)
-			}
-		}
-
-		SortSMSMessages(allMsgs)
-		return allMsgs, SMSStorage{
-			Used:  meStat.Used + smStat.Used,
-			Total: meStat.Total + smStat.Total,
-			ME:    &meStat,
-			SM:    &smStat,
-		}, nil
-	}
-
-	return []SMSMessage{}, SMSStorage{}, fmt.Errorf("no SMS backend available")
-}
-
-// ReadSmsToolStatus reads `sms_tool -s <storage> status`.
-func ReadSmsToolStatus(ctx context.Context, toolPath, atDevice, storage string) MemoryStorage {
-	cmd := exec.CommandContext(ctx, toolPath, "-d", atDevice, "-s", storage, "status")
-	out, err := cmd.Output()
-	if err != nil {
-		return MemoryStorage{Used: 0, Total: 0}
-	}
-	return ParseSmsToolStatusOutput(string(out))
-}
-
 // ParseSmsToolStatusOutput parses `Storage type: ME, used: 0, total: 255`.
 func ParseSmsToolStatusOutput(out string) MemoryStorage {
 	stat := MemoryStorage{}
-	parts := strings.Split(out, ",")
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if strings.HasPrefix(p, "used:") {
-			valStr := strings.TrimSpace(strings.TrimPrefix(p, "used:"))
+	out = strings.TrimSpace(out)
+	if strings.Contains(out, "used:") {
+		parts := strings.Split(out, "used:")
+		if len(parts) >= 2 {
+			valStr := strings.TrimSpace(parts[1])
+			if strings.Contains(valStr, ",") {
+				valStr = strings.TrimSpace(strings.Split(valStr, ",")[0])
+			}
 			stat.Used, _ = strconv.Atoi(valStr)
-		} else if strings.HasPrefix(p, "total:") {
-			valStr := strings.TrimSpace(strings.TrimPrefix(p, "total:"))
+		}
+	}
+	if strings.Contains(out, "total:") {
+		parts := strings.Split(out, "total:")
+		if len(parts) >= 2 {
+			valStr := strings.TrimSpace(parts[1])
+			if strings.Contains(valStr, ",") {
+				valStr = strings.TrimSpace(strings.Split(valStr, ",")[0])
+			}
 			stat.Total, _ = strconv.Atoi(valStr)
 		}
 	}
 	return stat
+}
+
+func parseTimestampKey(ts string) string {
+	ts = strings.TrimSpace(ts)
+	if len(ts) == 17 && ts[2] == '/' && ts[5] == '/' && ts[8] == ' ' {
+		// "09/12/26 10:15:30" -> "260912101530"
+		return ts[6:8] + ts[0:2] + ts[3:5] + strings.ReplaceAll(ts[9:], ":", "")
+	}
+	return ts
+}
+
+// FetchInboxAndStorage reads inbox messages and storage statistics across ME and SM storage pools.
+func FetchInboxAndStorage(ctx context.Context, _, _ string, engine *atengine.Engine) ([]SMSMessage, SMSStorage, error) {
+	if engine == nil {
+		return []SMSMessage{}, SMSStorage{}, fmt.Errorf("no AT engine available")
+	}
+
+	// 1. Query storage capacity (AT+CPMS?)
+	resCPMS, err := engine.ExecContext(ctx, "AT+CPMS?")
+	if err != nil {
+		log.Printf("[SMS] Failed to query CPMS storage: %v", err)
+	}
+	meStat, smStat := ParseCPMSStorage(resCPMS.Raw)
+
+	// 2. Fetch messages for each storage pool
+	var allMsgs []SMSMessage
+	for _, st := range []string{"ME", "SM"} {
+		stat := meStat
+		if st == "SM" {
+			stat = smStat
+		}
+		if stat.Total > 0 && stat.Used == 0 {
+			continue
+		}
+
+		_, _ = engine.ExecContext(ctx, fmt.Sprintf(`AT+CPMS="%s","%s","%s"`, st, st, st))
+		// Try PDU mode first (AT+CMGF=0)
+		_, _ = engine.ExecContext(ctx, "AT+CMGF=0")
+		resCMGL, err := engine.ExecContext(ctx, "AT+CMGL=4")
+		if err == nil && strings.Contains(resCMGL.Raw, "+CMGL:") {
+			pduItems := ParseCMGLPDU(resCMGL.Raw, st)
+			if len(pduItems) > 0 {
+				allMsgs = append(allMsgs, ReassembleMultipartSMS(pduItems)...)
+				continue
+			}
+		}
+
+		// Fallback: Text mode (AT+CMGF=1)
+		_, _ = engine.ExecContext(ctx, "AT+CMGF=1")
+		resCMGLText, errText := engine.ExecContext(ctx, `AT+CMGL="ALL"`)
+		if errText == nil && strings.Contains(resCMGLText.Raw, "+CMGL:") {
+			textMsgs := ParseCMGLText(resCMGLText.Raw, st)
+			allMsgs = append(allMsgs, textMsgs...)
+		}
+	}
+
+	SortSMSMessages(allMsgs)
+	if allMsgs == nil {
+		allMsgs = []SMSMessage{}
+	}
+
+	return allMsgs, SMSStorage{
+		Used:  meStat.Used + smStat.Used,
+		Total: meStat.Total + smStat.Total,
+		ME:    &meStat,
+		SM:    &smStat,
+	}, nil
 }
 
 // ParseCPMSStorage parses AT+CPMS? response with storage triplets.
@@ -627,7 +610,7 @@ func ParseCPMSStorage(raw string) (MemoryStorage, MemoryStorage) {
 	return me, sm
 }
 
-// ConvertRawSmsItems merges multi-part SMS items from sms_tool output.
+// ConvertRawSmsItems merges multi-part SMS items.
 func ConvertRawSmsItems(rawItems []RawSmsToolItem, storage string) []SMSMessage {
 	type groupKey struct {
 		Sender    string
@@ -664,33 +647,36 @@ func ConvertRawSmsItems(rawItems []RawSmsToolItem, storage string) []SMSMessage 
 		})
 	}
 
-	for _, items := range multipartGroups {
-		sort.Slice(items, func(i, j int) bool {
-			return items[i].Part < items[j].Part
+	for _, group := range multipartGroups {
+		sort.Slice(group, func(i, j int) bool {
+			return group[i].Part < group[j].Part
 		})
+
 		var combinedIndexes []int
-		var textParts []string
-		ts := ""
+		var contentBuilder strings.Builder
 		sender := ""
-		for _, part := range items {
+		timestamp := ""
+
+		for _, part := range group {
 			combinedIndexes = append(combinedIndexes, extractIndexes(part.Index)...)
 			c := part.Content
 			if c == "" {
 				c = part.Text
 			}
-			textParts = append(textParts, c)
-			if ts == "" {
-				ts = part.Timestamp
-			}
+			contentBuilder.WriteString(c)
 			if sender == "" {
 				sender = part.Sender
 			}
+			if timestamp == "" {
+				timestamp = part.Timestamp
+			}
 		}
+
 		result = append(result, SMSMessage{
 			Indexes:   combinedIndexes,
 			Sender:    sender,
-			Content:   strings.Join(textParts, ""),
-			Timestamp: ts,
+			Content:   contentBuilder.String(),
+			Timestamp: timestamp,
 			Storage:   storage,
 		})
 	}
@@ -698,51 +684,43 @@ func ConvertRawSmsItems(rawItems []RawSmsToolItem, storage string) []SMSMessage 
 	return result
 }
 
-func extractIndexes(raw interface{}) []int {
-	if raw == nil {
-		return []int{}
-	}
-	switch v := raw.(type) {
-	case float64:
-		return []int{int(v)}
+func extractIndexes(val interface{}) []int {
+	switch v := val.(type) {
 	case int:
 		return []int{v}
+	case float64:
+		return []int{int(v)}
 	case string:
-		v = strings.TrimSpace(v)
-		if v == "" {
-			return []int{}
-		}
-		var out []int
-		for _, part := range strings.Split(v, ",") {
-			part = strings.TrimSpace(part)
-			if strings.Contains(part, "-") {
-				sub := strings.Split(part, "-")
-				if len(sub) == 2 {
-					start, err1 := strconv.Atoi(strings.TrimSpace(sub[0]))
-					end, err2 := strconv.Atoi(strings.TrimSpace(sub[1]))
-					if err1 == nil && err2 == nil && start <= end {
-						for i := start; i <= end; i++ {
-							out = append(out, i)
-						}
-						continue
+		// parse range or list
+		if strings.Contains(v, "-") {
+			parts := strings.Split(v, "-")
+			if len(parts) == 2 {
+				start, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+				end, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+				if err1 == nil && err2 == nil && start <= end {
+					var out []int
+					for i := start; i <= end; i++ {
+						out = append(out, i)
 					}
+					return out
 				}
 			}
-			if num, err := strconv.Atoi(part); err == nil {
-				out = append(out, num)
-			}
 		}
-		return out
+		if strings.Contains(v, ",") {
+			parts := strings.Split(v, ",")
+			var out []int
+			for _, p := range parts {
+				out = append(out, extractIndexes(strings.TrimSpace(p))...)
+			}
+			return out
+		}
+		if i, err := strconv.Atoi(v); err == nil {
+			return []int{i}
+		}
 	case []interface{}:
 		var out []int
-		for _, item := range v {
-			if f, ok := item.(float64); ok {
-				out = append(out, int(f))
-			} else if i, ok := item.(int); ok {
-				out = append(out, i)
-			} else if s, ok := item.(string); ok {
-				out = append(out, extractIndexes(s)...)
-			}
+		for _, el := range v {
+			out = append(out, extractIndexes(el)...)
 		}
 		return out
 	}
@@ -791,7 +769,7 @@ func ParseCMGLText(raw string, storage string) []SMSMessage {
 	return list
 }
 
-// decodeUCS2HexString decodes hex-encoded UTF-16BE / UCS2 strings often returned in AT+CMGL when +CSCS="UCS2"
+// decodeUCS2HexString decodes hex-encoded UTF-16BE / UCS2 strings.
 func decodeUCS2HexString(hexStr string) string {
 	hexStr = strings.TrimSpace(hexStr)
 	if len(hexStr) >= 4 && len(hexStr)%4 == 0 {
@@ -807,172 +785,143 @@ func decodeUCS2HexString(hexStr string) string {
 	return hexStr
 }
 
-// SortSMSMessages sorts SMS messages newest-first.
+// SortSMSMessages orders SMS messages by timestamp descending (newest first).
 func SortSMSMessages(msgs []SMSMessage) {
 	sort.Slice(msgs, func(i, j int) bool {
-		tI := parseTimestampKey(msgs[i].Timestamp)
-		tJ := parseTimestampKey(msgs[j].Timestamp)
-		return tI > tJ
+		return msgs[i].Timestamp > msgs[j].Timestamp
 	})
 }
 
-func parseTimestampKey(ts string) string {
-	ts = strings.TrimSpace(ts)
-	if len(ts) == 17 && ts[2] == '/' && ts[5] == '/' && ts[8] == ' ' {
-		mm := ts[0:2]
-		dd := ts[3:5]
-		yy := ts[6:8]
-		rest := strings.ReplaceAll(ts[9:], ":", "")
-		return yy + mm + dd + rest
+// DJB2Fingerprint produces a hash of storage+sender+timestamp+content for deduplication.
+func DJB2Fingerprint(storage, sender, timestamp, content string) string {
+	combined := fmt.Sprintf("%s|%s|%s|%s", storage, sender, timestamp, content)
+	var hash uint64 = 5381
+	for i := 0; i < len(combined); i++ {
+		hash = ((hash << 5) + hash) + uint64(combined[i])
 	}
-	return ts
+	return fmt.Sprintf("%x", hash)
 }
 
-// NormalizePhoneNumber normalizes phone number according to country code prefix.
-func NormalizePhoneNumber(phone, defaultCountryCode string) string {
+// IsRelayMessage checks if content originates from our own forwarder prefix.
+func IsRelayMessage(content string) bool {
+	return strings.HasPrefix(content, "From +") || strings.HasPrefix(content, "From 0") ||
+		strings.HasPrefix(content, "From 1") || strings.HasPrefix(content, "From 2") ||
+		strings.HasPrefix(content, "From 3") || strings.HasPrefix(content, "From 4") ||
+		strings.HasPrefix(content, "From 5") || strings.HasPrefix(content, "From 6") ||
+		strings.HasPrefix(content, "From 7") || strings.HasPrefix(content, "From 8") ||
+		strings.HasPrefix(content, "From 9") || strings.HasPrefix(content, "[Fwd:")
+}
+
+// MatchesKeywordFilter checks if message content matches case-insensitive keyword or regex.
+func MatchesKeywordFilter(content, filter string) bool {
+	if filter == "" {
+		return true
+	}
+	if strings.HasPrefix(filter, "regex:") {
+		pattern := strings.TrimPrefix(filter, "regex:")
+		if re, err := regexp.Compile("(?i)" + pattern); err == nil {
+			return re.MatchString(content)
+		}
+	}
+	for _, kw := range strings.Split(filter, ",") {
+		kw = strings.TrimSpace(kw)
+		if kw != "" && strings.Contains(strings.ToLower(content), strings.ToLower(kw)) {
+			return true
+		}
+	}
+	return false
+}
+
+// EvaluateForwardingRules checks message against rule list and returns matching rules.
+func EvaluateForwardingRules(msg SMSMessage, rules []SMSForwardingRule) []SMSForwardingRule {
+	var matched []SMSForwardingRule
+	for _, rule := range rules {
+		if !rule.Enabled {
+			continue
+		}
+		if rule.MatchSender != "" {
+			if re, err := regexp.Compile("(?i)" + rule.MatchSender); err == nil {
+				if !re.MatchString(msg.Sender) {
+					continue
+				}
+			} else if !strings.EqualFold(msg.Sender, rule.MatchSender) {
+				continue
+			}
+		}
+		if rule.MatchKeyword != "" {
+			if !MatchesKeywordFilter(msg.Content, rule.MatchKeyword) {
+				continue
+			}
+		}
+		matched = append(matched, rule)
+	}
+	return matched
+}
+
+// MatchesRule tests if an SMS message matches a conditional rule.
+func MatchesRule(msg SMSMessage, rule SMSForwardingRule) bool {
+	if !rule.Enabled {
+		return false
+	}
+	if rule.MatchSender != "" {
+		if re, err := regexp.Compile("(?i)" + rule.MatchSender); err == nil {
+			if !re.MatchString(msg.Sender) {
+				return false
+			}
+		} else if !strings.EqualFold(msg.Sender, rule.MatchSender) {
+			return false
+		}
+	}
+	if rule.MatchKeyword != "" {
+		return MatchesKeywordFilter(msg.Content, rule.MatchKeyword)
+	}
+	return true
+}
+
+// FormatForwardSMS formats SMS payload with standard forward header.
+func FormatForwardSMS(sender, content string) string {
+	return fmt.Sprintf("From %s: %s", sender, content)
+}
+
+// ValidateTargetPhone ensures phone number is valid international/national format.
+func ValidateTargetPhone(phone string) bool {
+	phone = strings.TrimSpace(phone)
+	if strings.HasPrefix(phone, "0") {
+		return false
+	}
+	cleaned := strings.TrimPrefix(phone, "+")
+	if len(cleaned) < 7 || len(cleaned) > 15 {
+		return false
+	}
+	for _, c := range cleaned {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// NormalizePhoneNumber strips spaces, hyphens, and formats standard dial numbers.
+func NormalizePhoneNumber(phone, defaultPrefix string) string {
 	phone = strings.TrimSpace(phone)
 	if phone == "" {
 		return ""
 	}
 	var sb strings.Builder
-	for i, r := range phone {
-		if r == '+' && i == 0 {
-			sb.WriteRune(r)
-		} else if r >= '0' && r <= '9' {
-			sb.WriteRune(r)
+	for i, c := range phone {
+		if c == '+' && i == 0 {
+			sb.WriteRune(c)
+		} else if c >= '0' && c <= '9' {
+			sb.WriteRune(c)
 		}
 	}
-	clean := sb.String()
-	if clean == "" {
-		return ""
+	res := sb.String()
+	if strings.HasPrefix(res, "00") {
+		res = "+" + strings.TrimPrefix(res, "00")
+	} else if defaultPrefix != "" && !strings.HasPrefix(res, "+") && strings.HasPrefix(res, "0") {
+		res = "+" + defaultPrefix + strings.TrimPrefix(res, "0")
+	} else if !strings.HasPrefix(res, "+") && len(res) > 0 {
+		res = "+" + res
 	}
-
-	if strings.HasPrefix(clean, "+") {
-		return clean
-	}
-
-	if strings.HasPrefix(clean, "00") {
-		return "+" + strings.TrimPrefix(clean, "00")
-	}
-
-	if strings.HasPrefix(clean, "0") && defaultCountryCode != "" {
-		return "+" + defaultCountryCode + strings.TrimPrefix(clean, "0")
-	}
-
-	return clean
-}
-
-// ValidateTargetPhone validates phone number (E.164-ish, 7-15 digits, non-zero first digit).
-func ValidateTargetPhone(phone string) bool {
-	p := strings.TrimPrefix(strings.TrimSpace(phone), "+")
-	if len(p) < 7 || len(p) > 15 {
-		return false
-	}
-	if p[0] == '0' {
-		return false
-	}
-	for _, r := range p {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-// FormatForwardSMS formats SMS forward text: "From <sender>: <content>"
-func FormatForwardSMS(sender, content string) string {
-	return fmt.Sprintf("From %s: %s", sender, content)
-}
-
-// IsRelayMessage checks if content looks like a forwarded relay to prevent loops.
-func IsRelayMessage(content string) bool {
-	if !strings.HasPrefix(content, "From ") {
-		return false
-	}
-	colonIdx := strings.Index(content, ": ")
-	if colonIdx <= 5 {
-		return false
-	}
-	senderToken := content[5:colonIdx]
-	senderClean := strings.TrimPrefix(senderToken, "+")
-	if len(senderClean) == 0 {
-		return false
-	}
-	for _, r := range senderClean {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-// DJB2Fingerprint computes the 32-bit djb2 hash over "storage|sender|timestamp|content".
-func DJB2Fingerprint(storage, sender, timestamp, content string) string {
-	s := fmt.Sprintf("%s|%s|%s|%s", storage, sender, timestamp, content)
-	var h uint32 = 5381
-	for i := 0; i < len(s); i++ {
-		h = ((h << 5) + h) + uint32(s[i])
-	}
-	return fmt.Sprintf("%d", h)
-}
-
-// MatchesKeywordFilter checks if SMS content matches configured keywords.
-func MatchesKeywordFilter(content, filter string) bool {
-	filter = strings.TrimSpace(filter)
-	if filter == "" {
-		return true
-	}
-
-	keywords := strings.Split(filter, ",")
-	contentLower := strings.ToLower(content)
-
-	for _, kw := range keywords {
-		kw = strings.TrimSpace(strings.ToLower(kw))
-		if kw == "" {
-			continue
-		}
-		if strings.HasPrefix(kw, "regex:") {
-			rePattern := strings.TrimPrefix(kw, "regex:")
-			if re, err := regexp.Compile("(?i)" + rePattern); err == nil && re.MatchString(content) {
-				return true
-			}
-		} else {
-			if strings.Contains(contentLower, kw) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-// EvaluateForwardingRules checks message against custom rules and returns matched rules.
-func EvaluateForwardingRules(msg SMSMessage, rules []SMSForwardingRule) []SMSForwardingRule {
-	var matched []SMSForwardingRule
-	for _, r := range rules {
-		if !r.Enabled {
-			continue
-		}
-
-		senderMatch := true
-		if r.MatchSender != "" {
-			senderMatch = strings.EqualFold(msg.Sender, r.MatchSender) ||
-				strings.Contains(msg.Sender, r.MatchSender)
-			if !senderMatch {
-				if re, err := regexp.Compile("(?i)" + r.MatchSender); err == nil && re.MatchString(msg.Sender) {
-					senderMatch = true
-				}
-			}
-		}
-
-		keywordMatch := true
-		if r.MatchKeyword != "" {
-			keywordMatch = MatchesKeywordFilter(msg.Content, r.MatchKeyword)
-		}
-
-		if senderMatch && keywordMatch {
-			matched = append(matched, r)
-		}
-	}
-	return matched
+	return res
 }
