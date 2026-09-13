@@ -111,6 +111,14 @@ adb devices
 
 ## 2. Pemasangan Dropbear SSH & Persistent Storage (`/opt`)
 
+> 💡 **INFO PEMBARUAN PENTING (QManager-GO v1.2.0+):**
+> Mulai versi **v1.2.0 (Stable)**, QManager-GO telah dilengkapi dengan **Native Standalone Go SSH Server (Port 22)** bawaan binary.
+> Anda **TIDAK PERLU LAGI** menginstal Entware, opkg, bind mount `/opt`, atau mengonfigurasi Dropbear secara manual.
+> 
+> Binary `qmanager` akan otomatis mendengarkan koneksi SSH di port 22 dan mengautentikasi terhadap password root Linux `/etc/shadow` serta mendukung authorized keys.
+> 
+> *Jika Anda menginstal QManager-GO v1.2.0+, Anda dapat langsung melewati bagian Dropbear manual di bawah ini dan langsung menuju ke Bagian 3 (Driver Realtek LAN).*
+
 Rootfs bawaan Quectel RG501Q-EU bersifat Read-Only (`/`), sedangkan partisi data yang persisten terhadap reboot berada di `/usrdata`.
 
 ### A. Unduh & Ekstrak Dropbear di PC Host
@@ -246,6 +254,15 @@ adb shell "brctl show"
 ---
 
 ## 4. Konfigurasi Routing NAT, Dnsmasq, & Internet Gateway LAN
+
+> 💡 **INFO PEMBARUAN PENTING (QManager-GO v1.2.0+):**
+> Mulai versi **v1.2.0 (Stable)**, QManager-GO secara otomatis menyertakan fitur **Zero-Touch Idempotent LAN Provisioning & Auto Backhaul Fix**.
+> Saat binary `qmanager` pertama kali berjalan, sistem secara otomatis:
+> 1. Mengonfigurasi `bridge0` dan mem-bind interface `eth0`.
+> 2. Men-generate `/etc/dnsmasq.conf` untuk alokasi DHCP otomatis (`192.168.225.20-200`).
+> 3. Memperbaiki `mobileap_cfg.xml` agar routing internet seluler langsung teralirkan ke port LAN.
+> 
+> *Setup manual di bawah ini hanya dibutuhkan sebagai referensi jika tidak menggunakan daemon QManager-GO.*
 
 Agar komputer atau router WiFi yang dicolokkan ke port LAN mendapatkan IP secara otomatis (DHCP) dan dapat mengakses internet melalui kartu SIM seluler:
 

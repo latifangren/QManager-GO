@@ -119,7 +119,7 @@ func NewScheduler(eng *atengine.Engine, cfgMgr *config.Manager) *Scheduler {
 		executor: JobExecutor{
 			RebootFunc: func(ctx context.Context) error {
 				log.Println("[Scheduler] Executing scheduled modem reboot")
-				return exec.CommandContext(ctx, "reboot").Run()
+				return platform.RebootModem()
 			},
 			TowerApplyFunc: func(ctx context.Context) error {
 				log.Println("[Scheduler] Executing tower schedule apply")

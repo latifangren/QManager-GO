@@ -29,19 +29,10 @@ func TestHandlers_FinalTargetedCoverage(t *testing.T) {
 	poller := telemetry.NewPoller(eng, identity, 100)
 	_ = poller
 
-	// 1. sms.go: hasSmsTool positive and negative branches
+	// 1. sms.go: native handler
 	smsHWithoutTool := NewSMSHandler(eng)
-	smsHWithoutTool.smsToolPath = "/nonexistent/path/sms_tool"
-	if smsHWithoutTool.hasSmsTool() {
-		t.Errorf("expected hasSmsTool=false for non-existent binary")
-	}
-
-	fakeSmsTool := filepath.Join(tmpDir, "sms_tool")
-	_ = os.WriteFile(fakeSmsTool, []byte("#!/bin/sh\nexit 0\n"), 0755)
-	smsHWithTool := NewSMSHandler(eng)
-	smsHWithTool.smsToolPath = fakeSmsTool
-	if !smsHWithTool.hasSmsTool() {
-		t.Errorf("expected hasSmsTool=true for existing binary")
+	if smsHWithoutTool.engine == nil {
+		t.Errorf("expected engine to be non-nil")
 	}
 
 	// 1b. sms.go: handleSend empty recipient & empty message

@@ -5,10 +5,18 @@ Next-generation high-performance management appliance and telemetry web suite fo
 ---
 
 ## 📦 Package Contents
-- `qmanager`: Standalone single-binary executable for your target architecture (ARMv7 / ARM64 / AMD64).
+- `qmanager`: Standalone single-binary executable with embedded WebUI, Native SSH Server, and Auto-TLS.
 - `qmanager.service`: Systemd service unit definition with memory caps and auto-restart policy.
-- `install.sh`: Automated one-step installer and uninstaller script.
+- `install.sh`: Automated one-step installer and uninstaller script (auto-cleans legacy dropbear/lighttpd).
 - `README.md`: This deployment and operations guide.
+
+---
+
+## 🚀 Key Features Out-of-the-Box
+1. **Zero-Touch LAN & DHCP:** Automatic bridge creation (`bridge0` on `192.168.225.1`), PCIe Ethernet binding (`eth0`), and DHCP server configuration via `dnsmasq`.
+2. **Native Go SSH Daemon:** Built-in standalone SSH server on port 22 (configurable via WebUI). No Dropbear or Entware required.
+3. **Dual HTTP/HTTPS Support:** Automatic ECDSA self-signed TLS certificates generated on first boot for secure HTTPS (`https://192.168.225.1`) and HTTP (`http://192.168.225.1`).
+4. **Embedded Web Console:** Interactive PTY terminal inside WebUI over WebSocket.
 
 ---
 

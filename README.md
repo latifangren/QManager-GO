@@ -26,7 +26,10 @@
 Replacing legacy Lighttpd web servers, PHP-FPM, shell CGI scripts, and external helper binaries, QManager compiles down to a **single, zero-dependency standalone binary** (`qmanager-armv7`) with the optimized Next.js 16 frontend embedded directly into the Go executable via `embed.FS`.
 
 ### Key Advantages
-- **Single Static Binary**: Zero external runtime requirements (no Lighttpd, PHP, Python, Entware, or Rust dependencies).
+- **Single Static Binary**: Zero external runtime requirements (no Lighttpd, PHP, Python, Entware, or Dropbear dependencies).
+- **Native Standalone SSH Daemon**: Pure Go SSH server running on Port 22 (or custom port) with `/etc/shadow` authentication, dynamic WebUI controls, authorized public keys support, and auto-generated Ed25519 host keys.
+- **Zero-Touch Auto TLS / HTTPS**: Dual HTTP (port 80) and HTTPS (port 443) listener with automatic on-the-fly ECDSA P-256 self-signed certificate generation (`internal/tlsgen`).
+- **Self-Healing Zero-Touch LAN & DHCP**: Automatic PCIe Ethernet detection, `bridge0` binding, link-local `169.254.x.x` flushing, and dynamic `dnsmasq` DHCP server provisioning.
 - **Direct Character Device Access**: High-performance pure-Go AT command engine interfacing directly with `/dev/smd11` with thread-safe mutex serialization and 3-tier priority execution.
 - **Zero Flash Wear (RAM-First Lifecycle)**: Telemetry streams, real-time signal charts, 1000-line circular syslog buffer, and DPI proxy run exclusively in RAM/tmpfs to protect raw NAND flash (UBIFS).
 - **Traffic Engine (DPI Bypass)**: Embedded on-demand `tpws` binary engine with Full Bypass, YouTube Video Optimizer, and Force TCP modes.

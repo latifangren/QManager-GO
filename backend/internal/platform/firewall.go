@@ -1,12 +1,22 @@
 package platform
 
 import (
+	"fmt"
 	"log"
 	"os/exec"
 	"runtime"
 )
 
-// InitFirewallRules initializes firewall chains and rules to protect the modem on WAN interfaces.
+// SetMangleTTL updates the IP packet TTL mangle rule on WAN interface.
+func SetMangleTTL(iface string, ttl int) error {
+	iptablesPath, err := exec.LookPath("iptables")
+	if err != nil {
+		return err
+	}
+	ttlStr := fmt.Sprintf("%d", ttl)
+	_ = exec.Command(iptablesPath, "-t", "mangle", "-D", "POSTROUTING", "-o", iface, "-j", "TTL", "--ttl-set", ttlStr).Run()
+	return exec.Command(iptablesPath, "-t", "mangle", "-A", "POSTROUTING", "-o", iface, "-j", "TTL", "--ttl-set", ttlStr).Run()
+}
 // It drops ports 80 & 443 TCP from cellular WAN interfaces (rmnet+) while allowing trusted LAN/local/VPN traffic.
 func InitFirewallRules() error {
 	if runtime.GOOS != "linux" {

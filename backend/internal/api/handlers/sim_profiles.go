@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"qmanager/internal/atengine"
+	"qmanager/internal/platform"
 )
 
 const (
@@ -460,8 +460,7 @@ func (h *SIMProfileHandler) Apply(w http.ResponseWriter, r *http.Request) {
 
 		// Configure TTL if specified
 		if p.Settings.TTL != nil {
-			_ = exec.Command("iptables", "-t", "mangle", "-D", "POSTROUTING", "-o", "rmnet+", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", *p.Settings.TTL)).Run()
-			_ = exec.Command("iptables", "-t", "mangle", "-A", "POSTROUTING", "-o", "rmnet+", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", *p.Settings.TTL)).Run()
+			_ = platform.SetMangleTTL("rmnet+", *p.Settings.TTL)
 		}
 
 		state.Status = "complete"
