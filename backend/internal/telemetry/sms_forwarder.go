@@ -588,21 +588,34 @@ func FetchInboxAndStorage(ctx context.Context, _, _ string, engine *atengine.Eng
 
 // ParseCPMSStorage parses AT+CPMS? response with storage triplets.
 func ParseCPMSStorage(raw string) (MemoryStorage, MemoryStorage) {
-	me := MemoryStorage{}
-	sm := MemoryStorage{}
+	me := MemoryStorage{Total: 127}
+	sm := MemoryStorage{Total: 30}
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "+CPMS:") {
 			continue
 		}
 		parts := strings.Split(strings.TrimPrefix(line, "+CPMS:"), ",")
+		if len(parts) >= 2 {
+			// Check if first part is a number (unnamed format e.g. "+CPMS: 1,255,1,255,0,255")
+			if u, err := strconv.Atoi(strings.TrimSpace(parts[0])); err == nil {
+				tot, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+				me = MemoryStorage{Used: u, Total: tot}
+				if len(parts) >= 4 {
+					u2, _ := strconv.Atoi(strings.TrimSpace(parts[2]))
+					tot2, _ := strconv.Atoi(strings.TrimSpace(parts[3]))
+					sm = MemoryStorage{Used: u2, Total: tot2}
+				}
+				return me, sm
+			}
+		}
 		for i := 0; i+2 < len(parts); i += 3 {
 			stName := strings.Trim(strings.TrimSpace(parts[i]), `"`)
 			used, _ := strconv.Atoi(strings.TrimSpace(parts[i+1]))
 			total, _ := strconv.Atoi(strings.TrimSpace(parts[i+2]))
-			if stName == "ME" && me.Total == 0 {
+			if stName == "ME" {
 				me = MemoryStorage{Used: used, Total: total}
-			} else if stName == "SM" && sm.Total == 0 {
+			} else if stName == "SM" {
 				sm = MemoryStorage{Used: used, Total: total}
 			}
 		}
