@@ -14,7 +14,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"qmanager/internal/platform"
 )
 
 //go:embed embeds/tpws
@@ -367,9 +370,8 @@ func (m *Manager) stopLocked() {
 		m.cmd = nil
 	}
 
-	// Also kill any orphaned tpws process on device
-	_ = exec.Command("killall", "tpws").Run()
-	_ = exec.Command("pkill", "-9", "-f", "tpws").Run()
+	// Also kill any orphaned tpws process directly via syscall
+	_ = platform.KillProcessByName("tpws", syscall.SIGKILL)
 }
 
 // IsRunning checks if tpws process is active.
@@ -381,9 +383,8 @@ func (m *Manager) IsRunning() bool {
 			return true
 		}
 	}
-	// Fallback check
-	out, err := exec.Command("pgrep", "-f", "tpws").Output()
-	return err == nil && len(strings.TrimSpace(string(out))) > 0
+	// Fallback in-process check via /proc without spawning pgrep
+	return platform.IsProcessRunning("tpws")
 }
 
 // Uptime returns formatted uptime string.

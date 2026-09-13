@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"qmanager/internal/platform"
 )
 
 var (
@@ -110,7 +111,7 @@ func (h *NetworkMTUHandler) SetMTU(w http.ResponseWriter, r *http.Request) {
 	_ = os.MkdirAll(filepath.Dir(mtuFirewallFile), 0755)
 	_ = os.WriteFile(mtuFirewallFile, []byte(content), 0755)
 
-	// Apply immediately to interfaces
+	// Apply immediately to interfaces using Native Syscall
 	_ = applyMTUToInterfaces(mtuVal)
 
 	JSON(w, http.StatusOK, map[string]interface{}{
@@ -145,13 +146,19 @@ func getCurrentWANMTU() (int, error) {
 }
 
 func applyMTUToInterfaces(mtu int) error {
+	// 1. Native Syscall to rmnet_ipa0
 	if _, err := os.Stat("/sys/class/net/rmnet_ipa0"); err == nil {
-		_ = exec.Command("ip", "link", "set", "dev", "rmnet_ipa0", "mtu", strconv.Itoa(mtu)).Run()
+		_ = platform.SetInterfaceMTU("rmnet_ipa0", mtu)
 	}
-	files, _ := filepath.Glob("/sys/class/net/rmnet_data*")
-	for _, f := range files {
-		iface := filepath.Base(f)
-		_ = exec.Command("ip", "link", "set", "dev", iface, "mtu", strconv.Itoa(mtu)).Run()
+
+	// 2. Native Syscall to rmnet_data*
+	matches, err := filepath.Glob("/sys/class/net/rmnet_data*")
+	if err == nil {
+		for _, ifacePath := range matches {
+			ifaceName := filepath.Base(ifacePath)
+			_ = platform.SetInterfaceMTU(ifaceName, mtu)
+		}
 	}
+
 	return nil
 }

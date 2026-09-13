@@ -20,6 +20,8 @@ import (
 	"qmanager/internal/platform"
 	"qmanager/internal/telemetry"
 	"qmanager/internal/telemetry/bandwidth"
+	"qmanager/internal/tlsgen"
+	"qmanager/internal/sshd"
 )
 
 //go:embed dist/*
@@ -142,17 +144,32 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 	dpi.SyncState()
 	defer dpi.GetManager().StopEngine()
 
-	// 7. Router & Server
+	// 7. Native Go Standalone SSH Server Daemon
+	sshManager := sshd.NewManager(cfgMgr, filepath.Join(configDir, "ssh"))
+	if err := sshManager.Start(); err != nil {
+		log.Printf("⚠️ Native SSH server start failed: %v\n", err)
+	}
+	defer func() {
+		_ = sshManager.Stop()
+	}()
+
+	// 8. Self-Healing LAN & Network Provisioning
+	netProvisioner := platform.NewNetworkProvisioner(cfgMgr)
+	netProvisioner.Start()
+	defer netProvisioner.Stop()
+
+	// 9. Router & Server
 	appServices := router.AppServices{
-		Engine:    engine,
-		Poller:    poller,
-		Prober:    prober,
-		Watchdog:  watchdog,
-		ConfigMgr: cfgMgr,
-		Bandwidth: bwCollector,
-		Identity:  identity,
-		DistFS:    distFS,
-		ConfigDir: configDir,
+		Engine:     engine,
+		Poller:     poller,
+		Prober:     prober,
+		Watchdog:   watchdog,
+		ConfigMgr:  cfgMgr,
+		Bandwidth:  bwCollector,
+		Identity:   identity,
+		DistFS:     distFS,
+		ConfigDir:  configDir,
+		SSHManager: sshManager,
 	}
 
 	r := router.NewRouter(appServices)
@@ -172,12 +189,23 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 		}
 	}()
 
-	// Optional HTTPS server if TLS certificates exist
+	// Optional HTTPS server with auto-generated/existing TLS certificates
 	tlsCert := filepath.Join(configDir, "certs/server.crt")
 	tlsKey := filepath.Join(configDir, "certs/server.key")
 	if _, err := os.Stat(tlsCert); err != nil {
 		tlsCert = "/usrdata/qmanager/certs/server.crt"
 		tlsKey = "/usrdata/qmanager/certs/server.key"
+	}
+
+	// Auto-generate self-signed certs if missing
+	if _, err := os.Stat(tlsCert); err != nil {
+		genCert, genKey, errGen := tlsgen.EnsureCertificates(filepath.Join(configDir, "tls"))
+		if errGen == nil {
+			tlsCert = genCert
+			tlsKey = genKey
+		} else {
+			log.Printf("⚠️ TLS cert generation failed: %v\n", errGen)
+		}
 	}
 
 	var httpsServer *http.Server

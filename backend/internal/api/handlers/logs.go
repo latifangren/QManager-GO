@@ -541,6 +541,42 @@ func (h *LogsHandler) getStats() LogStats {
 }
 
 func (h *LogsHandler) fallbackJournalctl(maxLines int, level, search string) []LogEntry {
+	// 1. Try reading /dev/kmsg in pure Go (zero subprocess spawn)
+	if f, err := os.OpenFile("/dev/kmsg", os.O_RDONLY, 0); err == nil {
+		defer f.Close()
+		var entries []LogEntry
+		scanner := bufio.NewScanner(f)
+		count := 0
+		for scanner.Scan() && count < maxLines*2 {
+			l := strings.TrimSpace(scanner.Text())
+			if l == "" {
+				continue
+			}
+			// Format in /dev/kmsg: "priority,seq,timestamp,-;message"
+			msg := l
+			if idx := strings.Index(l, ";"); idx != -1 {
+				msg = l[idx+1:]
+			}
+			if search != "" && !strings.Contains(strings.ToLower(msg), strings.ToLower(search)) {
+				continue
+			}
+			entries = append(entries, LogEntry{
+				Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+				Level:     "INFO",
+				Component: "kernel",
+				PID:       "-",
+				Message:   msg,
+			})
+			count++
+		}
+		if len(entries) > 0 {
+			if len(entries) > maxLines {
+				return entries[len(entries)-maxLines:]
+			}
+			return entries
+		}
+	}
+
 	cmd := exec.Command("logread", "-l", strconv.Itoa(maxLines))
 	out, err := cmd.Output()
 	if err != nil {

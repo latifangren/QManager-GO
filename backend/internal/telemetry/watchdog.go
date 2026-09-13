@@ -67,7 +67,7 @@ func NewWatchdog(eng *atengine.Engine, cfgMgr *config.Manager, prober *PingProbe
 	w.executor = WatchdogExecutor{
 		RebootFunc: func(ctx context.Context) error {
 			log.Println("[Watchdog] Executing emergency modem reboot (Tier 4)")
-			return exec.CommandContext(ctx, "reboot").Run()
+			return platform.RebootModem()
 		},
 		NetworkRestartFunc: func(ctx context.Context) error {
 			log.Println("[Watchdog] Executing network restart")

@@ -62,23 +62,27 @@ ARCH=$(uname -m 2>/dev/null || echo "armv7l")
 echo "📦 Detected Platform: Model=${MODEL}, SoC=${SOC}, Arch=${ARCH}"
 
 # 2. Stop legacy web servers & daemons if running
-echo "==> Stopping legacy services (lighttpd, bash pollers, previous qmanager)..."
-systemctl stop lighttpd qmanager-poller qmanager-ping qmanager-watchcat \
+echo "==> Stopping legacy services (lighttpd, dropbear, bash pollers, previous qmanager)..."
+systemctl stop lighttpd dropbear qmanager-poller qmanager-ping qmanager-watchcat \
     qmanager-firewall qmanager-setup qmanager-cfun-fix qmanager-console \
     qmanager-ethernet qmanager-imei-check qmanager-mtu qmanager-tower-failover \
     qmanager-ttl qmanager_tailscale_install qmanager-auto-update.timer 2>/dev/null || true
 
-systemctl disable lighttpd qmanager-poller qmanager-ping qmanager-watchcat \
+systemctl disable lighttpd dropbear qmanager-poller qmanager-ping qmanager-watchcat \
     qmanager-firewall qmanager-setup qmanager-cfun-fix qmanager-console \
     qmanager-ethernet qmanager-imei-check qmanager-mtu qmanager-tower-failover \
     qmanager-ttl qmanager_tailscale_install qmanager-auto-update.timer 2>/dev/null || true
 
 systemctl stop qmanager 2>/dev/null || true
-killall -9 qmanager lighttpd qmanager_poller qmanager_ping ttyd 2>/dev/null || true
+killall -9 qmanager dropbear lighttpd qmanager_poller qmanager_ping ttyd 2>/dev/null || true
 
 # Purge legacy systemd units (ensure Quectel rootfs is rw)
 mount -o remount,rw / 2>/dev/null || true
-rm -f /lib/systemd/system/multi-user.target.wants/qmanager-* \
+rm -f /lib/systemd/system/sysinit.target.wants/dropbear.service \
+      /etc/systemd/system/multi-user.target.wants/dropbear.service \
+      /lib/systemd/system/dropbear.service \
+      /etc/systemd/system/dropbear.service \
+      /lib/systemd/system/multi-user.target.wants/qmanager-* \
       /lib/systemd/system/multi-user.target.wants/lighttpd.service \
       /etc/systemd/system/multi-user.target.wants/qmanager-* \
       /etc/systemd/system/multi-user.target.wants/lighttpd.service 2>/dev/null || true

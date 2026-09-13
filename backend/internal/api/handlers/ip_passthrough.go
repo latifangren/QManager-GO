@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"qmanager/internal/atengine"
+	"qmanager/internal/platform"
 )
 
 var (
@@ -194,7 +194,7 @@ func (h *IPPassthroughHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	// Trigger reboot after flush
 	go func() {
 		time.Sleep(1 * time.Second)
-		_ = exec.Command("reboot").Run()
+		_ = platform.RebootModem()
 	}()
 
 	JSON(w, http.StatusOK, map[string]interface{}{

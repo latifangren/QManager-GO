@@ -6,10 +6,11 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"qmanager/internal/platform"
 )
 
 const (
@@ -50,7 +51,7 @@ func (h *CustomDNSHandler) buildFullResponse() map[string]interface{} {
 	// Detect if dnsmasq exists
 	dnsmasqAvailable := true
 	if _, err := os.Stat("/etc/data/dnsmasq.conf"); os.IsNotExist(err) {
-		if _, err := exec.LookPath("dnsmasq"); err != nil {
+		if _, err := os.Stat("/usr/bin/dnsmasq"); os.IsNotExist(err) {
 			dnsmasqAvailable = false
 		}
 	}
@@ -314,7 +315,7 @@ func updateDnsmasqConf(cfg CustomDNSConfig) error {
 	}
 
 	// Reload dnsmasq if running
-	_ = exec.Command("killall", "-HUP", "dnsmasq").Run()
+	_ = platform.ReloadDnsmasq()
 	return nil
 }
 

@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { toast } from "sonner";
-import { CircleAlertIcon, EyeIcon, EyeOffIcon } from "lucide-react";
+import { CircleAlertIcon, EyeIcon, EyeOffIcon, KeyRoundIcon, TerminalIcon, ShieldCheckIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { changeSSHPassword } from "@/hooks/use-auth";
+import { useSSHSettings } from "@/hooks/use-ssh-settings";
 import {
   Card,
   CardContent,
@@ -20,6 +21,7 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
+import { Switch } from "@/components/ui/switch";
 import { SaveButton, useSaveFlash } from "@/components/ui/save-button";
 import { cn } from "@/lib/utils";
 
@@ -40,26 +42,13 @@ import {
 
 const K = "ssh";
 
-// The row, restated WITHOUT `ROW.ROOT`'s side-by-side flip: these controls are
-// full-width password fields, so label and field stack at every width.
 const STACK_ROW = "flex flex-col gap-2.5 rounded-field px-4 py-4";
-
-// The pill now wraps the field AND its eye toggle via `InputGroup`, so
-// `FIELD`'s own px-4 would double up with the addon's built-in inset — the
-// group carries none of its own, same as the input/addon split it wraps.
-// `@2xl/card:w-full` cancels `FIELD`'s side-by-side auto-width: these rows
-// never flip, so the field always fills the row.
 const FIELD_GROUP = cn(FIELD, "px-0 @2xl/card:w-full");
-
-// The toggle rides INSIDE the pill via `InputGroupAddon`, so it paints 32px
-// and cannot grow. `COARSE_TARGET` reaches the 44px floor with a
-// pseudo-element instead of resizing the visible button.
 const FIELD_TOGGLE = `rounded-pill text-on-surface-variant hover:text-on-surface ${COARSE_TARGET}`;
 
 interface PasswordFieldProps {
   id: string;
   label: string;
-  /** Omitted on the confirm row, which restates rather than decides. */
   consequence?: string;
   value: string;
   onChange: (value: string) => void;
@@ -67,11 +56,6 @@ interface PasswordFieldProps {
   autoComplete: string;
 }
 
-/**
- * One password row. It owns its own show/hide state, which is the whole point
- * of the extraction — three near-identical blocks and three `showX` flags
- * collapse into one component the card never has to think about.
- */
 function PasswordField({
   id,
   label,
@@ -102,23 +86,20 @@ function PasswordField({
           type={visible ? "text" : "password"}
           autoComplete={autoComplete}
           value={value}
-          onChange={(e: ChangeEvent<HTMLInputElement>) =>
-            onChange(e.target.value)
-          }
-          required
+          onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
           disabled={disabled}
-          className="pl-4 pr-2 text-[0.84375rem] font-medium"
+          placeholder="••••••••"
+          className="rounded-field border-none bg-transparent px-4 font-mono text-body text-on-surface placeholder:text-on-surface-variant/40 focus-visible:ring-0"
         />
-        <InputGroupAddon align="inline-end">
+        <InputGroupAddon align="inline-end" className="pr-1.5">
           <InputGroupButton
             type="button"
-            size="icon-sm"
+            onClick={() => setVisible((prev) => !prev)}
+            disabled={disabled}
+            aria-label={visible ? t(`${K}.toggle.hide`) : t(`${K}.toggle.show`)}
             className={FIELD_TOGGLE}
-            onClick={() => setVisible((v) => !v)}
-            aria-pressed={visible}
-            aria-label={t(visible ? `${K}.toggle.hide` : `${K}.toggle.show`)}
           >
-            <Glyph className="size-4" aria-hidden="true" />
+            <Glyph className="size-4" aria-hidden />
           </InputGroupButton>
         </InputGroupAddon>
       </InputGroup>
@@ -130,134 +111,258 @@ export default function SSHPasswordCard() {
   const { t } = useTranslation("system-settings");
   const { saved, markSaved } = useSaveFlash();
 
+  // Daemon settings hook
+  const { settings, saving: daemonSaving, updateSettings } = useSSHSettings();
+  const [enabled, setEnabled] = useState(settings.enabled);
+  const [port, setPort] = useState(String(settings.port));
+  const [authorizedKeys, setAuthorizedKeys] = useState(settings.authorized_keys);
+  const [daemonDirty, setDaemonDirty] = useState(false);
+
+  useEffect(() => {
+    setEnabled(settings.enabled);
+    setPort(String(settings.port));
+    setAuthorizedKeys(settings.authorized_keys);
+    setDaemonDirty(false);
+  }, [settings]);
+
+  // Password change form state
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState("");
-  // Backend text is machine voice: quoted under the sentence, never spliced in.
-  const [errorDetail, setErrorDetail] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  // Bumped on a successful change to remount the group, which re-hides any
-  // field the user had revealed.
-  const [formKey, setFormKey] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const reset = useCallback(() => {
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
-    setError("");
-    setErrorDetail("");
-    setFormKey((k) => k + 1);
-  }, []);
+  const handleSaveDaemon = async () => {
+    const p = parseInt(port, 10);
+    if (isNaN(p) || p <= 0 || p > 65535) {
+      toast.error("Invalid SSH port (1-65535)");
+      return;
+    }
+    const ok = await updateSettings({
+      enabled,
+      port: p,
+      authorized_keys: authorizedKeys,
+    });
+    if (ok) {
+      setDaemonDirty(false);
+    }
+  };
 
-  const canSubmit =
-    currentPassword.length > 0 &&
-    newPassword.length >= 6 &&
-    confirmPassword.length > 0 &&
-    !isSubmitting;
-
-  const handleSubmit = useCallback(
+  const handlePasswordSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-      setError("");
-      setErrorDetail("");
+      setError(null);
 
       if (newPassword.length < 6) {
         setError(t(`${K}.errors.too_short`));
         return;
       }
-
       if (newPassword !== confirmPassword) {
         setError(t(`${K}.errors.mismatch`));
         return;
       }
 
-      setIsSubmitting(true);
+      setSubmitting(true);
       try {
-        const result = await changeSSHPassword(
-          currentPassword,
-          newPassword,
-          confirmPassword,
-        );
+        const result = await changeSSHPassword(currentPassword, newPassword, confirmPassword);
         if (result.success) {
-          toast.success(t(`${K}.toast_saved`));
+          setCurrentPassword("");
+          setNewPassword("");
+          setConfirmPassword("");
           markSaved();
-          reset();
+          toast.success(t(`${K}.toast_saved`));
         } else {
-          setError(t(`${K}.errors.failed`));
-          setErrorDetail(result.error ?? "");
+          const msg = result.error || t(`${K}.errors.failed`);
+          setError(msg);
+          toast.error(msg);
         }
+      } catch {
+        const msg = t(`${K}.errors.failed`);
+        setError(msg);
+        toast.error(msg);
       } finally {
-        setIsSubmitting(false);
+        setSubmitting(false);
       }
     },
-    [currentPassword, newPassword, confirmPassword, reset, markSaved, t],
+    [currentPassword, newPassword, confirmPassword, t, markSaved]
   );
 
   return (
     <Card className={CARD_SHELL}>
       <CardHeader className={CARD_PAD}>
-        <CardTitle className={CARD_TITLE}>{t(`${K}.card.title`)}</CardTitle>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <TerminalIcon className="size-5 text-primary" />
+            <CardTitle className={CARD_TITLE}>{t(`${K}.card.title`)}</CardTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            {settings.conflict ? (
+              <span className="rounded-full bg-error-container px-2.5 py-0.5 text-caption font-medium text-on-error-container">
+                PORT CONFLICT
+              </span>
+            ) : (
+              <span className="text-caption text-on-surface-variant font-mono">
+                {settings.running ? "ACTIVE : " + settings.port : "INACTIVE"}
+              </span>
+            )}
+          </div>
+        </div>
         <CardDescription className={CARD_DESC}>
           {t(`${K}.card.description`)}
         </CardDescription>
       </CardHeader>
 
-      <CardContent className={cn(CARD_PAD, CARD_BODY)}>
-        <form
-          onSubmit={handleSubmit}
-          className={cn(CARD_BODY, "gap-4")}
-        >
-          {/* The row group is this card's slack absorber: the page grid locks
-              every cell to `h-full`, and the group is what grows to fill it. */}
-          <div key={formKey} className={cn(ROW_GROUP, GROUP_FILL)}>
+      <CardContent className={cn(CARD_PAD, CARD_BODY, "space-y-6")}>
+        {settings.conflict && (
+          <div className={cn(NOTICE.BOX, NOTICE.FAILED)} role="alert">
+            <CircleAlertIcon className={NOTICE.GLYPH} aria-hidden />
+            <p className={NOTICE.TEXT}>
+              {settings.conflict_msg ||
+                `Port ${settings.port} is already used by an external daemon (e.g. Dropbear). Please change the port or disable the external SSH daemon.`}
+            </p>
+          </div>
+        )}
+
+        {/* 1. SSH Server Daemon Controls */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-label text-on-surface font-medium">
+            <ShieldCheckIcon className="size-4 text-primary" />
+            <span>SSH Server Daemon</span>
+          </div>
+
+          <div className={ROW_GROUP}>
+            {/* Toggle Enable */}
+            <div className={cn(ROW.ROOT, "justify-between items-center")}>
+              <div className={ROW.TEXT}>
+                <span className={ROW.LABEL}>Enable Native SSH Server</span>
+                <span className={ROW.CONSEQUENCE}>
+                  Runs pure Go standalone SSH daemon on this device.
+                </span>
+              </div>
+              <Switch
+                checked={enabled}
+                onCheckedChange={(checked) => {
+                  setEnabled(checked);
+                  setDaemonDirty(true);
+                }}
+              />
+            </div>
+
+            {/* Port Setting */}
+            <div className={cn(ROW.ROOT, "justify-between items-center")}>
+              <div className={ROW.TEXT}>
+                <span className={ROW.LABEL}>SSH Port</span>
+                <span className={ROW.CONSEQUENCE}>
+                  Default is 22. Valid range 1 - 65535.
+                </span>
+              </div>
+              <input
+                type="number"
+                min={1}
+                max={65535}
+                value={port}
+                onChange={(e) => {
+                  setPort(e.target.value);
+                  setDaemonDirty(true);
+                }}
+                disabled={!enabled}
+                className={cn(
+                  FIELD,
+                  "w-28 text-center font-mono text-body text-on-surface placeholder:text-on-surface-variant/40"
+                )}
+              />
+            </div>
+
+            {/* Authorized Public Keys */}
+            <div className={STACK_ROW}>
+              <div className={ROW.TEXT}>
+                <span className={ROW.LABEL}>Authorized SSH Public Keys</span>
+                <span className={ROW.CONSEQUENCE}>
+                  Paste public keys (one per line, e.g. ssh-ed25519 ...) for passwordless login.
+                </span>
+              </div>
+              <textarea
+                rows={3}
+                value={authorizedKeys}
+                onChange={(e) => {
+                  setAuthorizedKeys(e.target.value);
+                  setDaemonDirty(true);
+                }}
+                disabled={!enabled}
+                placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... user@machine"
+                className="w-full rounded-field border-none bg-surface-container-high/40 p-3 font-mono text-caption text-on-surface placeholder:text-on-surface-variant/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              />
+            </div>
+          </div>
+
+          {daemonDirty && (
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={handleSaveDaemon}
+                disabled={daemonSaving}
+                className={cn(
+                  PILL_ACTION,
+                  "bg-primary text-on-primary hover:bg-primary/90 px-4 py-2 font-medium"
+                )}
+              >
+                {daemonSaving ? "Applying..." : "Apply SSH Daemon Settings"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* 2. Root SSH Password Change Form */}
+        <form onSubmit={handlePasswordSubmit} className="space-y-4 pt-4 border-t border-outline/10">
+          <div className="flex items-center gap-2 text-label text-on-surface font-medium">
+            <KeyRoundIcon className="size-4 text-primary" />
+            <span>Root Password Authentication</span>
+          </div>
+
+          <div className={ROW_GROUP}>
             <PasswordField
               id="ssh-current-password"
               label={t(`${K}.fields.current.label`)}
               consequence={t(`${K}.fields.current.consequence`)}
               value={currentPassword}
               onChange={setCurrentPassword}
-              disabled={isSubmitting}
+              disabled={submitting}
               autoComplete="current-password"
             />
+
             <PasswordField
               id="ssh-new-password"
               label={t(`${K}.fields.new.label`)}
               consequence={t(`${K}.fields.new.consequence`)}
               value={newPassword}
               onChange={setNewPassword}
-              disabled={isSubmitting}
+              disabled={submitting}
               autoComplete="new-password"
             />
+
             <PasswordField
               id="ssh-confirm-password"
               label={t(`${K}.fields.confirm.label`)}
               value={confirmPassword}
               onChange={setConfirmPassword}
-              disabled={isSubmitting}
+              disabled={submitting}
               autoComplete="new-password"
             />
           </div>
 
           {error ? (
-            <div role="alert" className={cn(NOTICE.BOX, NOTICE.FAILED)}>
-              <CircleAlertIcon className={NOTICE.GLYPH} aria-hidden="true" />
-              <span className={NOTICE.STACK}>
-                <span className={NOTICE.TEXT}>{error}</span>
-                {errorDetail ? (
-                  <span className={NOTICE.DETAIL}>{errorDetail}</span>
-                ) : null}
-              </span>
+            <div className={cn(NOTICE.BOX, NOTICE.FAILED)} role="alert">
+              <CircleAlertIcon className={NOTICE.GLYPH} aria-hidden />
+              <p className={NOTICE.TEXT}>{error}</p>
             </div>
           ) : null}
 
-          <div className="flex justify-end">
+          <div className={cn(GROUP_FILL, "justify-end")}>
             <SaveButton
-              type="submit"
-              isSaving={isSubmitting}
+              isSaving={submitting}
               saved={saved}
               label={t(`${K}.card.save`)}
-              disabled={!canSubmit}
+              disabled={submitting || !currentPassword || !newPassword || !confirmPassword}
               className={PILL_ACTION}
             />
           </div>

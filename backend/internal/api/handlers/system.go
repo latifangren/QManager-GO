@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -463,6 +462,6 @@ func (h *SystemHandler) Reboot(w http.ResponseWriter, r *http.Request) {
 	// Run async reboot after response is flushed
 	go func() {
 		time.Sleep(1 * time.Second)
-		_ = exec.Command("reboot").Run()
+		_ = platform.RebootModem()
 	}()
 }

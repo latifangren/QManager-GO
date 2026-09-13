@@ -164,17 +164,19 @@ ln -sf /usrdata/tailscale/tailscale /usr/bin/tailscale
 
 ## 6. SSH Access & System Passwords
 
-Quectel Linux Yocto modems lack GNU `chpasswd` / `usermod`. QManager-GO uses `/usr/bin/openssl passwd -1` and atomic file substitution on `/etc/shadow`.
+* **Native Pure Go SSH Server:**
+  QManager-GO v1.2.0 includes a standalone native Go SSH server listening on port 22 by default (configurable under **Settings > SSH Server**). Dropbear is no longer needed and is purged automatically.
+* **Host Keys & Authorized Keys:**
+  Keys are stored under `/etc/qmanager/ssh/`. You can paste authorized public keys directly from the WebUI.
+* **Manual Password Recovery (via ADB or Web Console):**
+  If root SSH password becomes out of sync:
+  ```sh
+  # Generate hash for new password (e.g. 'root123')
+  NEW_HASH=$(openssl passwd -1 "root123")
 
-### 🔹 Manual Password Recovery (via ADB or Web Console):
-If root SSH password becomes out of sync:
-```sh
-# Generate hash for new password (e.g. 'root123')
-NEW_HASH=$(openssl passwd -1 "root123")
-
-# Set in /etc/shadow for root user
-sed -i "s|^root:[^:]*|root:${NEW_HASH}|" /etc/shadow
-```
+  # Set in /etc/shadow for root user
+  sed -i "s|^root:[^:]*|root:${NEW_HASH}|" /etc/shadow
+  ```
 
 ---
 
