@@ -75,7 +75,6 @@ export default function AdaptivePollingCard() {
 
   // Synchronise state with cross-tab and storage events
   useEffect(() => {
-    setMode(getPollingMode());
     return subscribePollingMode((newMode) => {
       setMode(newMode);
     });

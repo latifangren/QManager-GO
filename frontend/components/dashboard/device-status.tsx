@@ -203,7 +203,7 @@ const DeviceStatusComponent = ({
   // running while we cannot see it, so the number we hold goes wrong at one
   // second per second the moment the poll fails. Those go to the sentinel.
   const connUptime = data?.conn_uptime_seconds ?? 0;
-  const lastConnUptime = (data as any)?.last_conn_uptime_seconds ?? 0;
+  const lastConnUptime = (data as { last_conn_uptime_seconds?: number })?.last_conn_uptime_seconds ?? 0;
   const deviceUptime = data?.uptime_seconds ?? 0;
   const connUp = !unreachable && connUptime > 0;
 

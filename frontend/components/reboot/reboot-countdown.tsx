@@ -46,7 +46,7 @@ export function RebootCountdown() {
       return;
     }
     sessionStorage.removeItem(SESSION_KEY);
-    setVerified(true);
+    queueMicrotask(() => setVerified(true));
 
     // Tell the OTA worker (if any) that the static reboot page has loaded
     // so it can stop waiting and fire the reboot syscall. Harmless on

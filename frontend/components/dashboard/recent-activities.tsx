@@ -371,15 +371,21 @@ const RecentActivitiesComponent = () => {
   // the carrier-aggregation release clock.
   const head = events[0];
   const headKey = head ? eventKey(head) : null;
-  const previousHeadKey = React.useRef<string | null>(null);
-  const hasArrival =
-    previousHeadKey.current !== null &&
-    headKey !== null &&
-    headKey !== previousHeadKey.current;
-
-  React.useEffect(() => {
-    previousHeadKey.current = headKey;
+  const [keyState, setKeyState] = React.useState<{
+    current: string | null;
+    hasArrival: boolean;
+  }>({
+    current: headKey,
+    hasArrival: false,
   });
+
+  if (headKey !== keyState.current) {
+    setKeyState({
+      current: headKey,
+      hasArrival: keyState.current !== null && headKey !== null,
+    });
+  }
+  const hasArrival = keyState.hasArrival;
 
   const chipTone = unresolvedCount === 0 ? "quiet" : worstIsError ? "error" : "warning";
   const chipGlyph: MaterialSymbolName =

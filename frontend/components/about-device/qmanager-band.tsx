@@ -32,14 +32,14 @@ function GitHubIcon({ className }: { className?: string }): React.JSX.Element {
   );
 }
 
-export interface QManagerBandProps {}
+export type QManagerBandProps = Record<string, never>;
 
 /**
  * The page's closing statement: what this software is, who made it, and the
  * three things a reader might want next. Full width because it is prose rather
  * than a pair of readings.
  */
-export function QManagerBand(_props: QManagerBandProps = {}): React.JSX.Element {
+export function QManagerBand(): React.JSX.Element {
   const { t } = useTranslation("common");
 
   return (

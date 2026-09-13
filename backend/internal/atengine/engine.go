@@ -180,9 +180,11 @@ func (e *Engine) processRequest(req commandRequest) {
 	// Inter-command debounce to allow baseband shared memory buffers to flush
 	debounce := e.GetDebounce()
 	if debounce > 0 {
+		t := time.NewTimer(debounce)
 		select {
 		case <-e.stopChan:
-		case <-time.After(debounce):
+			t.Stop()
+		case <-t.C:
 		}
 	}
 }

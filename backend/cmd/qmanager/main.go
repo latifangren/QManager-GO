@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -241,6 +242,14 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 }
 
 func main() {
+	// Enforce low-footprint GC pacing and memory limits for embedded ARMv7 Cortex-A7 (<20MB RSS)
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(50)
+	}
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(20 * 1024 * 1024)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

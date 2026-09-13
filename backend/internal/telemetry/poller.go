@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"qmanager/internal/atengine"
@@ -296,7 +298,8 @@ type Poller struct {
 	subMu       sync.RWMutex
 	subscribers map[chan *ModemStatus]struct{}
 
-	pollCount uint64
+	pollCount              uint64
+	queryIdentitiesActive int32
 }
 
 const (
@@ -532,16 +535,23 @@ func (p *Poller) GetInterval() time.Duration {
 func (p *Poller) loop() {
 	p.poll()
 
-	for {
-		p.mu.RLock()
-		curInterval := p.interval
-		p.mu.RUnlock()
+	p.mu.RLock()
+	curInterval := p.interval
+	p.mu.RUnlock()
 
+	timer := time.NewTimer(curInterval)
+	defer timer.Stop()
+
+	for {
 		select {
 		case <-p.stopCh:
 			return
-		case <-time.After(curInterval):
+		case <-timer.C:
 			p.poll()
+			p.mu.RLock()
+			curInterval = p.interval
+			p.mu.RUnlock()
+			timer.Reset(curInterval)
 		}
 	}
 }
@@ -598,7 +608,12 @@ func (p *Poller) poll() {
 
 	p.pollCount++
 	if p.pollCount%15 == 0 {
-		go p.queryIdentities(context.Background())
+		if atomic.CompareAndSwapInt32(&p.queryIdentitiesActive, 0, 1) {
+			go func() {
+				defer atomic.StoreInt32(&p.queryIdentitiesActive, 0)
+				p.queryIdentities(context.Background())
+			}()
+		}
 	}
 	if p.pollCount%5 == 0 {
 		if res, err := p.engine.ExecLow(ctx, `AT+QNWCFG="lte_time_advance"`); err == nil {
@@ -1223,10 +1238,20 @@ func (p *Poller) poll() {
 	p.broadcastStatus(status)
 }
 
+var statusBufPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
+}
+
 func writeStatusFile(path string, status *ModemStatus) error {
-	data, err := json.Marshal(status)
-	if err != nil {
+	buf := statusBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer statusBufPool.Put(buf)
+
+	enc := json.NewEncoder(buf)
+	if err := enc.Encode(status); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, buf.Bytes(), 0644)
 }
