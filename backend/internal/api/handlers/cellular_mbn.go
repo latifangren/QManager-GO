@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
 	"qmanager/internal/atengine"
+	"qmanager/internal/platform"
 )
 
 // MbnProfile matches the frontend TypeScript interface.
@@ -132,7 +132,7 @@ func (h *CellularMbnHandler) handleAutoSel(w http.ResponseWriter, autoSel *int) 
 func (h *CellularMbnHandler) handleReboot(w http.ResponseWriter) {
 	go func() {
 		time.Sleep(1 * time.Second)
-		_ = exec.Command("reboot").Run()
+		_ = platform.RebootModem()
 	}()
 
 	Success(w, map[string]interface{}{

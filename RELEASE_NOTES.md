@@ -30,6 +30,12 @@ This release delivers major performance breakthroughs, native POSIX syscall AT t
 * **Two-Way Polling Cadence Sync:** Added `/api/v1/system/polling` and `/cgi-bin/quecmanager/system/polling.sh` endpoints.
 * Frontend power modes (`Active: 1s`, `Balanced: 2s`, `Low Power: 5s`) dynamically adjust the backend telemetry poller timer on the fly to conserve CPU cycles when WebUI is backgrounded.
 
+### 🔄 Native Linux Kernel Syscalls & Process Signal Engine
+* **In-Process Kernel Reboot Syscall:** Replaced `exec.Command("reboot")` across all handlers (`system.go`, `cellular_mbn.go`, `cellular_imei.go`, `ip_passthrough.go`, `scheduler.go`, `watchdog.go`) with atomic kernel-level `syscall.Reboot(LINUX_REBOOT_CMD_RESTART)`.
+* **Direct Process Signaling:** Replaced `killall -HUP dnsmasq` and `pkill tpws` with direct PID signal dispatch (`syscall.SIGHUP` / `syscall.SIGKILL`) via `/proc` & PID files (`platform/sys_linux.go`).
+* **Kernel `/dev/kmsg` Stream Fallback:** Replaced shell `dmesg` subprocesses with direct stream reading from `/dev/kmsg` ring buffer (`handlers/logs.go`).
+* **In-Process TTL Mangle Helper:** Encapsulated TTL modification inside unified `platform.SetMangleTTL`.
+
 ### ⚡ Native In-Process Ping & Latency Probe (Zero Subprocess Forks)
 * **In-Process ICMP Raw Socket Engine:** Replaced frequent execution of `/bin/ping` subprocess with an in-process raw ICMP Echo (`SOCK_RAW`/`IPPROTO_ICMP`) probe engine (`internal/telemetry/ping.go`).
 * **Zero Fork Latency Metrics:** Sub-millisecond latency & jitter tracking without spawning external processes on modem CPU.

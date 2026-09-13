@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -14,6 +13,7 @@ import (
 
 	"qmanager/internal/atengine"
 	"qmanager/internal/config"
+	"qmanager/internal/platform"
 	"qmanager/internal/telemetry"
 )
 
@@ -186,7 +186,7 @@ func (h *CellularImeiHandler) handleReboot(w http.ResponseWriter) {
 	// Execute reboot asynchronously
 	go func() {
 		time.Sleep(1 * time.Second)
-		_ = exec.Command("reboot").Run()
+		_ = platform.RebootModem()
 	}()
 
 	Success(w, map[string]interface{}{
