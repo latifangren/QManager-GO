@@ -1,11 +1,10 @@
 package telemetry
 
 import (
-	"context"
+	"fmt"
 	"math"
 	"net"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -64,7 +63,7 @@ func NewPingProber(target string, interval time.Duration) *PingProber {
 
 // SetTarget updates the probe destination target.
 func (p *PingProber) SetTarget(target string) {
-	if target == "" {
+	if strings.TrimSpace(target) == "" {
 		return
 	}
 	p.mu.Lock()
@@ -72,7 +71,7 @@ func (p *PingProber) SetTarget(target string) {
 	p.target = target
 }
 
-// Start begins probe background loop.
+// Start begins continuous background probing.
 func (p *PingProber) Start() {
 	p.mu.Lock()
 	if p.running {
@@ -80,39 +79,129 @@ func (p *PingProber) Start() {
 		return
 	}
 	p.running = true
+	p.stopCh = make(chan struct{})
 	p.mu.Unlock()
 
-	go p.loop()
+	go func() {
+		ticker := time.NewTicker(p.interval)
+		defer ticker.Stop()
+
+		// Initial immediate probe
+		p.recordSample(p.probeTarget())
+
+		for {
+			select {
+			case <-p.stopCh:
+				return
+			case <-ticker.C:
+				p.recordSample(p.probeTarget())
+			}
+		}
+	}()
 }
 
-// Stop halts the prober.
+// Stop halts the background prober loop.
 func (p *PingProber) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.running {
 		return
 	}
-	p.running = false
 	close(p.stopCh)
+	p.running = false
 }
 
+// ProbeOnce executes an immediate synchronous probe and records it.
+func (p *PingProber) ProbeOnce() PingSample {
+	s := p.probeTarget()
+	p.recordSample(s)
+	return s
+}
+
+// recordSample appends a sample and trims to window size.
+func (p *PingProber) recordSample(s PingSample) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.samples = append(p.samples, s)
+	if len(p.samples) > p.windowSize {
+		p.samples = p.samples[len(p.samples)-p.windowSize:]
+	}
+}
+
+// GetStats returns calculated jitter, loss, and latency metrics.
+func (p *PingProber) GetStats() PingStats {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	stats := PingStats{
+		Target:       p.target,
+		RecentPoints: make([]PingSample, len(p.samples)),
+	}
+	copy(stats.RecentPoints, p.samples)
+
+	if len(p.samples) == 0 {
+		return stats
+	}
+
+	var totalMs, minMs, maxMs float64
+	var successCount int
+	minMs = math.MaxFloat64
+	var latencies []float64
+
+	for _, s := range p.samples {
+		if s.Success {
+			successCount++
+			totalMs += s.LatencyMs
+			if s.LatencyMs < minMs {
+				minMs = s.LatencyMs
+			}
+			if s.LatencyMs > maxMs {
+				maxMs = s.LatencyMs
+			}
+			latencies = append(latencies, s.LatencyMs)
+			stats.CurrentMs = s.LatencyMs
+		}
+	}
+
+	totalSamples := len(p.samples)
+	stats.LossPct = float64(totalSamples-successCount) / float64(totalSamples) * 100.0
+
+	if successCount > 0 {
+		stats.AvgMs = totalMs / float64(successCount)
+		stats.MinMs = minMs
+		stats.MaxMs = maxMs
+
+		// Calculate jitter (RFC 1889 mean difference between consecutive successful samples)
+		if len(latencies) > 1 {
+			var jitterSum float64
+			for i := 1; i < len(latencies); i++ {
+				jitterSum += math.Abs(latencies[i] - latencies[i-1])
+			}
+			stats.JitterMs = jitterSum / float64(len(latencies)-1)
+		}
+	}
+
+	return stats
+}
+
+// getPingBinary finds ping binary if available (for test/legacy support).
 func getPingBinary() string {
-	for _, path := range []string{"/bin/ping", "/usr/bin/ping", "ping"} {
-		if p, err := exec.LookPath(path); err == nil {
+	for _, p := range []string{"/bin/ping", "/usr/bin/ping", "ping"} {
+		if _, err := os.Stat(p); err == nil {
 			return p
 		}
 	}
-	return "/bin/ping"
+	return "ping"
 }
 
-// findWanInterface looks for the active cellular network interface dynamically.
+// findWanInterface looks for active cellular network interface dynamically.
 func findWanInterface() string {
-	// 1. Check kernel default route table from /proc/net/route
 	if data, err := os.ReadFile("/proc/net/route"); err == nil {
 		lines := strings.Split(string(data), "\n")
 		for _, line := range lines {
 			fields := strings.Fields(line)
-			if len(fields) >= 2 && fields[1] == "00000000" { // Destination 0.0.0.0 (default route)
+			if len(fields) >= 2 && fields[1] == "00000000" { // Destination 0.0.0.0
 				iface := fields[0]
 				if iface != "lo" && !strings.HasPrefix(iface, "bridge") && !strings.HasPrefix(iface, "rndis") {
 					return iface
@@ -121,10 +210,8 @@ func findWanInterface() string {
 		}
 	}
 
-	// 2. Inspect active network interfaces with IP addresses
 	ifaces, err := net.Interfaces()
 	if err == nil {
-		// Prefer rmnet*, wwan*, usb*, qmi*, ppp*, lte* with FlagUp and assigned IP
 		for _, iface := range ifaces {
 			name := iface.Name
 			if (iface.Flags&net.FlagUp != 0) && (iface.Flags&net.FlagLoopback == 0) {
@@ -141,53 +228,84 @@ func findWanInterface() string {
 				}
 			}
 		}
-
-		// Fallback: any UP interface that is not loopback / bridge / rndis / eth
-		for _, iface := range ifaces {
-			name := iface.Name
-			if (iface.Flags&net.FlagUp != 0) && (iface.Flags&net.FlagLoopback == 0) {
-				if !strings.HasPrefix(name, "bridge") &&
-					!strings.HasPrefix(name, "rndis") &&
-					!strings.HasPrefix(name, "eth") &&
-					!strings.HasPrefix(name, "docker") &&
-					!strings.HasPrefix(name, "tunl") &&
-					!strings.HasPrefix(name, "sit") &&
-					!strings.HasPrefix(name, "gre") {
-					return name
-				}
-			}
-		}
 	}
-
-	return "rmnet_data0"
+	return ""
 }
 
-// parsePingOutput extracts latency in ms from ping stdout.
-func parsePingOutput(output string) (float64, bool) {
-	if idx := strings.Index(output, "time="); idx != -1 {
-		rest := output[idx+5:]
-		fields := strings.Fields(rest)
-		if len(fields) > 0 {
-			valStr := strings.TrimSuffix(fields[0], "ms")
-			if lat, err := strconv.ParseFloat(valStr, 64); err == nil && lat > 0 {
-				return lat, true
-			}
+// InProcessICMPProbe sends an ICMP Echo Request in-process without spawning external subprocesses.
+func InProcessICMPProbe(targetIP string, iface string, timeout time.Duration) (float64, error) {
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_ICMP)
+	if err != nil {
+		fd, err = syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, syscall.IPPROTO_ICMP)
+		if err != nil {
+			return 0, err
 		}
 	}
-	if idx := strings.Index(output, "rtt min/avg/max/mdev = "); idx != -1 {
-		rest := output[idx+23:]
-		parts := strings.Split(rest, "/")
-		if len(parts) >= 2 {
-			if lat, err := strconv.ParseFloat(parts[1], 64); err == nil && lat > 0 {
-				return lat, true
-			}
-		}
+	defer syscall.Close(fd)
+
+	if iface != "" {
+		_ = syscall.BindToDevice(fd, iface)
 	}
-	return 0, false
+
+	tv := syscall.NsecToTimeval(timeout.Nanoseconds())
+	_ = syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_RCVTIMEO, &tv)
+	_ = syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_SNDTIMEO, &tv)
+
+	ip := net.ParseIP(targetIP)
+	if ip == nil {
+		ips, err := net.LookupIP(targetIP)
+		if err != nil || len(ips) == 0 {
+			return 0, fmt.Errorf("invalid host %s", targetIP)
+		}
+		ip = ips[0]
+	}
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return 0, fmt.Errorf("ipv4 only supported")
+	}
+
+	var sa syscall.SockaddrInet4
+	copy(sa.Addr[:], ip4)
+
+	// ICMP Echo packet (8 bytes header + payload)
+	packet := []byte{
+		8, 0, // Type 8 (Echo), Code 0
+		0, 0, // Checksum placeholder
+		0x12, 0x34, // Identifier
+		0x00, 0x01, // Sequence
+		'Q', 'M', 'A', 'N', 'A', 'G', 'E', 'R',
+	}
+
+	var csum uint32
+	for i := 0; i < len(packet)-1; i += 2 {
+		csum += uint32(packet[i])<<8 | uint32(packet[i+1])
+	}
+	if len(packet)%2 == 1 {
+		csum += uint32(packet[len(packet)-1]) << 8
+	}
+	for (csum >> 16) > 0 {
+		csum = (csum & 0xffff) + (csum >> 16)
+	}
+	csum = ^csum
+	packet[2] = byte(csum >> 8)
+	packet[3] = byte(csum & 0xff)
+
+	start := time.Now()
+	if err := syscall.Sendto(fd, packet, 0, &sa); err != nil {
+		return 0, err
+	}
+
+	buf := make([]byte, 512)
+	_, _, err = syscall.Recvfrom(fd, buf, 0)
+	if err != nil {
+		return 0, err
+	}
+	elapsed := float64(time.Since(start).Microseconds()) / 1000.0
+	return elapsed, nil
 }
 
-// ProbeOnce executes a single connection probe and records result.
-func (p *PingProber) ProbeOnce() PingSample {
+// probeTarget conducts pure in-process latency measurement (ICMP Raw Socket + TCP Dial fallback).
+func (p *PingProber) probeTarget() PingSample {
 	p.mu.RLock()
 	target := p.target
 	dialTimeout := p.dialTimeout
@@ -203,7 +321,7 @@ func (p *PingProber) ProbeOnce() PingSample {
 	var elapsed float64
 	var success bool
 
-	// 1. If targeting loopback/local, test directly via TCP dial
+	// 1. Loopback check
 	if host == "127.0.0.1" || host == "localhost" || strings.HasPrefix(host, "127.") {
 		start := time.Now()
 		conn, err := net.DialTimeout("tcp", target, dialTimeout)
@@ -214,191 +332,83 @@ func (p *PingProber) ProbeOnce() PingSample {
 		}
 	} else {
 		iface := findWanInterface()
-		targetAddr := net.JoinHostPort(host, port)
 
-		// 2. Primary probe: In-process TCP dial with SO_BINDTODEVICE (~10-20ms, zero subprocess forks)
-		start := time.Now()
-		dialer := &net.Dialer{
-			Timeout: dialTimeout,
-			Control: func(network, address string, c syscall.RawConn) error {
-				return c.Control(func(fd uintptr) {
-					bindSocketToDevice(fd, iface)
-				})
-			},
-		}
-		conn, err := dialer.Dial("tcp", targetAddr)
-		if err == nil {
-			elapsed = float64(time.Since(start).Microseconds()) / 1000.0
+		// 2. Primary: Pure in-process raw ICMP ping (<1ms overhead, zero forks)
+		lat, err := InProcessICMPProbe(host, iface, dialTimeout)
+		if err == nil && lat > 0 {
+			elapsed = lat
 			success = true
-			_ = conn.Close()
-		} else if iface != "" {
-			// Also try direct TCP dial without device binding if bound dial failed
-			startFallback := time.Now()
-			connFb, errFb := net.DialTimeout("tcp", targetAddr, dialTimeout)
-			if errFb == nil {
-				elapsed = float64(time.Since(startFallback).Microseconds()) / 1000.0
+		} else {
+			// 3. Fallback: In-process TCP dial with socket binding
+			start := time.Now()
+			targetAddr := net.JoinHostPort(host, port)
+			dialer := &net.Dialer{
+				Timeout: dialTimeout,
+				Control: func(network, address string, c syscall.RawConn) error {
+					return c.Control(func(fd uintptr) {
+						if iface != "" {
+							_ = syscall.BindToDevice(int(fd), iface)
+						}
+					})
+				},
+			}
+			conn, errDial := dialer.Dial("tcp", targetAddr)
+			if errDial == nil {
+				elapsed = float64(time.Since(start).Microseconds()) / 1000.0
 				success = true
-				_ = connFb.Close()
-			}
-		}
-
-		// 3. Fallback: If in-process TCP dial failed, try ICMP ping command
-		if !success {
-			pingBin := getPingBinary()
-			var cmd *exec.Cmd
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			if iface != "" {
-				cmd = exec.CommandContext(ctx, pingBin, "-I", iface, "-c", "1", "-W", "2", host)
+				_ = conn.Close()
 			} else {
-				cmd = exec.CommandContext(ctx, pingBin, "-c", "1", "-W", "2", host)
-			}
-			out, err := cmd.CombinedOutput()
-			cancel()
-
-			if err == nil {
-				if lat, ok := parsePingOutput(string(out)); ok {
-					elapsed = lat
+				// Direct TCP dial without binding
+				startFb := time.Now()
+				connFb, errFb := net.DialTimeout("tcp", targetAddr, dialTimeout)
+				if errFb == nil {
+					elapsed = float64(time.Since(startFb).Microseconds()) / 1000.0
 					success = true
-				}
-			}
-
-			// If failed with specific iface, try without -I
-			if !success && iface != "" {
-				ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
-				out2, err2 := exec.CommandContext(ctx2, pingBin, "-c", "1", "-W", "2", host).CombinedOutput()
-				cancel2()
-				if err2 == nil {
-					if lat, ok := parsePingOutput(string(out2)); ok {
-						elapsed = lat
-						success = true
-					}
+					_ = connFb.Close()
 				}
 			}
 		}
+	}
+
+	if !success {
+		elapsed = 0
 	}
 
 	sample := PingSample{
 		Timestamp: time.Now().Unix(),
-		LatencyMs: elapsed,
+		LatencyMs: math.Round(elapsed*100) / 100,
 		Success:   success,
 	}
-
-	if !success {
-		sample.LatencyMs = 0
-	}
-
-	p.mu.Lock()
-	if len(p.samples) >= p.windowSize {
-		p.samples = p.samples[1:]
-	}
-	p.samples = append(p.samples, sample)
-	p.mu.Unlock()
-
-	// Record in-memory ping history point (Zero Flash Wear)
-	var latVal *float64
-	if sample.Success {
-		latVal = &sample.LatencyMs
-	}
-	loss := 0.0
-	if !sample.Success {
-		loss = 100.0
-	}
-
-	GetGlobalHistory().RecordPing(PingHistoryPoint{
-		Timestamp: sample.Timestamp,
-		LatencyMs: latVal,
-		AvgMs:     latVal,
-		MinMs:     latVal,
-		MaxMs:     latVal,
-		LossPct:   loss,
-		JitterMs:  nil,
-	})
 
 	return sample
 }
 
-// GetStats calculates summary metrics from recent window.
-func (p *PingProber) GetStats() PingStats {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	stats := PingStats{
-		Target:       p.target,
-		RecentPoints: make([]PingSample, len(p.samples)),
-	}
-	copy(stats.RecentPoints, p.samples)
-
-	if len(p.samples) == 0 {
-		return stats
-	}
-
-	var sum, minVal, maxVal float64
-	minVal = math.MaxFloat64
-	successCount := 0
-
-	for _, s := range p.samples {
-		if s.Success {
-			successCount++
-			sum += s.LatencyMs
-			if s.LatencyMs < minVal {
-				minVal = s.LatencyMs
-			}
-			if s.LatencyMs > maxVal {
-				maxVal = s.LatencyMs
-			}
-		}
-	}
-
-	total := len(p.samples)
-	lossCount := total - successCount
-	stats.LossPct = (float64(lossCount) / float64(total)) * 100.0
-
-	if successCount > 0 {
-		stats.AvgMs = sum / float64(successCount)
-		stats.MinMs = minVal
-		stats.MaxMs = maxVal
-		stats.CurrentMs = p.samples[total-1].LatencyMs
-
-		// Calculate RFC 3550 style Mean Absolute Difference Jitter
-		if successCount > 1 {
-			var diffSum float64
-			var prev float64
-			first := true
-			for _, s := range p.samples {
-				if s.Success {
-					if !first {
-						diffSum += math.Abs(s.LatencyMs - prev)
-					}
-					prev = s.LatencyMs
-					first = false
+// parsePingOutput parses standard ping CLI string output (kept for backward unit test compatibility).
+func parsePingOutput(out string) (float64, bool) {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "time=") {
+			idx := strings.Index(line, "time=")
+			sub := line[idx+5:]
+			fields := strings.Fields(sub)
+			if len(fields) > 0 {
+				valStr := strings.TrimSuffix(fields[0], "ms")
+				if val, err := strconv.ParseFloat(valStr, 64); err == nil {
+					return val, true
 				}
 			}
-			stats.JitterMs = diffSum / float64(successCount-1)
 		}
-	} else {
-		stats.MinMs = 0
-		stats.MaxMs = 0
-		stats.AvgMs = 0
-		stats.CurrentMs = 0
-		stats.JitterMs = 0
-	}
-
-	return stats
-}
-
-func (p *PingProber) loop() {
-	ticker := time.NewTicker(p.interval)
-	defer ticker.Stop()
-
-	// Initial probe immediately
-	p.ProbeOnce()
-
-	for {
-		select {
-		case <-p.stopCh:
-			return
-		case <-ticker.C:
-			p.ProbeOnce()
+		if strings.HasPrefix(line, "rtt min/avg/max/mdev = ") || strings.HasPrefix(line, "round-trip min/avg/max = ") {
+			parts := strings.Split(line, "=")
+			if len(parts) >= 2 {
+				valParts := strings.Split(strings.TrimSpace(parts[1]), "/")
+				if len(valParts) >= 2 {
+					if avg, err := strconv.ParseFloat(valParts[1], 64); err == nil {
+						return avg, true
+					}
+				}
+			}
 		}
 	}
+	return 0, false
 }

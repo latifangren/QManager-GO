@@ -30,6 +30,14 @@ This release delivers major performance breakthroughs, native POSIX syscall AT t
 * **Two-Way Polling Cadence Sync:** Added `/api/v1/system/polling` and `/cgi-bin/quecmanager/system/polling.sh` endpoints.
 * Frontend power modes (`Active: 1s`, `Balanced: 2s`, `Low Power: 5s`) dynamically adjust the backend telemetry poller timer on the fly to conserve CPU cycles when WebUI is backgrounded.
 
+### ⚡ Native In-Process Ping & Latency Probe (Zero Subprocess Forks)
+* **In-Process ICMP Raw Socket Engine:** Replaced frequent execution of `/bin/ping` subprocess with an in-process raw ICMP Echo (`SOCK_RAW`/`IPPROTO_ICMP`) probe engine (`internal/telemetry/ping.go`).
+* **Zero Fork Latency Metrics:** Sub-millisecond latency & jitter tracking without spawning external processes on modem CPU.
+
+### 🔌 Native MTU & Socket Syscall Engine
+* **Direct Linux IOCTL Syscall:** Replaced `ip link set dev ... mtu` with kernel-level `ioctl(SIOCSIFMTU)` (`internal/platform/net_linux.go` & `internal/api/handlers/network_mtu.go`).
+* **Atomic MTU Mutation:** Instantaneous MTU changes on `rmnet_data*` and `rmnet_ipa0` interfaces without spawning shell commands.
+
 ### 📨 Native Pure Go SMS & PDU Engine (Zero `sms_tool` Dependency)
 * **Zero Fork SMS Operations:** Replaced legacy execution of `sms_tool` child process with an in-process native 3GPP PDU/Text AT Engine (`internal/telemetry/sms_pdu.go`).
 * **GSM-7, 8-bit & UCS2 Decoders:** Native Go decoding for 7-bit packed GSM septets, alphanumeric sender names, 8-bit binary, and 16-bit UCS2/UTF-16.
