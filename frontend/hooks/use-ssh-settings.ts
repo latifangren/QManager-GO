@@ -112,7 +112,7 @@ export function useSSHSettings(): UseSSHSettingsReturn {
           toast.error("Failed to update SSH settings.");
           return false;
         }
-      } catch (err) {
+      } catch {
         toast.error("Network error while updating SSH settings.");
         return false;
       } finally {

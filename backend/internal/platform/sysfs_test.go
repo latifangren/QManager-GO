@@ -400,6 +400,33 @@ func TestGetOSVersion(t *testing.T) {
 	}
 }
 
+func TestIsTmpfsOrRamfs(t *testing.T) {
+	// 1. Test /tmp or temp dir
+	isRam, fsType, err := IsTmpfsOrRamfs("/tmp")
+	if err != nil {
+		t.Fatalf("unexpected error checking /tmp: %v", err)
+	}
+	if fsType == 0 {
+		t.Errorf("expected non-zero fsType, got 0")
+	}
+	t.Logf("/tmp isRam=%v, fsType=0x%x", isRam, fsType)
+
+	// 2. Test empty string defaults to /tmp
+	isRamDefault, fsTypeDefault, errDefault := IsTmpfsOrRamfs("")
+	if errDefault != nil {
+		t.Fatalf("unexpected error for empty string path: %v", errDefault)
+	}
+	if isRamDefault != isRam || fsTypeDefault != fsType {
+		t.Errorf("expected default empty path to match /tmp results")
+	}
+
+	// 3. Test non-existent path
+	_, _, err = IsTmpfsOrRamfs("/non_existent_path_xyz_99999")
+	if err == nil {
+		t.Errorf("expected error for non-existent path, got nil")
+	}
+}
+
 func TestGetStorageStats(t *testing.T) {
 	tmpDir := t.TempDir()
 

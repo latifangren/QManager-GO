@@ -30,7 +30,6 @@ import {
   CARD_PAD,
   CARD_SHELL,
   CARD_TITLE,
-  FOCUS_RING,
   GROUP_FILL,
   ROW_GROUP,
 } from "./shapes";

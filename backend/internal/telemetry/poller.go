@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -1244,7 +1246,65 @@ var statusBufPool = sync.Pool{
 	},
 }
 
+var (
+	statusWriteMu       sync.Mutex
+	lastStatusWriteTime time.Time
+	lastStatusHash      uint64
+	tmpfsVerified       bool
+	tmpfsCheckOnce      sync.Once
+)
+
+func isTmpfsLocation(path string) bool {
+	dir := filepath.Dir(path)
+	isRam, _, err := platform.IsTmpfsOrRamfs(dir)
+	if err != nil {
+		// Fallback to checking /tmp if direct statfs fails
+		isRam, _, _ = platform.IsTmpfsOrRamfs("/tmp")
+	}
+	return isRam
+}
+
 func writeStatusFile(path string, status *ModemStatus) error {
+	tmpfsCheckOnce.Do(func() {
+		tmpfsVerified = isTmpfsLocation(path)
+		if !tmpfsVerified {
+			log.Printf("⚠️  [ZERO FLASH WEAR] Target status directory for %s is NOT tmpfs/ramfs. Applying NAND flash write throttling (60s / on-change limit).", path)
+		}
+	})
+
+	statusWriteMu.Lock()
+	defer statusWriteMu.Unlock()
+
+	now := time.Now()
+
+	// If not mounted on tmpfs/ramfs (e.g. raw UBIFS flash), throttle writes:
+	// Only write if at least 60 seconds have passed or significant status changes occurred.
+	if !tmpfsVerified {
+		// Quick hash of key status attributes to detect actual changes
+		var hash uint64
+		if status != nil {
+			if status.Online {
+				hash |= 1
+			}
+			if status.Network.CAActive {
+				hash |= 2
+			}
+			hash ^= uint64(len(status.Band)) << 8
+			if status.Signal.RSRP != 0 {
+				hash ^= uint64(uint32(status.Signal.RSRP)) << 16
+			}
+			if status.Cell.PCID != 0 {
+				hash ^= uint64(uint32(status.Cell.PCID)) << 32
+			}
+		}
+
+		if now.Sub(lastStatusWriteTime) < 60*time.Second && hash == lastStatusHash {
+			return nil
+		}
+		lastStatusWriteTime = now
+		lastStatusHash = hash
+	}
+
 	buf := statusBufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer statusBufPool.Put(buf)

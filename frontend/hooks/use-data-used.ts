@@ -78,7 +78,7 @@ export function useDataUsed(): UseDataUsedReturn {
       // Fire an immediate refresh so the UI doesn't wait a full 2 s interval
       await fetchData();
       return true;
-    } catch (err) {
+    } catch {
       return false;
     } finally {
       if (mountedRef.current) {

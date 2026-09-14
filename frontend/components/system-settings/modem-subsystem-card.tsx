@@ -8,7 +8,7 @@ import {
   AlertTriangleIcon,
 } from "lucide-react";
 import { TbInfoCircleFilled } from "react-icons/tb";
-import { motion, type Variants } from "motion/react";
+import { motion } from "motion/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {

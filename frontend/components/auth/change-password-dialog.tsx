@@ -79,7 +79,7 @@ export function ChangePasswordDialog({
         setIsSubmitting(false);
       }
     },
-    [currentPassword, newPassword, confirmPassword, changePassword]
+    [currentPassword, newPassword, confirmPassword]
   );
 
   return (

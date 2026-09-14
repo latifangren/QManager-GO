@@ -26,7 +26,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Tag } from "@/components/ui/tag";
 import { cn } from "@/lib/utils";
 import { type ATCommandPreset } from "@/constants/at-commands";
 

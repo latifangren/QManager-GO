@@ -253,7 +253,7 @@ export function useCustomDns(): UseCustomDnsReturn {
         }
       }
     },
-    []
+    [fetchSettings]
   );
 
   // ---------------------------------------------------------------------------

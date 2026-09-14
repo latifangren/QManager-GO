@@ -82,6 +82,15 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 	fmt.Printf("📦 Detected Platform: Model=%s, SoC=%s, Serial=%s\n", identity.Model, identity.SoC, identity.Serial)
 	_ = platform.InitFirewallRules()
 
+	// 1b. Storage & Zero Flash Wear Guard
+	if isRam, fsType, err := platform.IsTmpfsOrRamfs("/tmp"); err != nil {
+		log.Printf("⚠️  Zero-Flash-Wear Guard: Failed to check /tmp filesystem type: %v", err)
+	} else if !isRam {
+		log.Printf("⚠️  [ZERO FLASH WEAR WARNING] /tmp is NOT on tmpfs/ramfs (fs_type=0x%x, UBIFS=0x24051905). Status writing will be throttled to prevent raw NAND flash wearout!", fsType)
+	} else {
+		log.Printf("🛡️  Zero-Flash-Wear Guard: /tmp verified on RAM-backed filesystem (type=0x%x)", fsType)
+	}
+
 	// 2. Configuration Store
 	confFilePath := filepath.Join(configDir, "qmanager.conf")
 	cfgMgr, err := config.NewManager(confFilePath)
