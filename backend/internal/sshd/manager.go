@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"qmanager/internal/config"
+	"qmanager/internal/platform"
 )
 
 // Manager coordinates the lifecycle of the SSH server daemon according to system config.
@@ -176,7 +177,7 @@ func (m *Manager) GetStatus() Status {
 func (m *Manager) saveAuthorizedKeysDisk(keys string) error {
 	_ = os.MkdirAll(m.keyDir, 0700)
 	keyFile := filepath.Join(m.keyDir, "authorized_keys")
-	return os.WriteFile(keyFile, []byte(strings.TrimSpace(keys)+"\n"), 0600)
+	return platform.AtomicWriteFile(keyFile, []byte(strings.TrimSpace(keys)+"\n"), 0600)
 }
 
 func (m *Manager) readAuthorizedKeysDisk() string {

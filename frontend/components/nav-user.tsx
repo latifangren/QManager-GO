@@ -147,10 +147,44 @@ export function NavUser() {
     }
     const reader = new FileReader();
     reader.onload = () => {
-      const base64 = reader.result as string;
-      localStorage.setItem("qm_display_avatar", base64);
-      setAvatarSrc(base64);
-      toast.success("Profile photo updated.");
+      const img = new Image();
+      img.onload = () => {
+        const MAX_SIZE = 96;
+        let { width, height } = img;
+        if (width > MAX_SIZE || height > MAX_SIZE) {
+          if (width > height) {
+            height = Math.round((height * MAX_SIZE) / width);
+            width = MAX_SIZE;
+          } else {
+            width = Math.round((width * MAX_SIZE) / height);
+            height = MAX_SIZE;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, width);
+        canvas.height = Math.max(1, height);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          toast.error("Failed to process image.");
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        try {
+          const resizedBase64 = canvas.toDataURL("image/webp", 0.85);
+          localStorage.setItem("qm_display_avatar", resizedBase64);
+          setAvatarSrc(resizedBase64);
+          toast.success("Profile photo updated.");
+        } catch {
+          toast.error("Failed to save profile photo.");
+        }
+      };
+      img.onerror = () => {
+        toast.error("Failed to load image.");
+      };
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => {
+      toast.error("Failed to read image file.");
     };
     reader.readAsDataURL(file);
     // Reset so same file can be re-selected

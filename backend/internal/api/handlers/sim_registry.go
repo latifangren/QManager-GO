@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
+	"qmanager/internal/platform"
 	"qmanager/internal/telemetry"
 )
 
@@ -185,12 +185,9 @@ func (h *SimRegistryHandler) loadLocked() []KnownSIMEntry {
 }
 
 func (h *SimRegistryHandler) saveLocked(sims []KnownSIMEntry) error {
-	dir := filepath.Dir(h.path)
-	_ = os.MkdirAll(dir, 0755)
-
 	data, err := json.MarshalIndent(sims, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(h.path, data, 0644)
+	return platform.AtomicWriteFile(h.path, data, 0644)
 }

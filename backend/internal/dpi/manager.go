@@ -226,9 +226,8 @@ func (m *Manager) SaveConfig(c Config) error {
 // EnsureHostlistFile ensures /etc/qmanager/dpi_hostlist.txt exists with default domains if empty.
 func EnsureHostlistFile() {
 	if _, err := os.Stat(DPIHostlistFile); os.IsNotExist(err) {
-		_ = os.MkdirAll(filepath.Dir(DPIHostlistFile), 0755)
 		content := strings.Join(DefaultHostlist, "\n") + "\n"
-		_ = os.WriteFile(DPIHostlistFile, []byte(content), 0644)
+		_ = platform.AtomicWriteFile(DPIHostlistFile, []byte(content), 0644)
 	}
 }
 
@@ -255,16 +254,8 @@ func ReadHostlist() []string {
 
 // WriteHostlist updates the hostlist file atomically.
 func WriteHostlist(domains []string) error {
-	dir := filepath.Dir(DPIHostlistFile)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
 	content := strings.Join(domains, "\n") + "\n"
-	tmpFile := fmt.Sprintf("%s.tmp.%d", DPIHostlistFile, time.Now().UnixNano())
-	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmpFile, DPIHostlistFile)
+	return platform.AtomicWriteFile(DPIHostlistFile, []byte(content), 0644)
 }
 
 // ApplyIptablesRule inserts REDIRECT rule for bridge0 LAN on ports 80 & 443.

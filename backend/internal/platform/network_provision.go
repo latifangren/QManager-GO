@@ -266,6 +266,8 @@ func ensureQCMAPWWANBackhaul() {
 		// Replace bt-pan or eth with wwan
 		s = strings.ReplaceAll(s, "<FirstPreferredBackhaul>bt-pan</FirstPreferredBackhaul>", "<FirstPreferredBackhaul>wwan</FirstPreferredBackhaul>")
 		s = strings.ReplaceAll(s, "<FirstPreferredBackhaul>eth</FirstPreferredBackhaul>", "<FirstPreferredBackhaul>wwan</FirstPreferredBackhaul>")
-		_ = os.WriteFile(p, []byte(s), 0644)
+		if s != string(content) {
+			_ = os.WriteFile(p, []byte(s), 0644)
+		}
 	}
 }

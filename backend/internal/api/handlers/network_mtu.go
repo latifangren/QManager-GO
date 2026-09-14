@@ -108,8 +108,7 @@ func (h *NetworkMTUHandler) SetMTU(w http.ResponseWriter, r *http.Request) {
 
 	// Persist to firewall file
 	content := fmt.Sprintf("#!/bin/sh\n# QManager custom MTU config\nif [ -e /sys/class/net/rmnet_ipa0 ]; then\n  ip link set dev rmnet_ipa0 mtu %d 2>/dev/null || true\nfi\nfor iface in /sys/class/net/rmnet_data*; do\n  [ -e \"$iface\" ] || continue\n  ip link set dev $(basename \"$iface\") mtu %d 2>/dev/null || true\ndone\n", mtuVal, mtuVal)
-	_ = os.MkdirAll(filepath.Dir(mtuFirewallFile), 0755)
-	_ = os.WriteFile(mtuFirewallFile, []byte(content), 0755)
+	_ = platform.AtomicWriteFile(mtuFirewallFile, []byte(content), 0755)
 
 	// Apply immediately to interfaces using Native Syscall
 	_ = applyMTUToInterfaces(mtuVal)

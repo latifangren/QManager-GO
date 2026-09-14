@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -220,10 +219,9 @@ func readIPPTConfig() IPPassthroughConfig {
 }
 
 func writeIPPTConfig(c IPPassthroughConfig) error {
-	_ = os.MkdirAll(filepath.Dir(ipptConfigPath), 0755)
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(ipptConfigPath, data, 0644)
+	return platform.AtomicWriteFile(ipptConfigPath, data, 0644)
 }

@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 
 	"qmanager/internal/atengine"
+	"qmanager/internal/platform"
 )
 
 const (
@@ -106,12 +106,11 @@ func (h *TowerScheduleHandler) loadConfig() TowerConfig {
 }
 
 func (h *TowerScheduleHandler) saveConfig(cfg TowerConfig) error {
-	_ = os.MkdirAll(filepath.Dir(h.configPath), 0755)
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(h.configPath, data, 0644)
+	return platform.AtomicWriteFile(h.configPath, data, 0644)
 }
 
 // Status handles GET /api/v1/cellular/tower/status and GET /cgi-bin/quecmanager/tower/status.sh

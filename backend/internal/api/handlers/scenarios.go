@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"qmanager/internal/atengine"
+	"qmanager/internal/platform"
 )
 
 var (
@@ -78,11 +79,10 @@ func (h *ScenarioHandler) getActiveScenarioID() string {
 }
 
 func (h *ScenarioHandler) setActiveScenarioID(id string) error {
-	_ = os.MkdirAll(filepath.Dir(h.activeScenarioPath), 0755)
 	if id == "" {
 		id = "balanced"
 	}
-	return os.WriteFile(h.activeScenarioPath, []byte(id), 0644)
+	return platform.AtomicWriteFile(h.activeScenarioPath, []byte(id), 0644)
 }
 
 // Builtin scenarios
@@ -204,7 +204,7 @@ func (h *ScenarioHandler) Save(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := platform.AtomicWriteFile(path, data, 0644); err != nil {
 		Error(w, http.StatusInternalServerError, "Failed to write scenario file")
 		return
 	}
