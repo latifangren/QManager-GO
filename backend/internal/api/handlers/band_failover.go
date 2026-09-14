@@ -3,8 +3,19 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"sync"
+
+	"qmanager/internal/platform"
 )
+
+var defaultBandFailoverConfigPath = "/etc/qmanager/band_failover.json"
+
+// BandFailoverConfig represents the persisted failover configuration.
+type BandFailoverConfig struct {
+	Enabled       bool     `json:"enabled"`
+	FailoverBands []string `json:"failover_bands"`
+}
 
 // BandFailoverHandler handles band failover status and toggle.
 type BandFailoverHandler struct {
@@ -13,16 +24,74 @@ type BandFailoverHandler struct {
 	activated      bool
 	watcherRunning bool
 	failoverBands  []string
+	configPath     string
 }
 
 // NewBandFailoverHandler creates a new BandFailoverHandler.
 func NewBandFailoverHandler() *BandFailoverHandler {
-	return &BandFailoverHandler{
+	h := &BandFailoverHandler{
 		enabled:        false,
 		activated:      false,
 		watcherRunning: false,
 		failoverBands:  []string{"B3", "B1", "B7"},
+		configPath:     defaultBandFailoverConfigPath,
 	}
+	h.loadConfigLocked()
+	return h
+}
+
+func (h *BandFailoverHandler) loadConfigLocked() {
+	if h.configPath == "" {
+		return
+	}
+	data, err := os.ReadFile(h.configPath)
+	if err != nil {
+		return
+	}
+	var cfg BandFailoverConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return
+	}
+	h.enabled = cfg.Enabled
+	if cfg.FailoverBands != nil {
+		h.failoverBands = cfg.FailoverBands
+	}
+	// Note: activated and watcherRunning are strictly volatile in RAM.
+}
+
+func (h *BandFailoverHandler) saveConfigLocked() error {
+	if h.configPath == "" {
+		return nil
+	}
+	cfg := BandFailoverConfig{
+		Enabled:       h.enabled,
+		FailoverBands: h.failoverBands,
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return platform.AtomicWriteFile(h.configPath, data, 0644)
+}
+
+// SetStoragePath sets custom config path for testing.
+func (h *BandFailoverHandler) SetStoragePath(path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.configPath = path
+}
+
+// SetConfigPath sets custom config path for testing (alias for SetStoragePath).
+func (h *BandFailoverHandler) SetConfigPath(path string) {
+	h.SetStoragePath(path)
+}
+
+// LoadConfig reloads the configuration from disk.
+func (h *BandFailoverHandler) LoadConfig() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.loadConfigLocked()
+	return nil
 }
 
 // GetState returns the current failover state.
@@ -53,6 +122,7 @@ func (h *BandFailoverHandler) SetEnabled(enabled bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.enabled = enabled
+	_ = h.saveConfigLocked()
 }
 
 // SetActivated updates the activated state.
@@ -97,6 +167,8 @@ func (h *BandFailoverHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	} else {
 		h.enabled = !h.enabled
 	}
+
+	_ = h.saveConfigLocked()
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,

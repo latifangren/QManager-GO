@@ -4,23 +4,36 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
 
+	"qmanager/internal/platform"
 	"qmanager/internal/telemetry"
 )
+
+var defaultTTLConfigPath = "/etc/qmanager/ttl_config.json"
+
+// TTLConfig represents the persisted TTL/HL configuration.
+type TTLConfig struct {
+	TTL       int  `json:"ttl"`
+	HL        int  `json:"hl"`
+	AutoStart bool `json:"autostart"`
+}
 
 // CommandRunner executes system commands.
 type CommandRunner func(name string, arg ...string) error
 
 // NetworkHandler manages network settings, DNS, TTL, and latency prober.
 type NetworkHandler struct {
-	prober *telemetry.PingProber
-	mu     sync.RWMutex
-	ttl    int
-	hl     int
-	runner CommandRunner
+	prober     *telemetry.PingProber
+	mu         sync.RWMutex
+	ttl        int
+	hl         int
+	autoStart  bool
+	configPath string
+	runner     CommandRunner
 }
 
 // NewNetworkHandler creates a NetworkHandler.
@@ -31,12 +44,77 @@ func NewNetworkHandler(prober *telemetry.PingProber, runner ...CommandRunner) *N
 	if len(runner) > 0 && runner[0] != nil {
 		r = runner[0]
 	}
-	return &NetworkHandler{
-		prober: prober,
-		ttl:    64,
-		hl:     64,
-		runner: r,
+	h := &NetworkHandler{
+		prober:     prober,
+		ttl:        64,
+		hl:         64,
+		autoStart:  false,
+		configPath: defaultTTLConfigPath,
+		runner:     r,
 	}
+	h.loadConfigAndApplyLocked()
+	return h
+}
+
+func (h *NetworkHandler) loadConfigAndApplyLocked() {
+	if h.configPath == "" {
+		return
+	}
+	data, err := os.ReadFile(h.configPath)
+	if err != nil {
+		return
+	}
+	var cfg TTLConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return
+	}
+	h.ttl = cfg.TTL
+	h.hl = cfg.HL
+	h.autoStart = cfg.AutoStart
+
+	// If TTL > 0 or HL > 0, re-apply the iptables mangle rules automatically.
+	if h.ttl > 0 {
+		_ = h.runner("iptables", "-t", "mangle", "-A", "POSTROUTING", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", h.ttl))
+	}
+	if h.hl > 0 {
+		_ = h.runner("ip6tables", "-t", "mangle", "-A", "POSTROUTING", "-j", "HL", "--hl-set", fmt.Sprintf("%d", h.hl))
+	}
+}
+
+func (h *NetworkHandler) saveConfigLocked() error {
+	if h.configPath == "" {
+		return nil
+	}
+	cfg := TTLConfig{
+		TTL:       h.ttl,
+		HL:        h.hl,
+		AutoStart: h.autoStart,
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return platform.AtomicWriteFile(h.configPath, data, 0644)
+}
+
+// SetStoragePath sets custom config path for testing.
+func (h *NetworkHandler) SetStoragePath(path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.configPath = path
+}
+
+// SetConfigPath sets custom config path for testing (alias for SetStoragePath).
+func (h *NetworkHandler) SetConfigPath(path string) {
+	h.SetStoragePath(path)
+}
+
+// LoadConfig reloads the configuration from configPath.
+func (h *NetworkHandler) LoadConfig() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.loadConfigAndApplyLocked()
+	return nil
 }
 
 // SetCommandRunner overrides the command runner (e.g. for testing).
@@ -59,21 +137,23 @@ func (h *NetworkHandler) GetTTL(w http.ResponseWriter, r *http.Request) {
 	h.mu.RLock()
 	ttl := h.ttl
 	hl := h.hl
+	autoStart := h.autoStart
 	h.mu.RUnlock()
 
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"success":    true,
 		"ttl":        ttl,
 		"hl":         hl,
-		"is_enabled": ttl > 0,
-		"autostart":  false,
+		"is_enabled": ttl > 0 || hl > 0,
+		"autostart":  autoStart,
 	})
 }
 
 type SetTTLRequest struct {
-	TTL  int    `json:"ttl"`
-	HL   int    `json:"hl"`
-	Mode string `json:"mode"` // "static" or "custom"
+	TTL       int    `json:"ttl"`
+	HL        int    `json:"hl"`
+	Mode      string `json:"mode"` // "static" or "custom"
+	AutoStart *bool  `json:"autostart,omitempty"`
 }
 
 // SetTTL applies TTL mangling rules using iptables.
@@ -101,6 +181,8 @@ func (h *NetworkHandler) SetTTL(w http.ResponseWriter, r *http.Request) {
 		h.mu.Lock()
 		h.ttl = 0
 		h.hl = 0
+		h.autoStart = false
+		_ = h.saveConfigLocked()
 		h.mu.Unlock()
 
 		JSON(w, http.StatusOK, map[string]interface{}{
@@ -108,6 +190,7 @@ func (h *NetworkHandler) SetTTL(w http.ResponseWriter, r *http.Request) {
 			"ttl":        0,
 			"hl":         0,
 			"is_enabled": false,
+			"autostart":  false,
 			"message":    "TTL rules disabled",
 		})
 		return
@@ -130,6 +213,13 @@ func (h *NetworkHandler) SetTTL(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	h.ttl = req.TTL
 	h.hl = hl
+	if req.AutoStart != nil {
+		h.autoStart = *req.AutoStart
+	} else {
+		h.autoStart = true
+	}
+	_ = h.saveConfigLocked()
+	autoStart := h.autoStart
 	h.mu.Unlock()
 
 	JSON(w, http.StatusOK, map[string]interface{}{
@@ -137,6 +227,7 @@ func (h *NetworkHandler) SetTTL(w http.ResponseWriter, r *http.Request) {
 		"ttl":        req.TTL,
 		"hl":         hl,
 		"is_enabled": true,
+		"autostart":  autoStart,
 		"message":    "TTL applied successfully",
 	})
 }
