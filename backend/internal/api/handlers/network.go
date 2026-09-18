@@ -74,10 +74,10 @@ func (h *NetworkHandler) loadConfigAndApplyLocked() {
 
 	// If TTL > 0 or HL > 0, re-apply the iptables mangle rules automatically.
 	if h.ttl > 0 {
-		_ = h.runner("iptables", "-t", "mangle", "-A", "POSTROUTING", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", h.ttl))
+		_ = h.runner("iptables", "-t", "mangle", "-A", "POSTROUTING", "-o", "rmnet+", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", h.ttl))
 	}
 	if h.hl > 0 {
-		_ = h.runner("ip6tables", "-t", "mangle", "-A", "POSTROUTING", "-j", "HL", "--hl-set", fmt.Sprintf("%d", h.hl))
+		_ = h.runner("ip6tables", "-t", "mangle", "-A", "POSTROUTING", "-o", "rmnet+", "-j", "HL", "--hl-set", fmt.Sprintf("%d", h.hl))
 	}
 }
 
@@ -171,9 +171,11 @@ func (h *NetworkHandler) SetTTL(w http.ResponseWriter, r *http.Request) {
 
 	// Delete previous iptables rules if previously set
 	if prevTTL > 0 {
+		_ = h.runner("iptables", "-t", "mangle", "-D", "POSTROUTING", "-o", "rmnet+", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", prevTTL))
 		_ = h.runner("iptables", "-t", "mangle", "-D", "POSTROUTING", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", prevTTL))
 	}
 	if prevHL > 0 {
+		_ = h.runner("ip6tables", "-t", "mangle", "-D", "POSTROUTING", "-o", "rmnet+", "-j", "HL", "--hl-set", fmt.Sprintf("%d", prevHL))
 		_ = h.runner("ip6tables", "-t", "mangle", "-D", "POSTROUTING", "-j", "HL", "--hl-set", fmt.Sprintf("%d", prevHL))
 	}
 
@@ -202,13 +204,13 @@ func (h *NetworkHandler) SetTTL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Apply iptables TTL mangle rule (IPv4)
-	if err := h.runner("iptables", "-t", "mangle", "-A", "POSTROUTING", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", req.TTL)); err != nil {
+	if err := h.runner("iptables", "-t", "mangle", "-A", "POSTROUTING", "-o", "rmnet+", "-j", "TTL", "--ttl-set", fmt.Sprintf("%d", req.TTL)); err != nil {
 		Error(w, http.StatusInternalServerError, fmt.Sprintf("Failed to set TTL via iptables: %v", err))
 		return
 	}
 
 	// Apply ip6tables HL mangle rule (IPv6)
-	_ = h.runner("ip6tables", "-t", "mangle", "-A", "POSTROUTING", "-j", "HL", "--hl-set", fmt.Sprintf("%d", hl))
+	_ = h.runner("ip6tables", "-t", "mangle", "-A", "POSTROUTING", "-o", "rmnet+", "-j", "HL", "--hl-set", fmt.Sprintf("%d", hl))
 
 	h.mu.Lock()
 	h.ttl = req.TTL

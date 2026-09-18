@@ -250,10 +250,10 @@ func TestTTLConfig_PersistenceAndReboot(t *testing.T) {
 	if len(rebootCmds) < 2 {
 		t.Fatalf("expected at least 2 iptables commands on reboot, got %d: %v", len(rebootCmds), rebootCmds)
 	}
-	if !strings.Contains(rebootCmds[0], "iptables -t mangle -A POSTROUTING -j TTL --ttl-set 65") {
+	if !strings.Contains(rebootCmds[0], "iptables -t mangle -A POSTROUTING -o rmnet+ -j TTL --ttl-set 65") {
 		t.Errorf("expected iptables rule re-applied, got: %s", rebootCmds[0])
 	}
-	if !strings.Contains(rebootCmds[1], "ip6tables -t mangle -A POSTROUTING -j HL --hl-set 65") {
+	if !strings.Contains(rebootCmds[1], "ip6tables -t mangle -A POSTROUTING -o rmnet+ -j HL --hl-set 65") {
 		t.Errorf("expected ip6tables rule re-applied, got: %s", rebootCmds[1])
 	}
 

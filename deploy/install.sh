@@ -63,6 +63,8 @@ echo "📦 Detected Platform: Model=${MODEL}, SoC=${SOC}, Arch=${ARCH}"
 
 # 2. Stop legacy web servers & daemons if running
 echo "==> Stopping legacy services (lighttpd, dropbear, bash pollers, previous qmanager)..."
+systemctl stop bridge-eth0 dnsmasq 2>/dev/null || true
+systemctl disable bridge-eth0 2>/dev/null || true
 systemctl stop lighttpd dropbear qmanager-poller qmanager-ping qmanager-watchcat \
     qmanager-firewall qmanager-setup qmanager-cfun-fix qmanager-console \
     qmanager-ethernet qmanager-imei-check qmanager-mtu qmanager-tower-failover \
@@ -88,6 +90,7 @@ rm -f /lib/systemd/system/sysinit.target.wants/dropbear.service \
       /etc/systemd/system/multi-user.target.wants/lighttpd.service 2>/dev/null || true
 rm -f /lib/systemd/system/qmanager-* /lib/systemd/system/lighttpd.service 2>/dev/null || true
 rm -f /etc/systemd/system/qmanager-* /etc/systemd/system/lighttpd.service 2>/dev/null || true
+rm -f /lib/systemd/system/bridge-eth0.service /etc/systemd/system/bridge-eth0.service /lib/systemd/system/dnsmasq.service /etc/systemd/system/dnsmasq.service 2>/dev/null || true
 rm -f /opt/etc/init.d/S80lighttpd 2>/dev/null || true
 rm -rf /opt/etc/lighttpd 2>/dev/null || true
 rm -f /usr/bin/qmanager_* 2>/dev/null || true

@@ -55,6 +55,11 @@ func TestNewDefaultConfig(t *testing.T) {
 	if cfg.Update.IncludePrerelease != 1 || cfg.Update.AutoUpdateEnabled != 0 || cfg.Update.AutoUpdateTime != "03:00" {
 		t.Errorf("unexpected update config: %+v", cfg.Update)
 	}
+
+	// Verify Network defaults
+	if cfg.Network.AutoProvisionLAN != 0 {
+		t.Errorf("expected Network.AutoProvisionLAN=0, got %d", cfg.Network.AutoProvisionLAN)
+	}
 }
 
 func TestNewManager_AutoCreateDefault(t *testing.T) {

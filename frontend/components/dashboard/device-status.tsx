@@ -20,6 +20,7 @@ import { TickGroup } from "@/components/ui/tick-group";
 import { staggerRows, staggerRowItem } from "@/lib/motion";
 
 import { formatUptime, type DeviceStatus } from "@/types/modem-status";
+import type { IPAAcceleration } from "@/types/about-device";
 import packageJson from "@/package.json";
 
 import {
@@ -52,6 +53,7 @@ interface DeviceStatusComponentProps {
   modemReachable: boolean;
   lanGateway?: string;
   publicIp?: string;
+  acceleration?: IPAAcceleration;
 }
 
 /**
@@ -141,6 +143,7 @@ const DeviceStatusComponent = ({
   modemReachable,
   lanGateway,
   publicIp,
+  acceleration,
 }: DeviceStatusComponentProps) => {
   const { t } = useTranslation("dashboard");
   const [hidePrivate, setHidePrivate] = useState(false);
@@ -192,6 +195,16 @@ const DeviceStatusComponent = ({
     },
     { label: t("device_status.lan_gateway"), value: lanGateway || ABSENT, mono: true },
     { label: t("device_status.public_ip", "Public IP"), value: publicIp || ABSENT, mono: true },
+    {
+      label: t("device_status.hardware_acceleration", "Hardware Acceleration"),
+      value: !acceleration?.supported
+        ? "Software (Generic)"
+        : acceleration.active
+        ? "Hardware (IPA)"
+        : "Software (Alert: IPA Off!)",
+      mono: true,
+      alert: acceleration?.supported && !acceleration.active,
+    },
     {
       label: t("device_status.qmanager_version"),
       value: packageJson.version,
@@ -342,6 +355,7 @@ const DeviceStatusComponent = ({
                         ROW.VALUE,
                         "shrink-0 text-right",
                         row.mono && "font-mono",
+                        row.alert && "text-destructive font-bold",
                       )}
                     >
                       <TickingValue value={display}>{display}</TickingValue>

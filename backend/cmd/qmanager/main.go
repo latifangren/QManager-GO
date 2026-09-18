@@ -164,9 +164,13 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 	}()
 
 	// 8. Self-Healing LAN & Network Provisioning
-	netProvisioner := platform.NewNetworkProvisioner(cfgMgr)
-	netProvisioner.Start()
-	defer netProvisioner.Stop()
+	if cfgMgr.Get().Network.AutoProvisionLAN == 1 {
+		netProvisioner := platform.NewNetworkProvisioner(cfgMgr)
+		netProvisioner.Start()
+		defer netProvisioner.Stop()
+	} else {
+		log.Println("🌐 [LAN-Provision] Native Qualcomm QCMAP & IPACM hardware offload is preserved (AutoProvisionLAN=0)")
+	}
 
 	// 9. Router & Server
 	appServices := router.AppServices{

@@ -74,6 +74,7 @@
     "lte_category": "LTE 類別",
     "active_mimo": "活動 MIMO",
     "lan_gateway": "LAN 閘道器",
+    "hardware_acceleration": "硬體加速",
     "qmanager_version": "QManager 版本"
   },
   "metrics": {

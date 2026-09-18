@@ -4,6 +4,14 @@
 // Response shape for GET /cgi-bin/quecmanager/device/about.sh
 // =============================================================================
 
+export interface IPAAcceleration {
+  supported: boolean;
+  active: boolean;
+  driver: string;
+  daemon: string;
+  offload: string;
+}
+
 export interface AboutDeviceResponse {
   success: boolean;
   device: {
@@ -30,6 +38,7 @@ export interface AboutDeviceResponse {
     kernel_version: string;
     openwrt_version: string;
   };
+  acceleration?: IPAAcceleration;
   error?: string;
 }
 
@@ -38,4 +47,5 @@ export interface AboutDeviceData {
   threeGppRelease: AboutDeviceResponse["3gpp_release"];
   network: AboutDeviceResponse["network"];
   system: AboutDeviceResponse["system"];
+  acceleration?: IPAAcceleration;
 }

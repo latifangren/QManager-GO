@@ -11,9 +11,10 @@ Panduan referensi teknis dan penanganan masalah (*troubleshooting*) untuk **QMan
 4. [Web Console Native (PTY WebSocket)](#4-web-console-native-pty-websocket)
 5. [Tailscale VPN (Modul On-Demand)](#5-tailscale-vpn-modul-on-demand)
 6. [Akses SSH & Manajemen Password](#6-akses-ssh--manajemen-password)
-7. [Diagnostik Sinyal Seluler, Band Lock & Cell Lock](#7-diagnostik-sinyal-seluler-band-lock--cell-lock)
-8. [Keamanan Flash NAND, Kebijakan RAM-First & Pembersihan](#8-keamanan-flash-nand-kebijakan-ram-first--pembersihan)
-9. [Support Diagnostics Bundle & Laporan Bug](#9-support-diagnostics-bundle--laporan-bug)
+7. [Self-Healing LAN & Gateway Provisioning](#7-self-healing-lan--gateway-provisioning)
+8. [Diagnostik Sinyal Seluler, Band Lock & Cell Lock](#8-diagnostik-sinyal-seluler-band-lock--cell-lock)
+9. [Keamanan Flash NAND, Kebijakan RAM-First & Pembersihan](#9-keamanan-flash-nand-kebijakan-ram-first--pembersihan)
+10. [Support Diagnostics Bundle & Laporan Bug](#10-support-diagnostics-bundle--laporan-bug)
 
 ---
 
@@ -43,6 +44,16 @@ PORT=80 GOMEMLIMIT=30MiB /usrdata/qmanager/qmanager
 ```
 
 ### 🔹 Masalah Umum & Solusi Startup
+* **Modem Restart Berulang Kali saat Beban 5G Tinggi atau Proses Init Hang 100% CPU:**
+  * **Gejala:** Modem reboot berulang kali saat throughput 5G tinggi atau speed test, atau proses boot systemd init hang dengan penggunaan CPU 100%.
+  * **Penyebab:** Akselerator hardware Qualcomm IP Accelerator (IPA / IPACM) nonaktif akibat konflik service bridge manual (seperti `bridge-eth0.service`) atau konfigurasi `dnsmasq.service` kustom yang bentrok dengan Qualcomm QCMAP / IPACM bawaan. Tanpa akselerasi hardware, seluruh paket 5G di-routing via software di CPU single-core Cortex-A7 sehingga memicu CPU starvation, watchdog reboot, dan deadlock init.
+  * **Solusi:** Pada QManager-GO v1.2.1, QManager tidak bentrok dengan QCMAP/IPACM (`AutoProvisionLAN=0` secara default). Jalankan `./install.sh` untuk membersihkan unit usang (`bridge-eth0.service`, `dnsmasq.service`). Pastikan konfigurasi AT standar baseband Qualcomm aktif:
+    ```text
+    AT+QCFG="data_interface",1,0
+    AT+QCFG="pcie/mode",1
+    AT+QETH="eth_driver","r8125",1
+    ```
+    Verifikasi status hardware acceleration melalui `/api/v1/system/info` (atau WebUI): `acceleration.offload` bernilai `"hardware"` dengan daemon `"ipacm_perf"` atau `"ipacm"`.
 * **Address already in use (Port 80 Konflik):**
   Pastikan webserver lama (seperti `lighttpd`, `nginx`, atau `uhttpd`) sudah dimatikan:
   ```sh
@@ -198,12 +209,12 @@ sed -i "s|^root:[^:]*|root:${NEW_HASH}|" /etc/shadow
 
 ## 7. Self-Healing LAN & Gateway Provisioning
 
-QManager-GO memiliki modul *Zero-Touch Network Provisioner* yang memastikan port LAN Ethernet (`eth0`) dan DHCP server (`dnsmasq`) selalu siap pakai tanpa perlu konfigurasi manual setelah modem di-reset.
+Secara default di v1.2.1, QManager-GO membiarkan Qualcomm QCMAP dan IPACM mengelola `bridge0` dan DHCP secara native (`AutoProvisionLAN=0`) agar akselerasi hardware 5G bekerja optimal. Jika Anda mengaktifkan override manual (`AutoProvisionLAN=1`), modul *Zero-Touch Network Provisioner* akan memantau interface LAN dan bridge.
 
-### 🔹 Fitur Jaringan Otomatis:
+### 🔹 Fitur Jaringan Otomatis (Saat AutoProvisionLAN=1):
 - **Bridge Otomatis:** Membuat `bridge0` dan mendaftarkan `eth0` sebagai anggota.
 - **Anti Link-Local Collision:** Otomatis membersihkan IP liar `169.254.x.x` dari `eth0`.
-- **DHCP Server Auto-Config:** Menulis `/etc/dnsmasq.conf` dan memastikan service `dnsmasq` aktif membagikan IP (`192.168.225.20 - 192.168.225.100`).
+- **DHCP Server Auto-Config:** Menulis `/etc/dnsmasq.conf` (hanya jika Qualcomm dnsmasq tidak berjalan) untuk alokasi IP (`192.168.225.20 - 192.168.225.100`).
 - **Dual HTTP & HTTPS:** Port 80 dan 443 aktif bersamaan dengan auto self-signed certificate ECDSA P-256 (`https://192.168.225.1`).
 
 ### 🔹 Troubleshooting Jaringan LAN:
@@ -212,16 +223,16 @@ Jika PC tidak mendapatkan IP dari kabel LAN:
 # 1. Periksa interface bridge0 dan IP
 ip addr show bridge0
 
-# 2. Periksa status DHCP server (dnsmasq)
-systemctl status dnsmasq
+# 2. Periksa status proses dnsmasq QCMAP
+ps | grep dnsmasq
 
-# 3. Restart manual jika diperlukan
-systemctl restart dnsmasq
+# 3. Periksa status akselerasi hardware IPA
+curl -s http://127.0.0.1/api/v1/system/info | jq .acceleration
 ```
 
 ---
 
-## 7. Diagnostik Sinyal Seluler, Band Lock & Cell Lock
+## 8. Diagnostik Sinyal Seluler, Band Lock & Cell Lock
 
 ### 🔹 Membuka Kuncian Cell Lock yang Tersangkut:
 Jika Anda mengunci modem ke tower/PCI yang tiba-tiba mati atau tidak terjangkau, sinyal modem akan hilang (*No Service*).
@@ -248,7 +259,7 @@ AT+QNWPREFCFG="nr5g_disable_mode",0
 
 ---
 
-## 8. Keamanan Flash NAND, Kebijakan RAM-First & Pembersihan
+## 9. Keamanan Flash NAND, Kebijakan RAM-First & Pembersihan
 
 ### 🔹 Pencegahan Flash Wear (Ketahanan Memori)
 Seluruh metrik polling, data grafik sinyal, log ring buffer, dan cache latency berjalan di RAM (`tmpfs` / `/tmp`). Penulisan permanen ke `/etc/qmanager/` hanya terjadi saat user menekan tombol simpan perubahan.
@@ -265,7 +276,7 @@ rm -rf /usrdata/qmanager/console \
 
 ---
 
-## 9. Support Diagnostics Bundle & Laporan Bug
+## 10. Support Diagnostics Bundle & Laporan Bug
 
 1. Buka menu **System Settings > Health Check** di WebUI.
 2. Tunggu hingga 26 probe diagnostik selesai diuji.

@@ -57,7 +57,7 @@ type SSHConfig struct {
 
 // NetworkConfig holds LAN provisioning and gateway settings.
 type NetworkConfig struct {
-	AutoProvisionLAN int    `json:"auto_provision_lan"` // 1 = auto provision bridge & DHCP, 0 = disabled
+	AutoProvisionLAN int    `json:"auto_provision_lan"` // 0 = disabled (default, lets Qualcomm QCMAP & IPACM orchestrate LAN/bridge natively), 1 = manual override
 	GatewayIP        string `json:"gateway_ip"`          // default "192.168.225.1"
 	SubnetMask       string `json:"subnet_mask"`         // default "255.255.255.0"
 	DHCPStart        string `json:"dhcp_start"`          // default "192.168.225.20"
@@ -119,7 +119,7 @@ func NewDefaultConfig() Config {
 			AuthorizedKeys: "",
 		},
 		Network: NetworkConfig{
-			AutoProvisionLAN: 1,
+			AutoProvisionLAN: 0,
 			GatewayIP:        "192.168.225.1",
 			SubnetMask:       "255.255.255.0",
 			DHCPStart:        "192.168.225.20",

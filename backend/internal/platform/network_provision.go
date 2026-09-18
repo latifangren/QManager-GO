@@ -15,7 +15,6 @@ import (
 
 const (
 	defaultDnsmasqConf = "/etc/dnsmasq.conf"
-	defaultDnsmasqUnit = "/lib/systemd/system/dnsmasq.service"
 )
 
 // NetworkProvisioner coordinates zero-touch LAN setup and self-healing bridge on Quectel devices.
@@ -36,6 +35,12 @@ func NewNetworkProvisioner(cfgMgr *config.Manager) *NetworkProvisioner {
 
 // Start boots the background self-healing provisioner loop.
 func (np *NetworkProvisioner) Start() {
+	c := np.cfgMgr.Get()
+	if c.Network.AutoProvisionLAN != 1 {
+		log.Println("🌐 [LAN-Provision] Native Qualcomm QCMAP/IPACM mode active (AutoProvisionLAN=0), skipping background provisioner")
+		return
+	}
+
 	np.mu.Lock()
 	if np.running {
 		np.mu.Unlock()
@@ -78,8 +83,7 @@ func (np *NetworkProvisioner) Stop() {
 // ProvisionOnce checks interface states and configures bridge0 + dnsmasq if uninitialized.
 func (np *NetworkProvisioner) ProvisionOnce() {
 	c := np.cfgMgr.Get()
-	// Default enabled if unconfigured
-	if c.Network.AutoProvisionLAN == 0 && c.Network.GatewayIP != "" {
+	if c.Network.AutoProvisionLAN != 1 {
 		return
 	}
 
@@ -149,10 +153,7 @@ func (np *NetworkProvisioner) ProvisionOnce() {
 	// 7. Ensure /etc/dnsmasq.conf is present and properly configured
 	ensureDnsmasqConfig(gwIP, mask, dhcpStart, dhcpEnd, leaseTime)
 
-	// 8. Ensure dnsmasq service is active
-	ensureDnsmasqService()
-
-	// 9. Ensure QCMAP WWAN backhaul preference
+	// 8. Ensure QCMAP WWAN backhaul preference
 	ensureQCMAPWWANBackhaul()
 }
 
@@ -202,6 +203,14 @@ func flushLinkLocal(ifaceName string) {
 
 // ensureDnsmasqConfig updates /etc/dnsmasq.conf if missing or parameters changed.
 func ensureDnsmasqConfig(gwIP, mask, dhcpStart, dhcpEnd, leaseTime string) {
+	// If Qualcomm's QCMAP dnsmasq is running, do NOT overwrite /etc/dnsmasq.conf and do not restart dnsmasq.
+	if _, err := os.Stat("/var/run/data/dnsmasq.pid"); err == nil {
+		return
+	}
+	if _, err := os.Stat("/etc/data/dnsmasq.conf"); err == nil {
+		return
+	}
+
 	confContent := fmt.Sprintf(`# QManager Auto-Provisioned DNS & DHCP Config
 interface=bridge0
 bind-interfaces
@@ -221,34 +230,6 @@ bogus-priv
 	_ = os.WriteFile(defaultDnsmasqConf, []byte(confContent), 0644)
 	// Restart dnsmasq to apply updated range
 	_ = exec.Command("systemctl", "restart", "dnsmasq").Run()
-}
-
-// ensureDnsmasqService checks systemd and starts dnsmasq if inactive.
-func ensureDnsmasqService() {
-	unitContent := `[Unit]
-Description=DNS and DHCP Server
-After=sysinit.target bridge-eth0.service
-DefaultDependencies=no
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/dnsmasq -k --conf-file=/etc/dnsmasq.conf
-Restart=always
-RestartSec=2s
-
-[Install]
-WantedBy=sysinit.target basic.target multi-user.target
-`
-	if _, err := os.Stat(defaultDnsmasqUnit); os.IsNotExist(err) {
-		_ = os.WriteFile(defaultDnsmasqUnit, []byte(unitContent), 0644)
-		_ = exec.Command("systemctl", "daemon-reload").Run()
-		_ = exec.Command("systemctl", "enable", "dnsmasq").Run()
-	}
-
-	out, err := exec.Command("systemctl", "is-active", "dnsmasq").Output()
-	if err != nil || strings.TrimSpace(string(out)) != "active" {
-		_ = exec.Command("systemctl", "restart", "dnsmasq").Run()
-	}
 }
 
 // ensureQCMAPWWANBackhaul fixes mobileap_cfg.xml so cellular data flows to LAN.

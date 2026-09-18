@@ -23,9 +23,33 @@ func TestNetworkProvisionerConfig(t *testing.T) {
 		t.Fatal("expected non-nil provisioner")
 	}
 
-	// Test lifecycle Start & Stop
+	// Default config has AutoProvisionLAN=0 -> Start() should skip cleanly without starting loop
+	if cfgMgr.Get().Network.AutoProvisionLAN != 0 {
+		t.Fatalf("expected default AutoProvisionLAN=0, got %d", cfgMgr.Get().Network.AutoProvisionLAN)
+	}
 	np.Start()
+	if np.running {
+		t.Errorf("expected np.running=false when AutoProvisionLAN=0, got true")
+	}
+	np.ProvisionOnce() // Should return immediately without touching anything
 	np.Stop()
+
+	// Now set AutoProvisionLAN=1 -> Start() should initialize loop and running=true
+	err = cfgMgr.Update(func(c *config.Config) {
+		c.Network.AutoProvisionLAN = 1
+	})
+	if err != nil {
+		t.Fatalf("failed to update config: %v", err)
+	}
+
+	np.Start()
+	if !np.running {
+		t.Errorf("expected np.running=true when AutoProvisionLAN=1, got false")
+	}
+	np.Stop()
+	if np.running {
+		t.Errorf("expected np.running=false after Stop(), got true")
+	}
 }
 
 func TestEnsureQCMAPWWANBackhaul(t *testing.T) {

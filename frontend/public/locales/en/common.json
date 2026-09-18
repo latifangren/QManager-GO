@@ -615,7 +615,11 @@
       "no_changes": "Nothing has changed yet."
     }
   },
+  "traffic_engine": {
+    "5g_recommendation": "Recommendation: For high-speed 5G connections, use Target List mode to minimize modem CPU load."
+  },
   "trafficEngine": {
+    "5g_recommendation": "Recommendation: For high-speed 5G connections, use Target List mode to minimize modem CPU load.",
     "page": {
       "title": "Traffic Engine",
       "description": "Bypass ISP DPI throttling of video streaming and other traffic with the built-in bypass engine."

@@ -254,13 +254,17 @@ func TestSystemHandler_Info(t *testing.T) {
 	}
 
 	var resp struct {
-		Success bool `json:"success"`
-		Data    struct {
+		Success      bool               `json:"success"`
+		Acceleration platform.IPAStatus `json:"acceleration"`
+		Data         struct {
 			Identity platform.Identity `json:"identity"`
 		} `json:"data"`
 	}
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 	if resp.Data.Identity.Model != "RM520NGLAA" || resp.Data.Identity.Serial != "61368cd2" {
 		t.Errorf("system info identity mismatch: %+v", resp.Data.Identity)
+	}
+	if resp.Acceleration.Offload == "" {
+		t.Errorf("expected acceleration offload field in response, got empty")
 	}
 }

@@ -615,7 +615,11 @@
       "no_changes": "Belum ada yang berubah."
     }
   },
+  "traffic_engine": {
+    "5g_recommendation": "Saran: Untuk koneksi 5G berkecepatan tinggi, gunakan mode Daftar Target untuk menghemat beban CPU modem."
+  },
   "trafficEngine": {
+    "5g_recommendation": "Saran: Untuk koneksi 5G berkecepatan tinggi, gunakan mode Daftar Target untuk menghemat beban CPU modem.",
     "page": {
       "title": "Mesin Lalu Lintas",
       "description": "Lewati pembatasan DPI ISP pada streaming video dan lalu lintas lainnya dengan mesin bypass bawaan."

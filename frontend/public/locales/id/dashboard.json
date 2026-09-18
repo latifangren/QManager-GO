@@ -74,6 +74,7 @@
     "lte_category": "Kategori LTE",
     "active_mimo": "MIMO Aktif",
     "lan_gateway": "Gateway LAN",
+    "hardware_acceleration": "Akselerasi Perangkat Keras",
     "qmanager_version": "Versi QManager"
   },
   "metrics": {

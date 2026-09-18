@@ -2,6 +2,31 @@
 
 ---
 
+## 🚀 QManager-GO v1.2.1 (Maintenance & Stability Release)
+
+Rilis pemeliharaan dan stabilitas **QManager-GO v1.2.1** mengatasi masalah krusial pada integrasi Qualcomm IP Accelerator (IPA / IPACM), mencegah CPU starvation pada throughput tinggi 5G, serta mengeliminasi potensi hang pada proses init systemd.
+
+---
+
+### 🌟 Key Highlights & Fixes (v1.2.1)
+
+#### ⚡ 1. Resolves 5G CPU Starvation & Reboot Loops (IPACM Restoration)
+* **Root Cause Fix:** Mencegah deaktivasi akselerator hardware Qualcomm IPA (`ipacm` / `ipacm_perf`). Pada versi sebelumnya, override bridge manual dapat memutus integrasi QCMAP dan menyebabkan seluruh paket 5G di-routing oleh CPU Cortex-A7, memicu 100% CPU starvation, lonjakan suhu, dan watchdog reboot loop.
+* **Preserved Native QCMAP Stack:** `AutoProvisionLAN` kini disetel ke `0` (disabled) secara default, membiarkan subsystem native Qualcomm QCMAP dan IPACM mengelola `bridge0`, routing paket, dan alokasi DHCP tanpa interferensi.
+
+#### 🛑 2. Elimination of Systemd Init Hang
+* **Purged Conflicting Service:** Menghapus pembuatan unit `dnsmasq.service` internal yang sebelumnya dapat memicu deadlock/hang pada systemd init saat boot modem.
+* **Safe Dnsmasq Guard:** Menambahkan deteksi pengaman (`/var/run/data/dnsmasq.pid` dan `/etc/data/dnsmasq.conf`) agar QManager tidak menimpa konfigurasi dnsmasq bawaan Qualcomm.
+
+#### 📊 3. Real-Time Qualcomm IPA/IPACM Hardware Acceleration Status
+* **Hardware Offload Telemetry:** Menambahkan modul diagnostik `platform.GetIPAStatus()` yang mendeteksi ketersediaan node `/dev/ipa` / `/dev/wwan_ioctl` dan status aktif daemon `ipacm_perf` / `ipacm`.
+* **API & WebUI Exposure:** Status akselerasi perangkat keras kini dipublikasikan secara langsung pada payload `/api/v1/system/info` di bawah kunci `"acceleration"`.
+
+#### 🧹 4. Enhanced Installer with Automatic Legacy Cleanup
+* **Auto-Purge Rogue Units:** Script instalasi (`install.sh`) kini otomatis menghentikan, me-nonaktifkan, dan menghapus unit service rogue seperti `bridge-eth0.service` dan `dnsmasq.service` yang ditinggalkan oleh panduan manual lama atau build terdahulu.
+
+---
+
 ## 🚀 QManager-GO v1.2.0 (Stable Release)
 
 Selamat datang di rilis stabil resmi pertama **QManager-GO v1.2.0**! 🎉
