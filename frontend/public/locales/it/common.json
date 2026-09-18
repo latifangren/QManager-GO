@@ -615,7 +615,11 @@
       "no_changes": "Non è ancora cambiato nulla."
     }
   },
+  "traffic_engine": {
+    "5g_recommendation": "Suggerimento: per connessioni 5G ad alta velocità, utilizzare la modalità Elenco destinazioni per ridurre il carico CPU."
+  },
   "trafficEngine": {
+    "5g_recommendation": "Suggerimento: per connessioni 5G ad alta velocità, utilizzare la modalità Elenco destinazioni per ridurre il carico CPU.",
     "page": {
       "title": "Motore di traffico",
       "description": "Aggira la limitazione DPI dell'operatore su streaming video e altro traffico con il motore di bypass integrato."

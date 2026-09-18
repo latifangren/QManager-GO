@@ -615,7 +615,11 @@
       "no_changes": "尚未有任何變更。"
     }
   },
+  "traffic_engine": {
+    "5g_recommendation": "建議：在高速 5G 網絡下，建議使用目標網域名稱清單模式以降低數據機 CPU 負載。"
+  },
   "trafficEngine": {
+    "5g_recommendation": "建議：在高速 5G 網絡下，建議使用目標網域名稱清單模式以降低數據機 CPU 負載。",
     "page": {
       "title": "流量引擎",
       "description": "透過內建的繞過引擎，規避電信商 DPI 對影片串流等流量的限速。"

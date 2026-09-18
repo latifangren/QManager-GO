@@ -425,9 +425,14 @@ const LiveLatencyComponent = ({
     wasLoading.current = isLoading;
     if (!landed) return;
 
-    setHandoff(true);
-    const id = window.setTimeout(() => setHandoff(false), DUR.quick * 1000);
-    return () => window.clearTimeout(id);
+    const showTimer = window.setTimeout(() => {
+      setHandoff(true);
+    }, 0);
+    const hideTimer = window.setTimeout(() => setHandoff(false), DUR.quick * 1000);
+    return () => {
+      window.clearTimeout(showTimer);
+      window.clearTimeout(hideTimer);
+    };
   }, [isLoading]);
 
   const tone = chipTone(connectivity);

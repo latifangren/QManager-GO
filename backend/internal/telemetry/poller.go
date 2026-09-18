@@ -1,14 +1,18 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"qmanager/internal/atengine"
@@ -296,7 +300,8 @@ type Poller struct {
 	subMu       sync.RWMutex
 	subscribers map[chan *ModemStatus]struct{}
 
-	pollCount uint64
+	pollCount              uint64
+	queryIdentitiesActive int32
 }
 
 const (
@@ -532,16 +537,23 @@ func (p *Poller) GetInterval() time.Duration {
 func (p *Poller) loop() {
 	p.poll()
 
-	for {
-		p.mu.RLock()
-		curInterval := p.interval
-		p.mu.RUnlock()
+	p.mu.RLock()
+	curInterval := p.interval
+	p.mu.RUnlock()
 
+	timer := time.NewTimer(curInterval)
+	defer timer.Stop()
+
+	for {
 		select {
 		case <-p.stopCh:
 			return
-		case <-time.After(curInterval):
+		case <-timer.C:
 			p.poll()
+			p.mu.RLock()
+			curInterval = p.interval
+			p.mu.RUnlock()
+			timer.Reset(curInterval)
 		}
 	}
 }
@@ -598,7 +610,12 @@ func (p *Poller) poll() {
 
 	p.pollCount++
 	if p.pollCount%15 == 0 {
-		go p.queryIdentities(context.Background())
+		if atomic.CompareAndSwapInt32(&p.queryIdentitiesActive, 0, 1) {
+			go func() {
+				defer atomic.StoreInt32(&p.queryIdentitiesActive, 0)
+				p.queryIdentities(context.Background())
+			}()
+		}
 	}
 	if p.pollCount%5 == 0 {
 		if res, err := p.engine.ExecLow(ctx, `AT+QNWCFG="lte_time_advance"`); err == nil {
@@ -1223,10 +1240,78 @@ func (p *Poller) poll() {
 	p.broadcastStatus(status)
 }
 
-func writeStatusFile(path string, status *ModemStatus) error {
-	data, err := json.Marshal(status)
+var statusBufPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
+}
+
+var (
+	statusWriteMu       sync.Mutex
+	lastStatusWriteTime time.Time
+	lastStatusHash      uint64
+	tmpfsVerified       bool
+	tmpfsCheckOnce      sync.Once
+)
+
+func isTmpfsLocation(path string) bool {
+	dir := filepath.Dir(path)
+	isRam, _, err := platform.IsTmpfsOrRamfs(dir)
 	if err != nil {
+		// Fallback to checking /tmp if direct statfs fails
+		isRam, _, _ = platform.IsTmpfsOrRamfs("/tmp")
+	}
+	return isRam
+}
+
+func writeStatusFile(path string, status *ModemStatus) error {
+	tmpfsCheckOnce.Do(func() {
+		tmpfsVerified = isTmpfsLocation(path)
+		if !tmpfsVerified {
+			log.Printf("⚠️  [ZERO FLASH WEAR] Target status directory for %s is NOT tmpfs/ramfs. Applying NAND flash write throttling (60s / on-change limit).", path)
+		}
+	})
+
+	statusWriteMu.Lock()
+	defer statusWriteMu.Unlock()
+
+	now := time.Now()
+
+	// If not mounted on tmpfs/ramfs (e.g. raw UBIFS flash), throttle writes:
+	// Only write if at least 60 seconds have passed or significant status changes occurred.
+	if !tmpfsVerified {
+		// Quick hash of key status attributes to detect actual changes
+		var hash uint64
+		if status != nil {
+			if status.Online {
+				hash |= 1
+			}
+			if status.Network.CAActive {
+				hash |= 2
+			}
+			hash ^= uint64(len(status.Band)) << 8
+			if status.Signal.RSRP != 0 {
+				hash ^= uint64(uint32(status.Signal.RSRP)) << 16
+			}
+			if status.Cell.PCID != 0 {
+				hash ^= uint64(uint32(status.Cell.PCID)) << 32
+			}
+		}
+
+		if now.Sub(lastStatusWriteTime) < 60*time.Second && hash == lastStatusHash {
+			return nil
+		}
+		lastStatusWriteTime = now
+		lastStatusHash = hash
+	}
+
+	buf := statusBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer statusBufPool.Put(buf)
+
+	enc := json.NewEncoder(buf)
+	if err := enc.Encode(status); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, buf.Bytes(), 0644)
 }

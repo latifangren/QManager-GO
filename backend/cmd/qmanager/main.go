@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -80,6 +81,15 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 	identity := platform.DetectIdentity("", "")
 	fmt.Printf("📦 Detected Platform: Model=%s, SoC=%s, Serial=%s\n", identity.Model, identity.SoC, identity.Serial)
 	_ = platform.InitFirewallRules()
+
+	// 1b. Storage & Zero Flash Wear Guard
+	if isRam, fsType, err := platform.IsTmpfsOrRamfs("/tmp"); err != nil {
+		log.Printf("⚠️  Zero-Flash-Wear Guard: Failed to check /tmp filesystem type: %v", err)
+	} else if !isRam {
+		log.Printf("⚠️  [ZERO FLASH WEAR WARNING] /tmp is NOT on tmpfs/ramfs (fs_type=0x%x, UBIFS=0x24051905). Status writing will be throttled to prevent raw NAND flash wearout!", fsType)
+	} else {
+		log.Printf("🛡️  Zero-Flash-Wear Guard: /tmp verified on RAM-backed filesystem (type=0x%x)", fsType)
+	}
 
 	// 2. Configuration Store
 	confFilePath := filepath.Join(configDir, "qmanager.conf")
@@ -154,9 +164,13 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 	}()
 
 	// 8. Self-Healing LAN & Network Provisioning
-	netProvisioner := platform.NewNetworkProvisioner(cfgMgr)
-	netProvisioner.Start()
-	defer netProvisioner.Stop()
+	if cfgMgr.Get().Network.AutoProvisionLAN == 1 {
+		netProvisioner := platform.NewNetworkProvisioner(cfgMgr)
+		netProvisioner.Start()
+		defer netProvisioner.Stop()
+	} else {
+		log.Println("🌐 [LAN-Provision] Native Qualcomm QCMAP & IPACM hardware offload is preserved (AutoProvisionLAN=0)")
+	}
 
 	// 9. Router & Server
 	appServices := router.AppServices{
@@ -241,6 +255,14 @@ func AppMain(ctx context.Context, port string, optionalFlags ...string) error {
 }
 
 func main() {
+	// Enforce low-footprint GC pacing and memory limits for embedded ARMv7 Cortex-A7 (<20MB RSS)
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(50)
+	}
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(20 * 1024 * 1024)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

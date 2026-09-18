@@ -615,7 +615,11 @@
       "no_changes": "尚未有任何更改。"
     }
   },
+  "traffic_engine": {
+    "5g_recommendation": "建议：在高速 5G 网络下，建议使用目标域名列表模式以降低调制解调器 CPU 负载。"
+  },
   "trafficEngine": {
+    "5g_recommendation": "建议：在高速 5G 网络下，建议使用目标域名列表模式以降低调制解调器 CPU 负载。",
     "page": {
       "title": "流量引擎",
       "description": "通过内置的绕过引擎，规避运营商 DPI 对视频流媒体等流量的限速。"

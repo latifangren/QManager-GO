@@ -89,3 +89,36 @@ func TestSIMProfileHandler_SetStoragePaths(t *testing.T) {
 		t.Errorf("expected profileStatePath %s, got %s", statePath, simH.profileStatePath)
 	}
 }
+
+func TestNetworkHandler_SetStoragePath(t *testing.T) {
+	tmpDir := t.TempDir()
+	netH := NewNetworkHandler(nil)
+	customPath := filepath.Join(tmpDir, "ttl_config.json")
+	netH.SetStoragePath(customPath)
+
+	if netH.configPath != customPath {
+		t.Errorf("expected configPath %s, got %s", customPath, netH.configPath)
+	}
+}
+
+func TestAlertsHandler_SetStoragePaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	alertH := NewAlertsHandler()
+	customPath := filepath.Join(tmpDir, "alerts_config.json")
+	alertH.SetStoragePath(customPath)
+
+	if alertH.configPath != customPath {
+		t.Errorf("expected configPath %s, got %s", customPath, alertH.configPath)
+	}
+}
+
+func TestBandFailoverHandler_SetStoragePaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	foH := NewBandFailoverHandler()
+	customPath := filepath.Join(tmpDir, "band_failover.json")
+	foH.SetStoragePath(customPath)
+
+	if foH.configPath != customPath {
+		t.Errorf("expected configPath %s, got %s", customPath, foH.configPath)
+	}
+}

@@ -258,10 +258,9 @@ func readImeiBackupConfig() BackupImeiConfig {
 }
 
 func writeImeiBackupConfig(c BackupImeiConfig) error {
-	_ = os.MkdirAll(filepath.Dir(imeiBackupPath), 0755)
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(imeiBackupPath, data, 0644)
+	return platform.AtomicWriteFile(imeiBackupPath, data, 0644)
 }

@@ -317,6 +317,7 @@ function PreferencesForm({
                   type="button"
                   role="combobox"
                   aria-expanded={tzOpen}
+                  aria-controls="timezone-command-list"
                   aria-labelledby={TZ_LABEL_ID}
                   className={cn(FIELD, "flex items-center justify-between gap-2")}
                 >
@@ -337,7 +338,7 @@ function PreferencesForm({
                   <CommandInput
                     placeholder={t(`${K}.rows.timezone.search`)}
                   />
-                  <CommandList>
+                  <CommandList id="timezone-command-list">
                     <CommandEmpty>
                       {t(`${K}.rows.timezone.empty`)}
                     </CommandEmpty>

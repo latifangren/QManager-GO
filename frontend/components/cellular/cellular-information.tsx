@@ -90,19 +90,27 @@ const CellularInformationComponent = () => {
   // `react-hooks/purity` to flag. `components/dashboard/carrier-aggregation.tsx`
   // takes the same prop from the same source; the decision is shared, not
   // duplicated per site.
-  const retained = React.useRef<ResolvedCarrier[]>([]);
-  const resolved =
-    isStale || receivedAtMs === null
-      ? retained.current
-      : reconcileCarriers(
-          retained.current,
-          data?.network?.carrier_components ?? [],
-          networkType,
-          receivedAtMs,
-        );
-  React.useEffect(() => {
-    retained.current = resolved;
+  const [retainedState, setRetainedState] = React.useState<{
+    receivedAtMs: number | null;
+    resolved: ResolvedCarrier[];
+  }>({
+    receivedAtMs: null,
+    resolved: [],
   });
+
+  let resolved = retainedState.resolved;
+  if (!isStale && receivedAtMs !== null && receivedAtMs !== retainedState.receivedAtMs) {
+    resolved = reconcileCarriers(
+      retainedState.resolved,
+      data?.network?.carrier_components ?? [],
+      networkType,
+      receivedAtMs,
+    );
+    setRetainedState({
+      receivedAtMs,
+      resolved,
+    });
+  }
 
   // `enrichCarriers` takes the arrival clock too, for the "released Ns ago"
   // reading. It used to call `Date.now()` internally, which the purity rule

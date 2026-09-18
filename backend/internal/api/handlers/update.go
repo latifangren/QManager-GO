@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	CurrentQManagerVersion = "1.2.0"
+	CurrentQManagerVersion = "1.2.1"
 	DefaultGitHubRepo      = "latifangren/QManager-GO"
 	DefaultUpdateLockFile  = "/tmp/qmanager_update.lock"
 	DefaultUpdateDir       = "/tmp/qmanager_update"

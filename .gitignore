@@ -54,6 +54,7 @@ yarn-error.log*
 qmanager-build/
 qmanager_install/
 RELEASE_NOTE.md
+*.zip
 
 # Go build artifacts & binaries
 qmanager-armv7*

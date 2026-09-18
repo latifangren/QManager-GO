@@ -199,37 +199,34 @@ export function CarrierAggregationComponent({
   // Before the first snapshot lands there is no arrival time and nothing to
   // reconcile against, so the chain holds whatever it already had — the same
   // branch `isStale` takes, for the same reason.
-  const retained = React.useRef<ResolvedCarrier[]>([]);
-  const now = receivedAtMs;
-  const resolved =
-    isStale || now === null
-      ? retained.current
-      : reconcileCarriers(retained.current, carriers, networkType, now);
-
-  // Committed after render, never during: a render React throws away must not
-  // advance the release clock.
-  React.useEffect(() => {
-    retained.current = resolved;
+  const [carrierState, setCarrierState] = React.useState<{
+    receivedAtMs: number | null;
+    previousResolved: ResolvedCarrier[];
+    resolved: ResolvedCarrier[];
+  }>({
+    receivedAtMs: null,
+    previousResolved: [],
+    resolved: [],
   });
+
+  const now = receivedAtMs;
+  let resolved = carrierState.resolved;
+  let previousKeys = new Set(carrierState.previousResolved.map((c) => c.key));
+  let hasDrawnChain = carrierState.previousResolved.length > 0;
+
+  if (!isStale && now !== null && now !== carrierState.receivedAtMs) {
+    resolved = reconcileCarriers(carrierState.resolved, carriers, networkType, now);
+    previousKeys = new Set(carrierState.resolved.map((c) => c.key));
+    hasDrawnChain = carrierState.resolved.length > 0;
+    setCarrierState({
+      receivedAtMs: now,
+      previousResolved: carrierState.resolved,
+      resolved,
+    });
+  }
 
   const summary = summarise(resolved, networkType);
   const shares = computeSegmentShares(resolved.map((c) => c.bandwidth_mhz));
-
-  // A carrier is "entering" only if the card has already drawn a chain without
-  // it. Derived from `retained` — committed state, never a value this render
-  // invented — so a render React discards cannot mark a segment as new.
-  //
-  // The distinction matters because the two cases mean different things. Four
-  // segments appearing together is the card arriving, and that belongs to the
-  // skeleton crossfade; one segment appearing beside three that were already
-  // there is the radio adding a carrier, which is the event this widget exists
-  // to report. Only the second one grows.
-  //
-  // Read straight off the ref rather than memoised: the effect above commits
-  // `retained` AFTER render, so during render it still holds the PREVIOUS
-  // chain, which is exactly the set we need to diff against.
-  const previousKeys = new Set(retained.current.map((c) => c.key));
-  const hasDrawnChain = retained.current.length > 0;
 
   // Skeleton handoff (Motion Guide recipe 03). The overlay lives for one
   // `quick` and then unmounts; nothing downstream depends on it, so a missed

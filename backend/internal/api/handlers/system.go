@@ -79,6 +79,7 @@ func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
 	hostname := platform.GetHostname()
 	kernelVersion := platform.GetKernelVersion()
 	osVersion := platform.GetOSVersion()
+	ipaStatus := platform.GetIPAStatus()
 
 	payload := map[string]interface{}{
 		"success": true,
@@ -107,13 +108,15 @@ func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
 			"kernel_version":  kernelVersion,
 			"openwrt_version": osVersion,
 		},
-		"identity": h.identity,
-		"metrics":  metrics,
+		"acceleration": ipaStatus,
+		"identity":     h.identity,
+		"metrics":      metrics,
 	}
 
 	payload["data"] = map[string]interface{}{
-		"identity": h.identity,
-		"metrics":  metrics,
+		"identity":     h.identity,
+		"metrics":      metrics,
+		"acceleration": ipaStatus,
 	}
 
 	JSON(w, http.StatusOK, payload)

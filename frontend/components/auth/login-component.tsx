@@ -285,7 +285,6 @@ export default function LoginComponent() {
             commit — DESIGN.md requires the pre-auth pair to move together.
             `alt=""` because the h1 beneath names the device, and the product
             name is not what this screen is for. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/qmanager-mark.svg"
           alt=""

@@ -90,7 +90,7 @@ func (h *HealthCheckHandler) Run(w http.ResponseWriter, r *http.Request) {
 		TarballSize: nil,
 		Error:       nil,
 		Summary: HealthCheckSummary{
-			Total: 26,
+			Total: 27,
 		},
 	}
 	h.mu.Unlock()
@@ -130,7 +130,7 @@ func (h *HealthCheckHandler) executeDiagnostics(jobID string) {
 	execPath, _ := os.Executable()
 	version := os.Getenv("QMANAGER_VERSION")
 	if version == "" {
-		version = "1.2.0"
+		version = "1.2.1"
 	}
 	dBin1 := int(time.Since(tBin1Start).Milliseconds())
 	items = append(items, HealthCheckItem{
@@ -608,7 +608,7 @@ func (h *HealthCheckHandler) executeDiagnostics(jobID string) {
 	}
 
 	// -------------------------------------------------------------------------
-	// 7. Network & Routing (4 checks)
+	// 7. Network & Routing (5 checks)
 	// -------------------------------------------------------------------------
 
 	// 7.1 Linux Network Interfaces
@@ -711,6 +711,41 @@ func (h *HealthCheckHandler) executeDiagnostics(jobID string) {
 		DurationMS: d20,
 		Detail:     routeDetail,
 	})
+
+	// 7.5 Qualcomm IPA Hardware Acceleration (ipacm)
+	tIpaStart := time.Now()
+	ipaStatus := platform.GetIPAStatus()
+	dIpa := int(time.Since(tIpaStart).Milliseconds())
+	if ipaStatus.Supported {
+		if ipaStatus.Active {
+			items = append(items, HealthCheckItem{
+				ID:         "net_ipa_acceleration",
+				Category:   "network",
+				Label:      "Qualcomm IPA Hardware Acceleration (ipacm)",
+				Status:     "pass",
+				DurationMS: dIpa,
+				Detail:     fmt.Sprintf("Hardware offload ACTIVE (%s via %s) — 5G gigabit line-rate safe", ipaStatus.Daemon, ipaStatus.Driver),
+			})
+		} else {
+			items = append(items, HealthCheckItem{
+				ID:         "net_ipa_acceleration",
+				Category:   "network",
+				Label:      "Qualcomm IPA Hardware Acceleration (ipacm)",
+				Status:     "fail",
+				DurationMS: dIpa,
+				Detail:     fmt.Sprintf("CRITICAL: IPA hardware node found but daemon (%s) is INACTIVE! Traffic routes via CPU, causing 5G CPU freeze/reboot loops.", ipaStatus.Daemon),
+			})
+		}
+	} else {
+		items = append(items, HealthCheckItem{
+			ID:         "net_ipa_acceleration",
+			Category:   "network",
+			Label:      "Qualcomm IPA Hardware Acceleration (ipacm)",
+			Status:     "pass",
+			DurationMS: dIpa,
+			Detail:     "Generic platform mode (software packet routing)",
+		})
+	}
 
 	// -------------------------------------------------------------------------
 	// 8. Configuration & Database (3 checks)

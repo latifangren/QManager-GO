@@ -43,6 +43,16 @@ PORT=80 GOMEMLIMIT=30MiB /usrdata/qmanager/qmanager
 ```
 
 ### 🔹 Common Startup Issues & Fixes
+* **Modem Restarts Repeatedly Under 5G Load or Init Process Hangs at 100% CPU:**
+  * **Symptom:** Modem reboots continuously under high 5G throughput or speed tests, or systemd init hangs with 100% CPU utilization.
+  * **Root Cause:** Qualcomm IP Accelerator (IPA) hardware offload is deactivated due to rogue manual bridge scripts (e.g. `bridge-eth0.service`) or custom `dnsmasq.service` definitions that conflict with native Qualcomm QCMAP / IPACM (`ipacm_perf`). Without hardware offload, all 5G packets are routed via software on the single-core Cortex-A7 CPU, causing CPU starvation, watchdog reboots, and init deadlocks.
+  * **Solution:** In QManager-GO v1.2.1, QManager does not conflict with QCMAP/IPACM (`AutoProvisionLAN=0` by default). Run `./install.sh` to automatically purge legacy rogue units (`bridge-eth0.service`, `dnsmasq.service`). Ensure standard Qualcomm baseband AT commands are applied:
+    ```text
+    AT+QCFG="data_interface",1,0
+    AT+QCFG="pcie/mode",1
+    AT+QETH="eth_driver","r8125",1
+    ```
+    Verify hardware acceleration status via `/api/v1/system/info` (or WebUI): `acceleration.offload` should report `"hardware"` with active daemon `"ipacm_perf"` or `"ipacm"`.
 * **Address already in use (Port 80 conflict):**
   Check if a legacy webserver (e.g. `lighttpd`, `nginx`, `uhttpd`) is still running:
   ```sh

@@ -19,7 +19,7 @@
 // FORM: Operate-mode error surface inside an established world; no new tokens.
 // =============================================================================
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import {
@@ -69,11 +69,11 @@ export default function NotFound() {
   // The requested path is real machine data, but only known client-side (a
   // static export can't prerender it). Read it on mount to avoid a hydration
   // mismatch; keep the row present either way so nothing reflows when it lands.
-  const [requestedPath, setRequestedPath] = useState<string>("");
-
-  useEffect(() => {
-    setRequestedPath(window.location.pathname + window.location.search);
-  }, []);
+  const requestedPath = useSyncExternalStore(
+    () => () => {},
+    () => window.location.pathname + window.location.search,
+    () => "",
+  );
 
   return (
     <div className="bg-background flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">

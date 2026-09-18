@@ -4,6 +4,27 @@ package platform
 
 import "syscall"
 
+// Magic numbers for Linux filesystem types
+const (
+	TMPFS_MAGIC uint64 = 0x01021994
+	RAMFS_MAGIC uint64 = 0x858458f6
+	UBIFS_MAGIC uint64 = 0x24051905
+)
+
+// IsTmpfsOrRamfs checks if path is mounted on tmpfs or ramfs.
+func IsTmpfsOrRamfs(dirPath string) (bool, uint64, error) {
+	if dirPath == "" {
+		dirPath = "/tmp"
+	}
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(dirPath, &stat); err != nil {
+		return false, 0, err
+	}
+	fsType := uint64(stat.Type)
+	isRam := fsType == TMPFS_MAGIC || fsType == RAMFS_MAGIC
+	return isRam, fsType, nil
+}
+
 // GetStorageStats reads filesystem usage for the specified mount path.
 func GetStorageStats(mountPath string) *StorageStats {
 	if mountPath == "" {

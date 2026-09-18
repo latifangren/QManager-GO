@@ -30,7 +30,6 @@ import {
   CARD_PAD,
   CARD_SHELL,
   CARD_TITLE,
-  FOCUS_RING,
   GROUP_FILL,
   ROW_GROUP,
 } from "./shapes";
@@ -75,7 +74,6 @@ export default function AdaptivePollingCard() {
 
   // Synchronise state with cross-tab and storage events
   useEffect(() => {
-    setMode(getPollingMode());
     return subscribePollingMode((newMode) => {
       setMode(newMode);
     });

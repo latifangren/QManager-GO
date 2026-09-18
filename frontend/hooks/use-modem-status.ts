@@ -278,7 +278,7 @@ export function useModemStatus(
         }
       }
     } else {
-      setState(sharedState);
+      queueMicrotask(() => setState(sharedState));
     }
 
     return () => {

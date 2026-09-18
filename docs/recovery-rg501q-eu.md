@@ -220,28 +220,16 @@ ip link show eth0
 ```
 Jika driver berhasil aktif, antarmuka `eth0` (dan `eth1` jika dual-port aktif) akan terdeteksi.
 
-### C. Persistent Bridge Service (`bridge0` + `eth0`)
-Agar traffic port fisik LAN tergabung ke switch/bridge lokal modem, `eth0` harus dimasukkan ke dalam `bridge0`.
+### C. Verifikasi Registrasi Otomatis Native Bridge (`bridge0` + `eth0`)
+Pada modem Quectel berbasis Qualcomm SDX55/SDX65, Anda **TIDAK PERLU** membuat script atau service manual seperti `bridge-eth0.service`.
 
-Buat unit service `/lib/systemd/system/bridge-eth0.service`:
-```ini
-[Unit]
-Description=Bridge eth0 to bridge0 for LAN ports
-After=basic.target
-
-[Service]
-Type=oneshot
-ExecStart=/bin/sh -c '/sbin/brctl addif bridge0 eth0 || true'
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
+Cukup pastikan konfigurasi AT command berikut telah dieksekusi:
+```text
+AT+QCFG="data_interface",1,0
+AT+QCFG="pcie/mode",1
+AT+QETH="eth_driver","r8125",1
 ```
-
-Aktifkan service:
-```bash
-adb shell "systemctl daemon-reload && systemctl enable bridge-eth0.service && systemctl start bridge-eth0.service"
-```
+Konfigurasi di atas sudah cukup karena firmware Qualcomm secara native mendaftarkan interface `eth0` ke dalam `bridge0` dan menghubungkannya dengan akselerator hardware **IPACM / IPA**.
 
 Verifikasi susunan bridge:
 ```bash
@@ -255,48 +243,19 @@ adb shell "brctl show"
 
 ## 4. Konfigurasi Routing NAT, Dnsmasq, & Internet Gateway LAN
 
-> 💡 **INFO PEMBARUAN PENTING (QManager-GO v1.2.0+):**
-> Mulai versi **v1.2.0 (Stable)**, QManager-GO secara otomatis menyertakan fitur **Zero-Touch Idempotent LAN Provisioning & Auto Backhaul Fix**.
-> Saat binary `qmanager` pertama kali berjalan, sistem secara otomatis:
-> 1. Mengonfigurasi `bridge0` dan mem-bind interface `eth0`.
-> 2. Men-generate `/etc/dnsmasq.conf` untuk alokasi DHCP otomatis (`192.168.225.20-200`).
-> 3. Memperbaiki `mobileap_cfg.xml` agar routing internet seluler langsung teralirkan ke port LAN.
-> 
-> *Setup manual di bawah ini hanya dibutuhkan sebagai referensi jika tidak menggunakan daemon QManager-GO.*
+> ⚠️ **PERINGATAN KERAS: JANGAN LAKUKAN OVERRIDE MANUAL BRIDGE / DNSMASQ!**
+> Mengoverride bridge atau dnsmasq secara manual (misalnya membuat unit service `bridge-eth0.service`, `dnsmasq.service`, atau mengubah file konfigurasi dnsmasq milik Qualcomm) akan **merusak subsystem Qualcomm IPACM (IP Accelerator Hardware Offload)**!
+> Ketika IPACM rusak atau terganggu, seluruh throughput data 5G/LTE harus diproses secara software oleh CPU single-core Cortex-A7, menyebabkan **CPU saturation (100% usage), penurunan kecepatan (speed drop), dan modem menjadi panas (overheating)**.
+> **Biarkan Qualcomm QCMAP bawaan firmware mengelola `bridge0`, DHCP server, dan NAT.**
 
-Agar komputer atau router WiFi yang dicolokkan ke port LAN mendapatkan IP secara otomatis (DHCP) dan dapat mengakses internet melalui kartu SIM seluler:
+> 💡 **INFO PEMBARUAN PENTING (QManager-GO Native Mode):**
+> QManager-GO secara default membiarkan Qualcomm QCMAP & IPACM beroperasi penuh secara native (`auto_provision_lan: 0`). Daemon hanya bertugas memonitor dan menyediakan status akselerasi hardware via API (`/api/v1/system/info` -> `acceleration`).
+> Jangan pernah mengaktifkan override LAN manual (`auto_provision_lan: 1`) kecuali pada lingkungan kernel kustom tanpa firmware Qualcomm QCMAP.
 
-### A. Konfigurasi Dnsmasq untuk LAN (`bridge0`)
-Karena rootfs berstatus Read-Only, lease file DHCP harus diarahkan ke direktori ramdisk `/tmp/dnsmasq.leases`.
+Agar komputer atau router WiFi yang dicolokkan ke port LAN mendapatkan IP secara otomatis (DHCP) dan dapat mengakses internet melalui kartu SIM seluler, cukup pastikan layanan native QCMAP aktif:
 
-Buat file `/etc/dnsmasq.d/bridge0.conf`:
-```conf
-interface=bridge0
-dhcp-range=192.168.225.20,192.168.225.200,255.255.255.0,12h
-dhcp-option=3,192.168.225.1
-dhcp-option=6,1.1.1.1,8.8.8.8
-dhcp-leasefile=/tmp/dnsmasq.leases
-```
-
-Restart dnsmasq:
-```bash
-adb shell "systemctl restart dnsmasq"
-```
-
-### B. Aktifkan IPv4 Forwarding & Aturan NAT Masquerade
-Pastikan kernel mengizinkan paket forwarding antar-interface:
-```bash
-# Aktifkan IP forwarding
-adb shell "echo 1 > /proc/sys/net/ipv4/ip_forward"
-
-# Aturan iptables NAT Masquerade menuju antarmuka seluler (rmnet_data0 / rmnet_data+)
-adb shell "iptables -t nat -A POSTROUTING -o rmnet_data+ -j MASQUERADE"
-adb shell "iptables -A FORWARD -i bridge0 -o rmnet_data+ -j ACCEPT"
-adb shell "iptables -A FORWARD -i rmnet_data+ -o bridge0 -m state --state RELATED,ESTABLISHED -j ACCEPT"
-```
-
-### C. Pastikan Backhaul Data Seluler Aktif
-Modem menggunakan Qualcomm Connection Manager (`QCMAP`) untuk mengatur dial data seluler:
+### Pastikan Backhaul Data Seluler QCMAP Aktif
+Modem menggunakan Qualcomm Connection Manager (`QCMAP`) untuk mengatur dial data seluler dan routing hardware:
 ```bash
 adb shell "systemctl enable setup-bridge0 QCMAP_ConnectionManagerd"
 adb shell "systemctl start QCMAP_ConnectionManagerd"

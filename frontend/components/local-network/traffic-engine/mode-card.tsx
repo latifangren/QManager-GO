@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowLeftRightIcon,
   CheckCircle2Icon,
+  InfoIcon,
   Loader2Icon,
   MinusCircleIcon,
   TriangleAlertIcon,
@@ -325,6 +326,13 @@ export function ModeCard({
             );
           })}
         </motion.div>
+
+        <div className="mt-4 flex items-start gap-2.5 rounded-pill bg-surface-container px-4 py-2.5 text-xs text-on-surface-variant">
+          <InfoIcon className="size-3.5 shrink-0 translate-y-0.5 text-primary" aria-hidden="true" />
+          <p className="leading-relaxed">
+            {t("traffic_engine.5g_recommendation")}
+          </p>
+        </div>
       </CardContent>
 
       <AlertDialog open={pending !== null} onOpenChange={(open) => !open && setPending(null)}>

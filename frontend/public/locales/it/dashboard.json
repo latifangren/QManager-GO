@@ -74,6 +74,7 @@
     "lte_category": "Categoria LTE",
     "active_mimo": "Attivo MIMO",
     "lan_gateway": "Gateway LAN",
+    "hardware_acceleration": "Accelerazione Hardware",
     "qmanager_version": "QManager Versione"
   },
   "metrics": {

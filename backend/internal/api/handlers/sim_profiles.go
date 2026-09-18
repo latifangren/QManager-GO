@@ -144,12 +144,11 @@ func (h *SIMProfileHandler) getActiveProfileID() string {
 }
 
 func (h *SIMProfileHandler) setActiveProfileID(id string) error {
-	_ = os.MkdirAll(filepath.Dir(h.activeProfilePath), 0755)
 	if id == "" {
 		_ = os.Remove(h.activeProfilePath)
 		return nil
 	}
-	return os.WriteFile(h.activeProfilePath, []byte(id), 0644)
+	return platform.AtomicWriteFile(h.activeProfilePath, []byte(id), 0644)
 }
 
 func generateProfileID() string {
@@ -332,7 +331,7 @@ func (h *SIMProfileHandler) Save(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := platform.AtomicWriteFile(path, data, 0644); err != nil {
 		Error(w, http.StatusInternalServerError, "Failed to save profile file")
 		return
 	}
@@ -524,12 +523,11 @@ func (h *SIMProfileHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SIMProfileHandler) writeState(st ProfileApplyState) error {
-	_ = os.MkdirAll(filepath.Dir(h.profileStatePath), 0755)
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(h.profileStatePath, data, 0644)
+	return platform.AtomicWriteFile(h.profileStatePath, data, 0644)
 }
 
 // CurrentSettings handles GET /api/v1/cellular/profiles/current-settings and GET /cgi-bin/quecmanager/profiles/current_settings.sh

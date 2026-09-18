@@ -148,12 +148,12 @@ export default function BandwidthPage() {
   const peakRx = useMemo(() => {
     if (!currentIface?.realtime || currentIface.realtime.length === 0) return rxBps;
     return Math.max(...currentIface.realtime.map((p) => p.rx_bps), rxBps);
-  }, [currentIface?.realtime, rxBps]);
+  }, [currentIface, rxBps]);
 
   const peakTx = useMemo(() => {
     if (!currentIface?.realtime || currentIface.realtime.length === 0) return txBps;
     return Math.max(...currentIface.realtime.map((p) => p.tx_bps), txBps);
-  }, [currentIface?.realtime, txBps]);
+  }, [currentIface, txBps]);
 
   // Yesterday usage
   const yesterdayData = useMemo(() => {

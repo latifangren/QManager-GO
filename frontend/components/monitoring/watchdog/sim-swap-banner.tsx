@@ -51,7 +51,9 @@ export function SimSwapBanner() {
   // banner is mounted for the whole session, so without this a later
   // un-dismiss from System Settings would need a page reload to be felt.
   useEffect(() => {
-    if (!simSwap?.detected) setOptimisticallyHidden(false);
+    if (!simSwap?.detected) {
+      queueMicrotask(() => setOptimisticallyHidden(false));
+    }
   }, [simSwap?.detected, iccid]);
 
   const handleDismissConfirm = useCallback(async () => {

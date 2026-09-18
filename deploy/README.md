@@ -1,4 +1,4 @@
-# QManager-GO (Single-Binary Release)
+# QManager-GO (Single-Binary Release v1.2.1)
 
 Next-generation high-performance management appliance and telemetry web suite for Quectel 5G/LTE modems, written in Go with embedded Next.js 16 WebUI.
 
@@ -13,10 +13,11 @@ Next-generation high-performance management appliance and telemetry web suite fo
 ---
 
 ## 🚀 Key Features Out-of-the-Box
-1. **Zero-Touch LAN & DHCP:** Automatic bridge creation (`bridge0` on `192.168.225.1`), PCIe Ethernet binding (`eth0`), and DHCP server configuration via `dnsmasq`.
+1. **Native Qualcomm QCMAP & IPACM Cooperation:** Operates cooperatively alongside native Qualcomm QCMAP and IPACM hardware accelerator for 5G line-rate data forwarding without CPU starvation or lockups (`AutoProvisionLAN=0` by default).
 2. **Native Go SSH Daemon:** Built-in standalone SSH server on port 22 (configurable via WebUI). No Dropbear or Entware required.
 3. **Dual HTTP/HTTPS Support:** Automatic ECDSA self-signed TLS certificates generated on first boot for secure HTTPS (`https://192.168.225.1`) and HTTP (`http://192.168.225.1`).
 4. **Embedded Web Console:** Interactive PTY terminal inside WebUI over WebSocket.
+5. **Real-time Hardware Acceleration Telemetry:** Live reporting of Qualcomm IPA/IPACM hardware offload status via REST API and WebUI.
 
 ---
 

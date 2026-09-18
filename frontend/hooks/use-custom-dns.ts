@@ -104,7 +104,7 @@ export interface UseCustomDnsReturn {
   refresh: (silent?: boolean) => Promise<void>;
 }
 
-function normalizeSettings(raw: any): CustomDnsSettingsResponse {
+function normalizeSettings(raw: unknown): CustomDnsSettingsResponse {
   if (!raw || typeof raw !== "object") {
     return {
       enabled: false,
@@ -119,28 +119,26 @@ function normalizeSettings(raw: any): CustomDnsSettingsResponse {
     };
   }
 
+  const r = raw as Record<string, unknown>;
+
   return {
-    enabled: raw.enabled === true,
-    ignoreCarrier: raw.ignoreCarrier ?? raw.ignore_carrier ?? false,
-    servers: Array.isArray(raw.servers)
-      ? raw.servers
-      : typeof raw.servers === "string" && raw.servers.length > 0
-        ? raw.servers.split(",").map((s: string) => s.trim()).filter(Boolean)
+    enabled: r.enabled === true,
+    ignoreCarrier: Boolean(r.ignoreCarrier ?? r.ignore_carrier ?? false),
+    servers: Array.isArray(r.servers)
+      ? (r.servers as string[])
+      : typeof r.servers === "string" && r.servers.length > 0
+        ? r.servers.split(",").map((s: string) => s.trim()).filter(Boolean)
         : [],
-    dnsMode: raw.dnsMode ?? raw.dns_mode ?? "LOCAL",
-    available: raw.available ?? raw.dnsmasq_available ?? true,
-    currentUpstream: Array.isArray(raw.currentUpstream)
-      ? raw.currentUpstream
-      : Array.isArray(raw.current_upstream)
-        ? raw.current_upstream
+    dnsMode: (r.dnsMode ?? r.dns_mode ?? "LOCAL") as "LOCAL" | "REMOTE",
+    available: Boolean(r.available ?? r.dnsmasq_available ?? true),
+    currentUpstream: Array.isArray(r.currentUpstream)
+      ? (r.currentUpstream as string[])
+      : Array.isArray(r.current_upstream)
+        ? (r.current_upstream as string[])
         : [],
-    currentSource:
-      raw.currentSource ??
-      raw.current_source ??
-      (raw.enabled ? "custom" : "carrier"),
-    blockCorrupt: raw.blockCorrupt ?? raw.block_corrupt ?? false,
-    passthroughBypass:
-      raw.passthroughBypass ?? raw.passthrough_bypass ?? false,
+    currentSource: (r.currentSource ?? r.current_source ?? (r.enabled ? "custom" : "carrier")) as "carrier" | "custom",
+    blockCorrupt: Boolean(r.blockCorrupt ?? r.block_corrupt ?? false),
+    passthroughBypass: Boolean(r.passthroughBypass ?? r.passthrough_bypass ?? false),
   };
 }
 
@@ -177,7 +175,7 @@ export function useCustomDns(): UseCustomDnsReturn {
         throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
       }
 
-      const raw = (await resp.json()) as any;
+      const raw: unknown = await resp.json();
       if (!mountedRef.current) return;
 
       setSettings(normalizeSettings(raw));
@@ -255,7 +253,7 @@ export function useCustomDns(): UseCustomDnsReturn {
         }
       }
     },
-    []
+    [fetchSettings]
   );
 
   // ---------------------------------------------------------------------------

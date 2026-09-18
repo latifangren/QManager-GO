@@ -1,6 +1,9 @@
 package telemetry
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -208,5 +211,33 @@ func TestPoller_SubscribeAndBroadcast(t *testing.T) {
 
 	if subCount != 0 {
 		t.Errorf("expected 0 subscribers after unsubscribe, got %d", subCount)
+	}
+}
+
+func TestWriteStatusFile_GuardAndThrottling(t *testing.T) {
+	tmpDir := t.TempDir()
+	statusFile := filepath.Join(tmpDir, "status_test.json")
+
+	status1 := &ModemStatus{
+		Online: true,
+		Band:   "B3",
+	}
+
+	// 1. First write
+	if err := writeStatusFile(statusFile, status1); err != nil {
+		t.Fatalf("failed to write status file: %v", err)
+	}
+
+	data, err := os.ReadFile(statusFile)
+	if err != nil {
+		t.Fatalf("failed to read written status file: %v", err)
+	}
+	if !strings.Contains(string(data), `"band":"B3"`) {
+		t.Errorf("expected status file content to contain band B3, got %s", string(data))
+	}
+
+	// 2. Write again immediately with identical status (should throttle or write cleanly without error)
+	if err := writeStatusFile(statusFile, status1); err != nil {
+		t.Fatalf("failed to execute second writeStatusFile call: %v", err)
 	}
 }

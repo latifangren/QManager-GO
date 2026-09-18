@@ -50,24 +50,141 @@ export function generateId(): string {
   }
 }
 
+/**
+ * Splits AT command arguments by comma while respecting double quotes.
+ */
+function splitAtArgs(argsStr: string): string[] {
+  const args: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < argsStr.length; i++) {
+    const char = argsStr[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      current += char;
+    } else if (char === "," && !inQuotes) {
+      args.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  args.push(current.trim());
+  return args;
+}
+
+/** Masks a single argument, preserving double quotes if present. */
+function maskArg(arg: string): string {
+  if (!arg) return arg;
+  if (arg.startsWith('"') && arg.endsWith('"')) {
+    return '"****"';
+  }
+  return "****";
+}
+
+/**
+ * Sanitizes/redacts sensitive arguments (PINs, PUKs, passwords) in AT commands
+ * or command echoes so secrets are not saved in plaintext in browser localStorage.
+ */
+export function redactSensitiveCommand(text: string): string {
+  if (!text) return text;
+  let result = text;
+
+  // 1. CPIN / CPIN2 / QPIN / EPIN: all arguments are PINs/PUKs. Avoid matching test query AT+CPIN=?
+  result = result.replace(
+    /(^|[;\s])((?:AT)?\+(?:[CQE])?PIN2?\s*=\s*)(?!\?)([^;\r\n]+)/gi,
+    (m, p1, p2, args) => {
+      const parts = splitAtArgs(args);
+      return p1 + p2 + parts.map(maskArg).join(",");
+    },
+  );
+
+  // 2. CPWD: AT+CPWD=<fac>,<oldpwd>,<newpwd>
+  result = result.replace(
+    /(^|[;\s])((?:AT)?\+CPWD\s*=\s*)(?!\?)([^;\r\n]+)/gi,
+    (m, p1, p2, args) => {
+      const parts = splitAtArgs(args);
+      if (parts.length >= 2) parts[1] = maskArg(parts[1]);
+      if (parts.length >= 3) parts[2] = maskArg(parts[2]);
+      return p1 + p2 + parts.join(",");
+    },
+  );
+
+  // 3. CLCK: AT+CLCK=<fac>,<mode>[,<passwd>]
+  result = result.replace(
+    /(^|[;\s])((?:AT)?\+CLCK\s*=\s*)(?!\?)([^;\r\n]+)/gi,
+    (m, p1, p2, args) => {
+      const parts = splitAtArgs(args);
+      if (parts.length >= 3) parts[2] = maskArg(parts[2]);
+      return p1 + p2 + parts.join(",");
+    },
+  );
+
+  // 4. QCPDPP: AT$QCPDPP=<pdp_idx>,<auth_type>[,<password>[,<username>]]
+  result = result.replace(
+    /(^|[;\s])((?:AT)?\$QCPDPP\s*=\s*)(?!\?)([^;\r\n]+)/gi,
+    (m, p1, p2, args) => {
+      const parts = splitAtArgs(args);
+      if (parts.length >= 3) parts[2] = maskArg(parts[2]);
+      return p1 + p2 + parts.join(",");
+    },
+  );
+
+  // 5. QICSGP: AT+QICSGP=<cid>,<context_type>[,<apn>[,<username>[,<password>[,<auth_type>]]]]
+  result = result.replace(
+    /(^|[;\s])((?:AT)?\+QICSGP\s*=\s*)(?!\?)([^;\r\n]+)/gi,
+    (m, p1, p2, args) => {
+      const parts = splitAtArgs(args);
+      if (parts.length >= 5) parts[4] = maskArg(parts[4]);
+      return p1 + p2 + parts.join(",");
+    },
+  );
+
+  // 6. CGAUTH: AT+CGAUTH=<cid>,<auth_prot>[,<password>[,<username>]]
+  result = result.replace(
+    /(^|[;\s])((?:AT)?\+CGAUTH\s*=\s*)(?!\?)([^;\r\n]+)/gi,
+    (m, p1, p2, args) => {
+      const parts = splitAtArgs(args);
+      if (parts.length >= 3) parts[2] = maskArg(parts[2]);
+      return p1 + p2 + parts.join(",");
+    },
+  );
+
+  // 7. Generic password keywords: password="...", passwd="...", pwd="..."
+  result = result.replace(/\b(password|passwd|pwd)\s*=\s*"[^"]*"/gi, '$1="****"');
+  result = result.replace(/\b(password|passwd|pwd)\s*=\s*([^,\s"';\r\n]+)/gi, "$1=****");
+
+  return result;
+}
+
+/** Sanitize an entry's command and response before storing. */
+export function sanitizeHistoryEntry(entry: HistoryEntry): HistoryEntry {
+  return {
+    ...entry,
+    command: redactSensitiveCommand(entry.command),
+    response: redactSensitiveCommand(entry.response),
+  };
+}
+
 export function loadHistory(): HistoryEntry[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map(sanitizeHistoryEntry) : [];
   } catch {
     return [];
   }
 }
 
 export function saveHistory(entries: HistoryEntry[]): void {
+  const sanitized = entries.map(sanitizeHistoryEntry);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
   } catch {
     // Quota exceeded — trim to half and retry.
     try {
-      const trimmed = entries.slice(-Math.floor(MAX_HISTORY / 2));
+      const trimmed = sanitized.slice(-Math.floor(MAX_HISTORY / 2));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
     } catch {
       // Still failing — degrade to in-memory only.
